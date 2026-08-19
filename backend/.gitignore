@@ -1,0 +1,17 @@
+node_modules/
+Ozon/
+backups/
+exports/
+ServerFiles/
+
+bot.db
+bot_web.db
+bot.db-journal
+
+team-info.xlsx
+*.xlsx~
+*.xls~
+~$*.xlsx
+
+.env
+
