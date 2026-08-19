@@ -90,6 +90,84 @@ class User {
     const db = getDB();
     await db.run('UPDATE users SET tg_user_id = ? WHERE id = ?', tgUserId, id);
   }
+
+  static async updateByTgId(tgUserId, updates) {
+    const db = getDB();
+    const user = await this.findUserByTgId(tgUserId);
+    if (!user) return null;
+    // Обновляем поля
+    const allowed = ['name', 'phone', 'capacity', 'earnings_factor'];
+    const setClauses = [];
+    const values = [];
+    for (const [key, val] of Object.entries(updates)) {
+      if (allowed.includes(key)) {
+        setClauses.push(`${key} = ?`);
+        values.push(val);
+      }
+    }
+    if (setClauses.length === 0) return user;
+    values.push(Date.now());
+    values.push(user.id);
+    await db.run(
+      `UPDATE users SET ${setClauses.join(', ')}, updated_at = ? WHERE id = ?`,
+      values
+    );
+    return this.getById(user.id);
+  }
+
+  /**
+ * Получить пользователя с расширенной информацией (активные заказы, статистика)
+ */
+  static async getWithDetails(id) {
+    const db = getDB();
+    const user = await this.getById(id);
+    if (!user) return null;
+
+    // Активные заказы
+    const activeOrders = await db.all(
+      'SELECT order_id, assigned_at FROM assignments WHERE user_id = ? AND status = "assigned"',
+      id
+    );
+    // Статистика
+    const stats = await db.get(
+      'SELECT total_orders, total_amount, canceled_orders FROM user_stats WHERE user_id = ?',
+      id
+    );
+
+    return {
+      ...user,
+      activeOrders: activeOrders || [],
+      stats: stats || { total_orders: 0, total_amount: 0, canceled_orders: 0 },
+    };
+  }
+
+  /**
+   * Получить всех пользователей с фильтрацией (для админа)
+   */
+  static async getAll({ includeFired = false, includeAll = false, role = null } = {}) {
+    const db = getDB();
+    let sql = `SELECT id, username, email, name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, created_at, updated_at FROM users`;
+    const conditions = [];
+    const params = [];
+
+    if (!includeFired) {
+      conditions.push('is_fired = 0');
+    }
+    if (!includeAll) {
+      conditions.push('taking_orders = 1');
+    }
+    if (role) {
+      conditions.push('role = ?');
+      params.push(role);
+    }
+
+    if (conditions.length) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+    sql += ' ORDER BY id';
+
+    return db.all(sql, params);
+  }
 }
 
 module.exports = User;
