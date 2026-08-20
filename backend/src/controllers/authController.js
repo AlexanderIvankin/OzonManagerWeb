@@ -19,6 +19,17 @@ exports.register = async (req, res, next) => {
   }
 };
 
+exports.verifyEmail = async (req, res, next) => {
+  try {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Code required' });
+    await AuthService.verifyEmail(code);
+    res.json({ message: 'Email verified successfully' });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.login = async (req, res, next) => {
   try {
     const { usernameOrEmail, password } = req.body;

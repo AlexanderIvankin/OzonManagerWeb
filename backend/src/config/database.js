@@ -43,8 +43,20 @@ async function createTables(db) {
       is_fired INTEGER DEFAULT 0,
       taking_orders INTEGER DEFAULT 1,
       tg_user_id TEXT UNIQUE,
+      email_verified INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    )
+  `);
+
+  // --- Таблица кодов подтверждения email ---
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
 
@@ -175,7 +187,7 @@ async function createTables(db) {
   `);
 
   // --- Модели 3D ---
-  
+
   // // Таблица 3D-моделей товаров
   // await db.exec(`
   //   CREATE TABLE IF NOT EXISTS product_models (

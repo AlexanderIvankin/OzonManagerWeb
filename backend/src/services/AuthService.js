@@ -4,6 +4,9 @@ const { v4: uuidv4 } = require('uuid'); // добавим позже, но мо�
 const config = require('../config');
 const User = require('../models/User');
 const { getDB } = require('../config/database');
+const crypto = require('crypto');
+const EmailVerification = require('../models/EmailVerification');
+const EmailService = require('./EmailService');
 
 // Для генерации refresh-токенов используем крипто-стойкий случайный
 const crypto = require('crypto');
@@ -24,8 +27,31 @@ class AuthService {
       earningsFactor: earningsFactor || 1.0,
       role: 'user', // по умолчанию
     });
-    // Не возвращаем пароль
-    return user;
+
+    // Генерируем код
+    const code = this.generateVerificationCode();
+    await EmailVerification.create(user.id, code);
+
+    // Отправляем письмо (не блокируем ответ)
+    EmailService.sendVerificationEmail(user.email, user.name, code)
+      .catch(err => console.error('Ошибка отправки письма:', err));
+
+    return user; // но пользователь пока не верифицирован
+  }
+
+  static async verifyEmail(code) {
+    const record = await EmailVerification.findByCode(code);
+    if (!record) throw new Error('Неверный или просроченный код');
+
+    // Подтверждаем email
+    await User.update(record.user_id, { email_verified: 1 });
+    await EmailVerification.deleteByCode(code);
+    return { success: true };
+  }
+
+  static generateVerificationCode() {
+    // 6-значный цифровой код
+    return crypto.randomInt(100000, 999999).toString();
   }
 
   static async login(usernameOrEmail, password) {

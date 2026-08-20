@@ -103,6 +103,17 @@ class Assignment {
     const db = getDB();
     return db.get('SELECT * FROM assignments WHERE order_id = ?', orderId);
   }
+
+  /**
+ * Получить завершённые заказы пользователя (для отправки этикеток)
+ */
+  static async getCompletedOrders(userId) {
+    const db = getDB();
+    return db.all(
+      'SELECT order_id, completed_at FROM assignments WHERE user_id = ? AND status = "completed"',
+      userId
+    );
+  }
 }
 
 module.exports = Assignment;

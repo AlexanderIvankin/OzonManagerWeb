@@ -63,6 +63,20 @@ class Earnings {
     return row ? row.total : 0;
   }
 
+  /**
+* Получить историю заработка пользователя с деталями (для формирования сообщения)
+*/
+  static async getHistoryWithDetails(userId, fromDate, toDate) {
+    const db = getDB();
+    return db.all(
+      `SELECT order_id, amount, calculated_at
+     FROM earnings_history
+     WHERE user_id = ? AND calculated_at >= ? AND calculated_at <= ?
+     ORDER BY calculated_at`,
+      userId, fromDate, toDate
+    );
+  }
+
   // -------------------- АКТИВНЫЙ ЗАРАБОТОК (до расчёта) --------------------
 
   /**

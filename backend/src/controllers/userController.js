@@ -1,77 +1,126 @@
+// src/controllers/userController.js
+const { Assignment, UserStats, Earnings, ProductStat } = require('../models');
 const OrderService = require('../services/OrderService');
-const Earnings = require('../models/Earnings');
+const OzonService = require('../services/OzonService');
+const { escapeHtml } = require('../utils');
 
 /**
- * Получить активные заказы пользователя
+ * Получить профиль текущего пользователя
+ */
+exports.getProfile = async (req, res) => {
+  // req.user уже установлен в middleware authenticate
+  // Добавим статистику и активные заказы
+  const userId = req.user.id;
+  const stats = await UserStats.getStats(userId);
+  const activeOrders = await Assignment.getActiveOrders(userId);
+  const completedOrders = await Assignment.getCompletedOrders(userId);
+  res.json({
+    ...req.user,
+    stats,
+    activeOrders,
+    completedOrders,
+  });
+};
+
+/**
+ * Получить активные заказы пользователя с деталями (состав, статус статистики)
  */
 exports.getActiveOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const orders = await OrderService.getActiveOrders(userId);
-    res.json({ orders });
+    const orders = await Assignment.getActiveOrders(userId);
+    const result = [];
+    for (const order of orders) {
+      // Получаем детали из Ozon (можно закешировать)
+      const details = await OzonService.getOrderDetails(order.order_id);
+      // Проверяем наличие статистики для всех товаров
+      let statsStatus = 'filled';
+      let missingStats = [];
+      if (details && details.products) {
+        for (const p of details.products) {
+          if (!p.offer_id) continue;
+          const stat = await ProductStat.get(p.offer_id);
+          if (!stat) {
+            statsStatus = 'missing';
+            missingStats.push(p.offer_id);
+          }
+        }
+      }
+      result.push({
+        orderId: order.order_id,
+        assignedAt: order.assigned_at,
+        statsStatus,
+        missingStats,
+        products: details?.products || [],
+        // другие поля при необходимости
+      });
+    }
+    res.json(result);
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Завершить заказ
+ * Завершить заказ (требуется, чтобы все товары имели статистику)
  */
 exports.finishOrder = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
     const result = await OrderService.finishOrder(orderId, userId);
-    // Если есть этикетка – отправляем как файл
-    if (result.label) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
-      return res.send(result.label);
-    }
-    res.json({ success: true, orderId });
+    res.json({ message: 'Order finished', earnings: result.earnings, label: result.labelBuffer ? 'label available' : 'no label' });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Отменить заказ
+ * Отменить заказ (с подтверждением на фронтенде)
  */
 exports.cancelOrder = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
     await OrderService.cancelOrder(orderId, userId);
-    res.json({ success: true, orderId });
+    res.json({ message: 'Order cancelled' });
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Получить этикетку завершённого заказа
+ * Получить этикетку для завершённого заказа
  */
 exports.getLabel = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
-    const label = await OrderService.getLabel(orderId, userId);
+    const labelBuffer = await OrderService.getLabel(orderId, userId);
+    if (!labelBuffer) {
+      return res.status(404).json({ error: 'Label not available' });
+    }
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
-    res.send(label);
+    res.send(labelBuffer);
   } catch (err) {
     next(err);
   }
 };
 
 /**
- * Переключить статус приёма заказов
+ * Получить все этикетки для завершённых заказов (объединённые в PDF)
  */
-exports.toggleTakingOrders = async (req, res, next) => {
+exports.getAllLabels = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const newStatus = await OrderService.toggleTakingOrders(userId);
-    res.json({ taking_orders: newStatus });
+    const pdfBuffer = await OrderService.getAllLabels(userId);
+    if (!pdfBuffer) {
+      return res.status(404).json({ error: 'No labels available' });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=all_labels.pdf');
+    res.send(pdfBuffer);
   } catch (err) {
     next(err);
   }
@@ -83,11 +132,11 @@ exports.toggleTakingOrders = async (req, res, next) => {
 exports.getMonthlyEarnings = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    let { month } = req.query; // YYYY-MM
+    const { month } = req.query; // YYYY-MM
     let fromDate, toDate;
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
-        return res.status(400).json({ error: 'Неверный формат. Используйте YYYY-MM' });
+        return res.status(400).json({ error: 'Invalid month format. Use YYYY-MM' });
       }
       const [year, m] = month.split('-').map(Number);
       fromDate = new Date(year, m - 1, 1).getTime();
@@ -99,14 +148,13 @@ exports.getMonthlyEarnings = async (req, res, next) => {
       fromDate = new Date(year, m, 1).getTime();
       toDate = new Date(year, m + 1, 1).getTime() - 1;
     }
-
-    const earnings = await Earnings.getHistory(userId, fromDate, toDate);
-    const total = earnings.reduce((sum, e) => sum + e.amount, 0);
+    const history = await Earnings.getHistory(userId, fromDate, toDate);
+    const total = history.reduce((sum, h) => sum + h.amount, 0);
     res.json({
-      month: month || `${new Date(fromDate).toISOString().slice(0, 7)}`,
-      orders: earnings,
+      period: { from: fromDate, to: toDate },
+      earnings: history,
       total,
-      count: earnings.length,
+      count: history.length,
     });
   } catch (err) {
     next(err);
@@ -114,23 +162,83 @@ exports.getMonthlyEarnings = async (req, res, next) => {
 };
 
 /**
- * Получить активный заработок (с момента последнего расчёта)
+ * Получить активный заработок (с последнего расчёта)
  */
 exports.getActiveEarnings = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const earnings = await Earnings.getActive(userId, 0, Date.now());
+    const active = await Earnings.getActive(userId, 0, Date.now());
+    const totalBase = active.reduce((sum, a) => sum + a.amount, 0);
     const adjustments = await Earnings.getActiveAdjustmentsSum(userId, 0, Date.now());
-    const totalBase = earnings.reduce((sum, e) => sum + e.amount, 0);
     const totalWithAdjustments = totalBase + adjustments;
-
     res.json({
-      base: totalBase,
+      baseEarnings: totalBase,
       adjustments,
       total: totalWithAdjustments,
-      orders: earnings,
-      count: earnings.length,
+      orders: active,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Переключить статус приёма заказов
+ */
+exports.toggleOrders = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    // Получаем текущий статус
+    const user = await User.getById(userId);
+    const newStatus = user.taking_orders === 1 ? 0 : 1;
+    await User.update(userId, { taking_orders: newStatus });
+    res.json({ taking_orders: newStatus });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Заполнить статистику товара (материал, цвет, вес)
+ */
+exports.fillStats = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { offerId, material, color, weight } = req.body;
+    if (!offerId || !material || !color || !weight) {
+      return res.status(400).json({ error: 'Missing fields' });
+    }
+    if (weight <= 0) {
+      return res.status(400).json({ error: 'Weight must be positive' });
+    }
+    await ProductStat.upsert(offerId, material, color, weight, userId);
+    res.json({ message: 'Stats saved' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Получить список товаров без статистики для текущего пользователя (проверка)
+ */
+exports.getMissingStats = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const activeOrders = await Assignment.getActiveOrders(userId);
+    const missingOffers = new Set();
+    for (const order of activeOrders) {
+      const details = await OzonService.getOrderDetails(order.order_id);
+      if (details && details.products) {
+        for (const p of details.products) {
+          if (!p.offer_id) continue;
+          const stat = await ProductStat.get(p.offer_id);
+          if (!stat) {
+            missingOffers.add(p.offer_id);
+          }
+        }
+      }
+    }
+    res.json({ missingOffers: Array.from(missingOffers) });
   } catch (err) {
     next(err);
   }
