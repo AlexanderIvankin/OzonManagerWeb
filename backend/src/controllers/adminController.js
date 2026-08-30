@@ -1,7 +1,10 @@
+const fs = require('fs');
+const path = require('path');
 const { User, Assignment, UserStats, Earnings, Warehouse, ProductStat } = require('../models');
 const SyncService = require('../services/SyncService');
 const OzonService = require('../services/OzonService');
 const OrderService = require('../services/OrderService');
+const EarningsService = require('../services/EarningsService');
 const { getLocalTimestamp } = require('../utils');
 
 /**
@@ -165,7 +168,21 @@ exports.assignOrder = async (req, res, next) => {
     await OrderService.assignOrder(orderId, userId, req.user.id);
     res.json({ message: 'Order assigned successfully' });
   } catch (err) {
-    next(err);
+    console.error('[assignOrder] Ошибка:', err);
+    // Возвращаем 400 для бизнес-ошибок, 500 для остальных
+    if (err.message && (
+      err.message.includes('не найден') ||
+      err.message.includes('уволен') ||
+      err.message.includes('уже обрабатывается') ||
+      err.message.includes('не удалось получить')
+    )) {
+      return res.status(400).json({ error: err.message });
+    }
+    // Если ошибка связана с Ozon, тоже возвращаем 400
+    if (err.message && err.message.includes('Ozon')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err); // другие ошибки пойдут в общий обработчик (500)
   }
 };
 
@@ -178,6 +195,10 @@ exports.unassignOrder = async (req, res, next) => {
     await OrderService.unassignOrder(orderId, req.user.id);
     res.json({ message: 'Order unassigned successfully' });
   } catch (err) {
+    console.error('[unassignOrder] Ошибка:', err);
+    if (err.message && err.message.includes('не назначен')) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 };
@@ -213,10 +234,14 @@ exports.getUserStats = async (req, res, next) => {
  */
 exports.exportMonthlyEarnings = async (req, res, next) => {
   try {
-    const { month } = req.query; // формат YYYY-MM
+    const { month } = req.query;
     const filePath = await OrderService.exportMonthlyEarnings(month);
     res.download(filePath);
   } catch (err) {
+    console.error('[exportMonthlyEarnings] Ошибка:', err);
+    if (err.message && err.message.includes('Нет данных')) {
+      return res.status(404).json({ error: err.message });
+    }
     next(err);
   }
 };
@@ -299,27 +324,33 @@ exports.reloadQueue = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
 
-  exports.uploadMaterials = async (req, res, next) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-      const filePath = req.file.path;
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      // Валидация структуры
-      if (!data.materials || typeof data.materials !== 'object') {
-        throw new Error('Invalid materials format');
-      }
-      // Сохраняем в папку или в БД (пока сохраняем в файл)
-      const targetPath = path.join(__dirname, '../../materials-prices.json');
-      fs.copyFileSync(filePath, targetPath);
-      fs.unlinkSync(filePath); // удаляем временный
-      // Загружаем в память (глобальная переменная или синглтон)
-      // Можно сохранить в кеш или в БД
-      res.json({ message: 'Materials updated successfully' });
-    } catch (err) {
-      next(err);
+/**
+ * Загрузка файла материалов (materials-prices.json)
+ */
+exports.uploadMaterials = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
-  };
+    const filePath = req.file.path;
+    let data;
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      data = JSON.parse(content);
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Invalid JSON file' });
+    }
+    if (!data.materials || typeof data.materials !== 'object') {
+      throw new Error('Invalid materials format');
+    }
+    const targetPath = path.join(__dirname, '../../materials-prices.json');
+    fs.copyFileSync(filePath, targetPath);
+    fs.unlinkSync(filePath);
+    res.json({ message: 'Materials updated successfully' });
+  } catch (err) {
+    console.error('[uploadMaterials] Ошибка:', err);
+    next(err);
+  }
 };

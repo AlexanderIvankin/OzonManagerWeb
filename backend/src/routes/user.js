@@ -28,7 +28,7 @@ router.get('/orders/:orderId/label', userController.getLabel);
 router.get('/orders/labels/all', userController.getAllLabels);
 
 // Переключить приём заказов
-router.post('/toggle-orders', userController.toggleTakingOrders);
+router.post('/toggle-orders', userController.toggleOrders);
 
 // Заработок за месяц
 router.get('/earnings/monthly', userController.getMonthlyEarnings);

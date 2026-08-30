@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { Earnings, User } = require('../models');
 const ProductStat = require('../models/ProductStat');
-const { formatDateDDMMYYYY } = require('../utils/utils');
+const { formatDateDDMMYYYY } = require('../utils');
 
 /**
  * Сервис для работы с заработком: расчёт, экспорт, корректировки
@@ -24,11 +24,31 @@ class EarningsService {
     let allHaveStats = true;
     const factor = user.earnings_factor || 1.0;
     const MIN_EARNINGS = materialsData.minEarnings || 250;
+    const specialOffers = materialsData.specialOffers || {};
 
     for (const product of products) {
       const offerId = product.offer_id;
       if (!offerId) continue;
 
+      // Проверяем специальное предложение
+      if (specialOffers[offerId] !== undefined) {
+        const earningsPerUnit = specialOffers[offerId] * factor;
+        const quantity = product.quantity || 1;
+        totalEarnings += earningsPerUnit * quantity;
+        earningsDetails.push({
+          offerId,
+          productName: product.name,
+          material: 'Спецпредложение',
+          weight: 0,
+          quantity,
+          earningsPerUnit,
+          totalForProduct: earningsPerUnit * quantity,
+          isSpecial: true
+        });
+        continue;
+      }
+
+      // Обычный расчёт по статистике
       const stats = await ProductStat.get(offerId);
       if (!stats) {
         allHaveStats = false;
@@ -54,6 +74,7 @@ class EarningsService {
         quantity,
         earningsPerUnit,
         totalForProduct,
+        isSpecial: false
       });
     }
 

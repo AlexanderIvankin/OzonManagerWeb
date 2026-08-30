@@ -1,5 +1,5 @@
 // src/scheduler.js
-const { getLocalTime, getLocalDate } = require('./utils/utils');
+const { getLocalTime, getLocalDate } = require('./utils');
 const OrderService = require('./services/OrderService');
 const OzonService = require('./services/OzonService');
 const { createDbBackup } = require('./config/database'); // если добавим функцию бэкапа

@@ -1,14 +1,14 @@
 const axios = require('axios');
 const config = require('../config');
+const debugMode = require('../debugMode');
 
 const API_URL = 'https://api-seller.ozon.ru';
 const CLIENT_ID = process.env.OZON_CLIENT_ID;
 const API_KEY = process.env.OZON_API_KEY;
 
 const SHIP_IDENTIFIER = process.env.SHIP_IDENTIFIER || 'sku';
-
-// Флаг для мок-режима (для тестирования без реального API)
 const MOCK_MODE = process.env.OZON_MOCK_MODE === 'true';
+const FILTER_ORDER_SUFFIX = process.env.FILTER_ORDER_SUFFIX || null;
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -47,33 +47,55 @@ async function requestWithRetry(requestFn, options = {}) {
 }
 
 class OzonService {
-  // --- Склады ---
+  // --- Склады (с пагинацией) ---
   static async fetchWarehouses() {
     if (MOCK_MODE) {
+      console.log('[Ozon MOCK] Запрос списка складов...');
       return [
         { warehouse_id: "1234567890", name: "Склад Северный (FBS)", address: "г. Москва, ул. Северная, д.1", is_rfbs: false },
         { warehouse_id: "9876543210", name: "Склад Южный (realFBS)", address: "г. Подольск, ул. Южная, д.10", is_rfbs: true }
       ];
     }
+
     try {
-      const response = await requestWithRetry(
-        () => apiClient.post('/v2/warehouse/list', { limit: 100 }),
-        { context: 'fetchWarehouses' }
-      );
-      const warehousesRaw = response.data.warehouses || [];
-      return warehousesRaw.map(wh => ({
-        warehouse_id: String(wh.warehouse_id),
-        name: wh.name,
-        address: wh.address_info?.address || null,
-        is_rfbs: wh.is_rfbs || false,
-      }));
+      console.log('[Ozon] Запрос списка складов с пагинацией...');
+      let allWarehouses = [];
+      let offset = 0;
+      const limit = 100;
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await requestWithRetry(
+          () => apiClient.post('/v2/warehouse/list', { limit, offset }),
+          { context: 'fetchWarehouses' }
+        );
+        const warehousesRaw = response.data.warehouses || [];
+        const total = response.data.total || 0;
+
+        const mapped = warehousesRaw.map(wh => ({
+          warehouse_id: String(wh.warehouse_id),
+          name: wh.name,
+          address: wh.address_info?.address || null,
+          is_rfbs: wh.is_rfbs || false,
+        }));
+        allWarehouses = allWarehouses.concat(mapped);
+
+        offset += limit;
+        hasMore = offset < total;
+        if (debugMode.isDebugMode()) {
+          console.log(`[Ozon] Получено ${mapped.length} складов, всего ${total}, offset=${offset}`);
+        }
+      }
+
+      console.log(`[Ozon] Успешно получено ${allWarehouses.length} складов.`);
+      return allWarehouses;
     } catch (error) {
       console.error('[Ozon] Ошибка получения складов:', error.message);
       return [];
     }
   }
 
-  // --- Заказы в awaiting_packaging ---
+  // --- Заказы в awaiting_packaging (с фильтром по складу и суффиксу) ---
   static async fetchAwaitingOrders(warehouseId = null, limit = 100) {
     if (MOCK_MODE) {
       const mockOrders = [
@@ -89,7 +111,7 @@ class OzonService {
         }
       ];
       if (warehouseId) {
-        return mockOrders.filter(o => o.warehouse_id === warehouseId);
+        return mockOrders.filter(o => o.warehouse_id === String(warehouseId));
       }
       return mockOrders;
     }
@@ -110,7 +132,7 @@ class OzonService {
           to: to.toISOString()
         };
         if (warehouseId) {
-          filter.warehouse_id = [warehouseId];
+          filter.warehouse_ids = [Number(warehouseId)]; // массив для нового API
         }
         const requestBody = {
           filter,
@@ -128,10 +150,33 @@ class OzonService {
         lastId = response.data.last_id;
         hasMore = !!lastId && orders.length === limit;
       }
+
+      // Фильтрация по суффиксу offer_id (если задан)
+      if (FILTER_ORDER_SUFFIX) {
+        allOrders = allOrders.filter(order => {
+          if (!order.products || !order.products.length) return false;
+          return order.products.every(product => {
+            const offerId = product.offer_id || '';
+            return offerId.endsWith(FILTER_ORDER_SUFFIX);
+          });
+        });
+        console.log(`[Ozon] После фильтрации по суффиксу "${FILTER_ORDER_SUFFIX}" осталось ${allOrders.length} заказов`);
+      }
+
       return allOrders;
     } catch (error) {
       console.error('[Ozon] Ошибка получения заказов:', error.message);
       throw new Error(`Ошибка Ozon API: ${error.message}`);
+    }
+  }
+
+  static async fetchAwaitingOrdersById(orderId) {
+    try {
+      const allOrders = await this.fetchAwaitingOrders();
+      return allOrders.find(order => order.posting_number === orderId);
+    } catch (error) {
+      console.error(`[Ozon] Ошибка получения заказа ${orderId}:`, error.message);
+      return null;
     }
   }
 

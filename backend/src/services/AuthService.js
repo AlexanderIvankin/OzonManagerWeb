@@ -8,9 +8,6 @@ const crypto = require('crypto');
 const EmailVerification = require('../models/EmailVerification');
 const EmailService = require('./EmailService');
 
-// Для генерации refresh-токенов используем крипто-стойкий случайный
-const crypto = require('crypto');
-
 class AuthService {
   static async register(data) {
     const { username, email, password, name, phone, capacity, earningsFactor } = data;

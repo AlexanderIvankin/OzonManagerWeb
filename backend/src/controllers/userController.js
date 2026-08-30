@@ -1,25 +1,26 @@
-// src/controllers/userController.js
-const { Assignment, UserStats, Earnings, ProductStat } = require('../models');
+const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const OrderService = require('../services/OrderService');
 const OzonService = require('../services/OzonService');
-const { escapeHtml } = require('../utils');
 
 /**
  * Получить профиль текущего пользователя
  */
 exports.getProfile = async (req, res) => {
-  // req.user уже установлен в middleware authenticate
-  // Добавим статистику и активные заказы
-  const userId = req.user.id;
-  const stats = await UserStats.getStats(userId);
-  const activeOrders = await Assignment.getActiveOrders(userId);
-  const completedOrders = await Assignment.getCompletedOrders(userId);
-  res.json({
-    ...req.user,
-    stats,
-    activeOrders,
-    completedOrders,
-  });
+  try {
+    const userId = req.user.id;
+    const stats = await UserStats.getStats(userId);
+    const activeOrders = await Assignment.getActiveOrders(userId);
+    const completedOrders = await Assignment.getCompletedOrders(userId);
+    res.json({
+      ...req.user,
+      stats,
+      activeOrders,
+      completedOrders,
+    });
+  } catch (err) {
+    console.error('[getProfile] Ошибка:', err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
@@ -57,7 +58,8 @@ exports.getActiveOrders = async (req, res, next) => {
     }
     res.json(result);
   } catch (err) {
-    next(err);
+    console.error('[getActiveOrders] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -69,9 +71,10 @@ exports.finishOrder = async (req, res, next) => {
     const userId = req.user.id;
     const { orderId } = req.params;
     const result = await OrderService.finishOrder(orderId, userId);
-    res.json({ message: 'Order finished', earnings: result.earnings, label: result.labelBuffer ? 'label available' : 'no label' });
+    res.json({ message: 'Order finished', earnings: result.earnings, label: result.labelAvailable ? 'label available' : 'no label' });
   } catch (err) {
-    next(err);
+    console.error('[finishOrder] Ошибка:', err);
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -82,10 +85,11 @@ exports.cancelOrder = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { orderId } = req.params;
-    await OrderService.cancelOrder(orderId, userId);
+    const result = await OrderService.cancelOrder(orderId, userId);
     res.json({ message: 'Order cancelled' });
   } catch (err) {
-    next(err);
+    console.error('[cancelOrder] Ошибка:', err);
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -104,7 +108,8 @@ exports.getLabel = async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
     res.send(labelBuffer);
   } catch (err) {
-    next(err);
+    console.error('[getLabel] Ошибка:', err);
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -122,7 +127,8 @@ exports.getAllLabels = async (req, res, next) => {
     res.setHeader('Content-Disposition', 'attachment; filename=all_labels.pdf');
     res.send(pdfBuffer);
   } catch (err) {
-    next(err);
+    console.error('[getAllLabels] Ошибка:', err);
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -132,7 +138,7 @@ exports.getAllLabels = async (req, res, next) => {
 exports.getMonthlyEarnings = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { month } = req.query; // YYYY-MM
+    const { month } = req.query;
     let fromDate, toDate;
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -157,7 +163,8 @@ exports.getMonthlyEarnings = async (req, res, next) => {
       count: history.length,
     });
   } catch (err) {
-    next(err);
+    console.error('[getMonthlyEarnings] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -178,7 +185,8 @@ exports.getActiveEarnings = async (req, res, next) => {
       orders: active,
     });
   } catch (err) {
-    next(err);
+    console.error('[getActiveEarnings] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -188,13 +196,14 @@ exports.getActiveEarnings = async (req, res, next) => {
 exports.toggleOrders = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    // Получаем текущий статус
     const user = await User.getById(userId);
+    if (!user) throw new Error('User not found');
     const newStatus = user.taking_orders === 1 ? 0 : 1;
     await User.update(userId, { taking_orders: newStatus });
     res.json({ taking_orders: newStatus });
   } catch (err) {
-    next(err);
+    console.error('[toggleOrders] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -214,7 +223,8 @@ exports.fillStats = async (req, res, next) => {
     await ProductStat.upsert(offerId, material, color, weight, userId);
     res.json({ message: 'Stats saved' });
   } catch (err) {
-    next(err);
+    console.error('[fillStats] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -240,6 +250,7 @@ exports.getMissingStats = async (req, res, next) => {
     }
     res.json({ missingOffers: Array.from(missingOffers) });
   } catch (err) {
-    next(err);
+    console.error('[getMissingStats] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };

@@ -46,10 +46,10 @@ router.post('/materials/upload', upload.single('file'), adminController.uploadMa
 
 // --- Команды Модератора ---
 // Получить текущий заказ для модерации
-router.get('/orders/current', adminController.getCurrentOrder);
+// router.get('/orders/current', adminController.getCurrentOrder);
 // Получить всю очередь
-router.get('/orders/queue', adminController.getPendingOrders);
+// router.get('/orders/queue', adminController.getPendingOrders);
 // Пропустить текущий заказ
-router.post('/orders/skip', adminController.skipOrder);
+// router.post('/orders/skip', adminController.skipOrder);
 
 module.exports = router;

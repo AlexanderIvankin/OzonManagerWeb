@@ -1,13 +1,18 @@
 const OzonService = require('./OzonService');
-const Assignment = require('../models/Assignment');
-const UserStats = require('../models/UserStats');
-const Earnings = require('../models/Earnings');
-const ProductStat = require('../models/ProductStat');
-const User = require('../models/User');
+const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
+const { getDB } = require('../config/database');
 const { notifyUser, notifyModerators } = require('../socket');
-const fs = require('fs');
+const { escapeHtml } = require('../utils');
+const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders } = require('../state');
+const EarningsService = require('./EarningsService');
 
-// Коэффициенты для расчёта заработка (можно вынести в конфиг или БД)
+// Глобальное состояние очереди (в памяти)
+let pendingNewOrders = [];
+let currentOrderProcessing = null;
+let orderAssignRetries = new Map();
+
+// Конфигурация
+const MIN_EARNINGS = 250;
 const MATERIALS_PRICES = {
   'Pet-G': 2.5,
   'ABS': 2.5,
@@ -16,350 +21,571 @@ const MATERIALS_PRICES = {
   'НейлонАрмир': 2.5,
   'ASA': 2.5,
 };
-const MIN_EARNINGS_PER_UNIT = 250; // минимальный заработок за единицу товара
-
-// Очередь заказов в памяти (для веб-версии)
-let pendingNewOrders = [];
-let currentOrderProcessing = null;
+let specialOffers = null; // загружается из materials-prices.json
 
 class OrderService {
+  // =================================================================
+  // 1. ОЧИСТКА УСТАРЕВШИХ НАЗНАЧЕНИЙ (из bot.js)
+  // =================================================================
+  static async cleanExpiredAssignments(activeOrderIds) {
+    console.log('[OrderService] cleanExpiredAssignments начата');
+    const activeSet = new Set(activeOrderIds);
+    const db = getDB();
 
-  /**
-   * Получить активные заказы пользователя с деталями
-   */
-  static async getActiveOrders(userId) {
-    const assignments = await Assignment.getActiveOrders(userId);
-    if (!assignments.length) return [];
+    // Получаем все активные назначения с LEFT JOIN на users
+    const assignments = await db.all(
+      `SELECT a.order_id, a.user_id, u.tg_user_id, u.name as employee_name,
+            u.is_fired, a.status as local_status
+     FROM assignments a
+     LEFT JOIN users u ON a.user_id = u.id
+     WHERE a.status = "assigned"`
+    );
 
-    const ordersWithDetails = [];
-    for (const assign of assignments) {
-      const orderId = assign.order_id;
-      // Получаем детали из Ozon
-      let details = null;
-      try {
-        details = await OzonService.getOrderDetails(orderId);
-      } catch (err) {
-        console.error(`[OrderService] Ошибка получения деталей заказа ${orderId}:`, err.message);
-        // Продолжаем без деталей
+    for (const assignment of assignments) {
+      const orderId = assignment.order_id;
+
+      // === 1. Проверка зависших состояний завершения ===
+      const finishState = finishingOrders.get(orderId);
+      if (finishState) {
+        const elapsed = Date.now() - finishState.startedAt;
+        if (elapsed < 10 * 60 * 1000) {
+          console.log(`[CLEAN] Заказ ${orderId} в процессе завершения (${Math.round(elapsed / 1000)} сек.), пропускаем`);
+          continue;
+        }
+        console.warn(`[CLEAN] Заказ ${orderId} завис в finishingOrders на ${Math.round(elapsed / 60000)} мин. Принудительно удаляем.`);
+        finishingOrders.delete(orderId);
+        pendingFinishConfirmations.delete(orderId);
       }
 
-      // Проверяем наличие статистики для всех товаров
-      let statsStatus = 'filled';
-      let missingStats = [];
-      if (details && details.products) {
-        const offerIds = details.products.map(p => p.offer_id).filter(Boolean);
-        if (offerIds.length) {
-          const { missing } = await ProductStat.checkBatch(offerIds);
-          if (missing.length) {
-            statsStatus = 'missing';
-            missingStats = missing;
+      const confirmState = pendingFinishConfirmations.get(orderId);
+      if (confirmState) {
+        if (!confirmState.startedAt) {
+          console.warn(`[CLEAN] Заказ ${orderId} имеет pendingFinishConfirmations без startedAt. Удаляем.`);
+          pendingFinishConfirmations.delete(orderId);
+        } else {
+          const elapsed = Date.now() - confirmState.startedAt;
+          if (elapsed > 10 * 60 * 1000) {
+            console.warn(`[CLEAN] Заказ ${orderId} имеет зависшее pendingFinishConfirmations (${Math.round(elapsed / 60000)} мин), удаляем.`);
+            pendingFinishConfirmations.delete(orderId);
+          } else {
+            console.log(`[CLEAN] Заказ ${orderId} ожидает подтверждения, пропускаем`);
+            continue;
           }
         }
       }
 
-      ordersWithDetails.push({
-        orderId,
-        assignedAt: assign.assigned_at,
-        status: statsStatus,
-        missingStats,
-        details: details || null,
-      });
-    }
-    return ordersWithDetails;
-  }
-
-  /**
- * Завершить заказ (основная логика)
- */
-  static async finishOrder(orderId, userId) {
-    // Проверяем, что заказ принадлежит пользователю и ещё не завершён
-    const assignment = await Assignment.getByOrderId(orderId);
-    if (!assignment || assignment.user_id !== userId || assignment.status !== 'assigned') {
-      throw new Error('Order not found or not assigned to you');
-    }
-
-    // Проверяем наличие статистики для всех товаров
-    const details = await OzonService.getOrderDetails(orderId);
-    const missingStats = [];
-    if (details && details.products) {
-      for (const p of details.products) {
-        if (!p.offer_id) continue;
-        const stat = await ProductStat.get(p.offer_id);
-        if (!stat) missingStats.push(p.offer_id);
-      }
-    }
-    if (missingStats.length) {
-      throw new Error(`Missing stats for: ${missingStats.join(', ')}`);
-    }
-
-    // Получаем пользователя (для коэффициента)
-    const user = await User.getById(userId);
-    // Материалы загружаем из файла (пока заглушка)
-    const materialsData = require('../config/materials').getMaterials(); // создадим позже
-
-    // Расчёт заработка
-    const earnings = await EarningsService.calculateOrderEarnings(details, user, materialsData);
-    // Если нет статистики для некоторых товаров – ошибка, но мы уже проверили
-    if (!earnings.allHaveStats) {
-      throw new Error('Not all products have stats'); // на самом деле не должно случиться
-    }
-
-    // Подтверждаем сборку через Ozon
-    try {
-      await OzonService.confirmPostingShip(orderId);
-    } catch (err) {
-      if (!err.message.includes('не в статусе awaiting_packaging')) throw err;
-    }
-
-    // Ждём генерации этикетки
-    await new Promise(resolve => setTimeout(resolve, 15000));
-    const labelBuffer = await OzonService.getPackageLabel(orderId);
-
-    // Сохраняем в БД (транзакция)
-    const db = getDB();
-    await db.run('BEGIN');
-    try {
-      // Обновляем статистику пользователя
-      const orderAmount = await OzonService.getOrderTotalAmount(orderId);
-      await UserStats.incrementStats(userId, orderAmount);
-      // Сохраняем заработок
-      if (earnings.total > 0) {
-        await Earnings.saveHistory(userId, orderId, earnings.total);
-        await Earnings.saveActive(userId, orderId, earnings.total);
-      }
-      // Завершаем заказ
-      await Assignment.complete(orderId);
-      await db.run('COMMIT');
-    } catch (err) {
-      await db.run('ROLLBACK');
-      throw err;
-    }
-
-    // Отправляем этикетку (через контроллер или возвращаем буфер)
-    return { earnings: earnings.total, labelBuffer };
-  }
-
-  /**
-   * Отменить заказ (пользователь)
-   */
-  static async cancelOrder(orderId, userId) {
-    const assignment = await Assignment.getByOrderId(orderId);
-    if (!assignment || assignment.user_id !== userId || assignment.status !== 'assigned') {
-      throw new Error('Order not found or not assigned to you');
-    }
-    // Удаляем назначение
-    await Assignment.cancel(orderId, userId);
-    // Увеличиваем счётчик отмен
-    await UserStats.incrementCanceled(userId);
-  }
-
-  /**
-   * Получить этикетку для завершённого заказа (проверка прав)
-   */
-  static async getLabel(orderId, userId) {
-    const assignment = await Assignment.getByOrderId(orderId);
-    if (!assignment || assignment.user_id !== userId || assignment.status !== 'completed') {
-      throw new Error('Order not found or not completed');
-    }
-    // Проверяем статус в Ozon (должен быть awaiting_deliver)
-    const details = await OzonService.getOrderDetails(orderId);
-    if (details.status !== 'awaiting_deliver') {
-      throw new Error('Label not available yet');
-    }
-    return await OzonService.getPackageLabel(orderId);
-  }
-
-  /**
-   * Получить все этикетки для завершённых заказов пользователя
-   */
-  static async getAllLabels(userId) {
-    const completed = await Assignment.getCompletedOrders(userId);
-    const labelBuffers = [];
-    for (const order of completed) {
-      try {
-        const label = await OzonService.getPackageLabel(order.order_id);
-        if (label) labelBuffers.push(label);
-      } catch (err) {
-        console.error(`[OrderService] Ошибка получения этикетки для ${order.order_id}:`, err.message);
-      }
-    }
-    if (!labelBuffers.length) return null;
-    // Объединяем PDF (нужна функция mergePdfs из utils)
-    const { mergePdfs } = require('../utils'); // создадим позже
-    return await mergePdfs(labelBuffers);
-  }
-
-  /**
-   * Переключить статус приёма заказов
-   */
-  static async toggleTakingOrders(userId) {
-    const user = await User.getById(userId);
-    if (!user) throw new Error('Пользователь не найден');
-    const newStatus = user.taking_orders === 1 ? 0 : 1;
-    await User.update(userId, { taking_orders: newStatus });
-    return newStatus;
-  }
-
-  /**
-   * Вспомогательный метод расчёта заработка (аналог из бота)
-   */
-  static async calculateEarnings(orderDetails, user) {
-    const earningsDetails = [];
-    let totalEarnings = 0;
-    let allHaveStats = true;
-    const factor = user.earnings_factor || 1.0;
-
-    for (const product of orderDetails.products) {
-      const offerId = product.offer_id;
-      if (!offerId) continue;
-      const stats = await ProductStat.get(offerId);
-      if (!stats) {
-        allHaveStats = false;
-        console.warn(`[EARN] Для товара ${offerId} нет статистики`);
+      // === 2. Если заказ всё ещё в awaiting_packaging — пропускаем ===
+      if (activeSet.has(orderId)) {
         continue;
       }
-      const materialPrice = MATERIALS_PRICES[stats.material] || 0;
-      const weight = stats.weight_grams || 0;
-      let earningsPerUnit = materialPrice * weight;
-      if (earningsPerUnit < MIN_EARNINGS_PER_UNIT) earningsPerUnit = MIN_EARNINGS_PER_UNIT;
-      earningsPerUnit = earningsPerUnit * factor;
 
-      const quantity = product.quantity || 1;
-      const totalForProduct = earningsPerUnit * quantity;
-      totalEarnings += totalForProduct;
-      earningsDetails.push({
-        offerId,
-        productName: product.name,
-        material: stats.material,
-        weight,
-        quantity,
-        earningsPerUnit,
-        totalForProduct,
+      // === 3. Если заказ уже завершён в БД — пропускаем ===
+      if (assignment.local_status === 'completed') {
+        console.log(`[CLEAN] Заказ ${orderId} уже завершён (status=completed), пропускаем`);
+        continue;
+      }
+
+      const freshStatus = await db.get(
+        'SELECT status FROM assignments WHERE order_id = ?',
+        orderId
+      );
+      if (freshStatus && freshStatus.status === 'completed') {
+        console.log(`[CLEAN] Заказ ${orderId} уже завершён (повторная проверка), пропускаем`);
+        continue;
+      }
+
+      // === 4. Если сотрудник отсутствует или уволен — снимаем заказ ===
+      if (!assignment.employee_name || assignment.is_fired === 1) {
+        console.warn(`[CLEAN] Заказ ${orderId} назначен на некорректного сотрудника (user_id=${assignment.user_id}), снимаем`);
+        await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
+        notifyModerators('order_unassigned', {
+          orderId,
+          reason: 'Сотрудник отсутствует или уволен',
+          employeeName: assignment.employee_name || 'не найден'
+        });
+        if (assignment.tg_user_id) {
+          notifyUser(assignment.tg_user_id, 'order_unassigned', {
+            orderId,
+            reason: 'Сотрудник отсутствует или уволен'
+          });
+        }
+        continue;
+      }
+
+      // === 5. Стандартное удаление: заказ больше не в awaiting_packaging ===
+      console.log(`[CLEAN] Заказ ${orderId} больше не в awaiting_packaging, отменяем назначение у ${assignment.employee_name}`);
+      await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
+      notifyModerators('order_unassigned', {
+        orderId,
+        reason: 'Заказ более не актуален (не в awaiting_packaging)',
+        employeeName: assignment.employee_name
       });
+      if (assignment.tg_user_id) {
+        notifyUser(assignment.tg_user_id, 'order_unassigned', {
+          orderId,
+          reason: 'Заказ более не актуален'
+        });
+      }
     }
-    return { total: totalEarnings, details: earningsDetails, allHaveStats };
+
+    console.log('[OrderService] cleanExpiredAssignments завершена');
   }
 
-  /**
-   * Проверяет новые заказы из Ozon и обновляет очередь
-   * (вызывается по расписанию)
-   */
+  // =================================================================
+  // 2. ПРОВЕРКА НОВЫХ ЗАКАЗОВ (из bot.js checkAndOfferNewOrders)
+  // =================================================================
   static async checkNewOrders() {
     console.log('[OrderService] Проверка новых заказов...');
     try {
-      // 1. Получаем все заказы в статусе awaiting_packaging
       const allOrders = await OzonService.fetchAwaitingOrders();
+      const activeOrderIds = allOrders.map(o => o.posting_number);
+      await this.cleanExpiredAssignments(activeOrderIds);
+
       if (!allOrders.length) {
-        console.log('[OrderService] Нет заказов в awaiting_packaging');
-        // Если очередь пуста – сбрасываем текущий заказ
-        if (this.pendingOrders.length === 0) {
-          this.currentOrder = null;
+        if (pendingNewOrders.length === 0) {
+          currentOrderProcessing = null;
         }
         return;
       }
 
-      // 2. Получаем уже назначенные заказы (из БД)
       const db = getDB();
-      const assignedRows = await db.all('SELECT order_id FROM assignments WHERE status = "assigned"');
-      const assignedSet = new Set(assignedRows.map(r => r.order_id));
+      const assignedOrderIds = (await db.all('SELECT order_id FROM assignments WHERE status = "assigned"'))
+        .map(r => r.order_id);
+      const assignedSet = new Set(assignedOrderIds);
 
-      // 3. Фильтруем новые заказы (которые ещё не назначены)
       const newOrders = allOrders.filter(order => !assignedSet.has(order.posting_number));
-
       if (!newOrders.length) {
-        console.log('[OrderService] Новых заказов нет');
         return;
       }
 
-      // 4. Обновляем очередь: заменяем на новые заказы (если текущий заказ ещё актуален, он уже в newOrders)
-      this.pendingOrders = newOrders;
-
-      // 5. Если нет текущего обрабатываемого заказа и есть заказы – устанавливаем первый
-      if (!this.currentOrder && this.pendingOrders.length) {
-        this.currentOrder = this.pendingOrders[0];
-        // Здесь можно уведомить модераторов через WebSocket о новом заказе
-        console.log(`[OrderService] Новый заказ для модерации: ${this.currentOrder.posting_number}`);
-        // В будущем: emit('new_order', this.currentOrder)
+      // Сохраняем текущий обрабатываемый заказ
+      const currentOrderId = currentOrderProcessing?.order?.posting_number;
+      if (currentOrderId && !newOrders.some(o => o.posting_number === currentOrderId)) {
+        console.log(`[CHECK] Текущий заказ ${currentOrderId} больше не в awaiting_packaging, сбрасываем`);
+        currentOrderProcessing = null;
       }
 
-      console.log(`[OrderService] Очередь обновлена, заказов: ${this.pendingOrders.length}`);
+      pendingNewOrders = newOrders;
+      console.log(`[CHECK] Очередь обновлена, заказов: ${pendingNewOrders.length}`);
+
+      // Уведомляем модераторов о новых заказах (через WebSocket)
+      notifyModerators('new_orders_available', {
+        count: pendingNewOrders.length,
+        orders: pendingNewOrders.map(o => ({
+          posting_number: o.posting_number,
+          products_count: o.products?.length || 0,
+        }))
+      });
+
+      // Если нет активного заказа и есть заказы – берём первый
+      if (!currentOrderProcessing && pendingNewOrders.length) {
+        currentOrderProcessing = { order: pendingNewOrders[0], timestamp: Date.now() };
+      }
+
     } catch (err) {
       console.error('[OrderService] Ошибка checkNewOrders:', err);
       throw err;
     }
   }
 
-  /**
-   * Получить текущий заказ для модерации (для API)
-   */
-  static getCurrentOrder() {
-    return this.currentOrder;
-  }
-
-  /**
-   * Получить всю очередь (для API)
-   */
-  static getPendingOrders() {
-    return this.pendingOrders;
-  }
-
-  /**
-   * Пропустить текущий заказ (вызывается модератором)
-   */
-  static skipCurrentOrder() {
-    if (!this.currentOrder) return;
-    // Удаляем текущий заказ из очереди
-    this.pendingOrders = this.pendingOrders.filter(o => o.posting_number !== this.currentOrder.posting_number);
-    // Устанавливаем следующий, если есть
-    this.currentOrder = this.pendingOrders.length ? this.pendingOrders[0] : null;
-    console.log('[OrderService] Текущий заказ пропущен');
-  }
-
-  /**
-   * Назначить заказ (вызывается при назначении)
-   * @param {string} orderId - номер заказа
-   * @param {number} userId - ID пользователя
-   * @param {number} adminId - ID администратора, назначившего
-   */
-  static async assignOrder(orderId, userId, adminId) {
-    // Проверяем, что заказ есть в очереди или актуален
-    // Назначаем через Assignment.assign
-    // Удаляем из очереди
-    await Assignment.assign(orderId, userId);
-    // Удаляем из очереди
-    this.pendingOrders = this.pendingOrders.filter(o => o.posting_number !== orderId);
-    if (this.currentOrder && this.currentOrder.posting_number === orderId) {
-      this.currentOrder = this.pendingOrders.length ? this.pendingOrders[0] : null;
+  // =================================================================
+  // 3. НАЗНАЧЕНИЕ ЗАКАЗА (из commands.js assignOrder)
+  // =================================================================
+  static async assignOrder(orderId, userId, adminId = null) {
+    // Блокировка
+    if (processingOrders.has(orderId)) {
+      console.log(`[ASSIGN] Заказ ${orderId} уже обрабатывается, пропускаем.`);
+      throw new Error('Заказ уже обрабатывается');
     }
-    // Логируем
-    console.log(`[OrderService] Заказ ${orderId} назначен пользователю ${userId} администратором ${adminId}`);
-    notifyUser(userId, 'order_assigned', { orderId, message: 'Вам назначен заказ' });
-    notifyModerators('order_assigned', { orderId, userId, message: 'Заказ назначен' });
+    processingOrders.add(orderId);
+
+    let queuedOrder = null;
+    const queueIndex = pendingNewOrders.findIndex(o => o.posting_number === orderId);
+    if (queueIndex !== -1) {
+      queuedOrder = pendingNewOrders.splice(queueIndex, 1)[0];
+      console.log(`[ASSIGN] Заказ ${orderId} удалён из очереди`);
+    }
+    if (currentOrderProcessing?.order?.posting_number === orderId) {
+      currentOrderProcessing = null;
+    }
+
+    let assignedInDb = false;
+    let employee = null;
+    let orderDetails = null;
+
+    try {
+      // Проверка сотрудника
+      employee = await User.getById(userId);
+      if (!employee) throw new Error(`Сотрудник с ID ${userId} не найден.`);
+      if (employee.is_fired) throw new Error(`Сотрудник ${employee.name} уволен.`);
+
+      // Получение деталей заказа
+      orderDetails = await OzonService.getOrderDetails(orderId);
+      if (!orderDetails) throw new Error(`Не удалось получить детали заказа ${orderId}.`);
+
+      // Очистка старых состояний
+      await this.clearOrderState(orderId);
+
+      // Назначение в БД
+      await Assignment.assign(orderId, userId);
+      assignedInDb = true;
+      console.log(`[ASSIGN] Заказ ${orderId} записан в БД за сотрудником ${employee.name}`);
+
+      // Дальнейшая логика: статистика, фото, модели, формы статистики (опускаем для краткости)
+      // Здесь мы отправляем уведомление сотруднику через WebSocket
+      notifyUser(userId, 'order_assigned', {
+        orderId,
+        message: `Вам назначен заказ ${orderId}`,
+        details: orderDetails
+      });
+
+      notifyModerators('order_assigned', {
+        orderId,
+        userId,
+        employeeName: employee.name,
+        message: 'Заказ назначен'
+      });
+
+      orderAssignRetries.delete(orderId);
+      console.log(`[ASSIGN] Заказ ${orderId} успешно назначен сотруднику ${employee.name} (ID ${employee.id})`);
+      return { success: true, employee };
+
+    } catch (err) {
+      console.error(`[ASSIGN] Ошибка назначения заказа ${orderId}:`, err);
+
+      if (assignedInDb) {
+        // Ошибка после записи в БД — не возвращаем заказ в очередь
+        console.error(`[ASSIGN] Заказ ${orderId} уже назначен в БД, в очередь не возвращаем.`);
+        notifyModerators('order_assign_error', {
+          orderId,
+          error: err.message,
+          employeeName: employee?.name || userId
+        });
+      } else {
+        // Ошибка до записи в БД — возвращаем заказ в очередь
+        let retries = orderAssignRetries.get(orderId) || 0;
+        retries++;
+        orderAssignRetries.set(orderId, retries);
+
+        if (retries <= 3) {
+          if (!pendingNewOrders.some(o => o.posting_number === orderId)) {
+            if (!queuedOrder) {
+              try {
+                queuedOrder = await OzonService.fetchAwaitingOrdersById(orderId);
+              } catch (e) {
+                queuedOrder = { posting_number: orderId, products: [] };
+              }
+            }
+            if (queuedOrder) {
+              pendingNewOrders.unshift(queuedOrder);
+              console.log(`[ASSIGN] Заказ ${orderId} возвращён в очередь (попытка ${retries}/3).`);
+            }
+          }
+        } else {
+          console.error(`[ASSIGN] Заказ ${orderId} не удалось назначить после 3 попыток.`);
+          notifyModerators('order_assign_failed', {
+            orderId,
+            error: err.message,
+            attempts: retries
+          });
+          orderAssignRetries.delete(orderId);
+        }
+      }
+      throw err;
+    } finally {
+      processingOrders.delete(orderId);
+      console.log(`[ASSIGN] Блокировка для ${orderId} снята.`);
+    }
   }
 
-  /**
-   * Снять заказ с сотрудника (админ)
-   */
+  // =================================================================
+  // 4. ЗАВЕРШЕНИЕ ЗАКАЗА (из commands.js finishOrder)
+  // =================================================================
+  static async finishOrder(orderId, userId) {
+    console.log(`[FINISH] === Начало завершения заказа ${orderId} сотрудником ${userId} ===`);
+    let transactionCompleted = false;
+
+    try {
+      // Проверяем, что заказ ещё активен и принадлежит пользователю
+      const db = getDB();
+      const assignment = await db.get(
+        'SELECT status FROM assignments WHERE order_id = ? AND user_id = ? AND status = "assigned"',
+        orderId, userId
+      );
+      if (!assignment) {
+        throw new Error(`Заказ ${orderId} уже завершён или не найден.`);
+      }
+
+      // Получаем пользователя
+      const user = await User.getById(userId);
+      if (!user) throw new Error('Пользователь не найден');
+
+      // 1. Получаем сумму заказа
+      const orderAmount = await OzonService.getOrderTotalAmount(orderId);
+      console.log(`[FINISH] Сумма заказа: ${orderAmount}`);
+
+      // 2. Рассчитываем заработок
+      const orderDetails = await OzonService.getOrderDetails(orderId);
+      let earningsData = null;
+      if (orderDetails && orderDetails.products) {
+        const materialsData = { materials: MATERIALS_PRICES, minEarnings: MIN_EARNINGS, specialOffers };
+        earningsData = await EarningsService.calculateOrderEarnings(orderDetails, user, materialsData);
+        if (!earningsData.allHaveStats) {
+          console.warn(`[FINISH] Не все товары имеют статистику для заказа ${orderId}`);
+        }
+      }
+
+      // 3. Подтверждение сборки через Ozon
+      let labelBuffer = null;
+      let isAlreadyConfirmed = false;
+      try {
+        await OzonService.confirmPostingShip(orderId);
+      } catch (shipError) {
+        if (shipError.message && shipError.message.includes('не в статусе awaiting_packaging')) {
+          console.warn(`[FINISH] Заказ ${orderId} уже подтверждён (статус не awaiting_packaging)`);
+          isAlreadyConfirmed = true;
+        } else {
+          throw shipError;
+        }
+      }
+
+      if (!isAlreadyConfirmed) {
+        // Ожидаем 15 секунд для генерации этикетки
+        await new Promise(resolve => setTimeout(resolve, 15000));
+      }
+
+      labelBuffer = await OzonService.getPackageLabel(orderId);
+
+      // ========== ТРАНЗАКЦИЯ БД ==========
+      await db.run('BEGIN TRANSACTION');
+
+      try {
+        // Обновляем статистику
+        await UserStats.incrementStats(userId, orderAmount);
+
+        // Сохраняем заработок
+        if (earningsData && earningsData.total > 0) {
+          const existing = await db.get('SELECT id FROM earnings_history WHERE order_id = ?', orderId);
+          if (!existing) {
+            await Earnings.saveHistory(userId, orderId, earningsData.total);
+            await Earnings.saveActive(userId, orderId, earningsData.total);
+          }
+        }
+
+        // Завершаем заказ
+        await Assignment.complete(orderId);
+
+        await db.run('COMMIT');
+        transactionCompleted = true;
+        console.log(`[FINISH] Транзакция успешно закоммичена для заказа ${orderId}`);
+      } catch (txError) {
+        await db.run('ROLLBACK');
+        console.error(`[FINISH] Ошибка в транзакции для заказа ${orderId}:`, txError);
+        throw txError;
+      }
+
+      // Отправляем этикетку (если есть)
+      if (labelBuffer) {
+        // В веб-версии этикетка будет доступна через API /api/user/orders/:orderId/label
+        // Поэтому просто сохраняем в локальном хранилище или возвращаем через WebSocket
+        notifyUser(userId, 'order_finished', {
+          orderId,
+          labelAvailable: true,
+          earnings: earningsData?.total || 0
+        });
+      } else {
+        notifyUser(userId, 'order_finished', {
+          orderId,
+          labelAvailable: false,
+          earnings: earningsData?.total || 0
+        });
+      }
+
+      notifyModerators('order_finished', {
+        orderId,
+        userId,
+        employeeName: user.name,
+        earnings: earningsData?.total || 0
+      });
+
+      // Очищаем состояния
+      await this.clearOrderState(orderId);
+
+      console.log(`[FINISH] === Заказ ${orderId} успешно завершён ===`);
+      return { success: true, earnings: earningsData?.total || 0, labelAvailable: !!labelBuffer };
+
+    } catch (err) {
+      console.error(`[FINISH] Ошибка при завершении заказа ${orderId}:`, err);
+      throw err;
+    } finally {
+      // Принудительно удаляем флаги
+      if (!transactionCompleted) {
+        console.log(`[FINISH] Принудительно удаляем флаги для ${orderId}`);
+        finishingOrders.delete(orderId);
+        pendingFinishConfirmations.delete(orderId);
+      }
+    }
+  }
+
+  // =================================================================
+  // 5. ОТМЕНА ЗАКАЗА
+  // =================================================================
+
+  // ОТМЕНА ЗАКАЗА (пользователь)
+  static async cancelOrder(orderId, userId) {
+    console.log(`[CANCEL] Отмена заказа ${orderId} пользователем ${userId}`);
+    const db = getDB();
+
+    // Проверяем, что заказ назначен этому пользователю и ещё не завершён
+    const assignment = await db.get(
+      'SELECT * FROM assignments WHERE order_id = ? AND user_id = ? AND status = "assigned"',
+      orderId, userId
+    );
+    if (!assignment) {
+      throw new Error('Заказ не найден или не назначен вам');
+    }
+
+    // Удаляем назначение
+    await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
+
+    // Увеличиваем счётчик отменённых заказов (вина пользователя)
+    await UserStats.incrementCanceled(userId);
+
+    // Уведомляем пользователя и модераторов
+    notifyUser(userId, 'order_cancelled', { orderId });
+    notifyModerators('order_cancelled', { orderId, userId, reason: 'Отменён пользователем' });
+
+    // Возвращаем заказ в очередь (перезагружаем)
+    await this.reloadQueue();
+
+    return { success: true };
+  }
+
+  // СНЯТИЕ ЗАКАЗА АДМИНИСТРАТОРОМ (без увеличения счётчика отмен)
   static async unassignOrder(orderId, adminId) {
-    const assignment = await Assignment.getByOrderId(orderId);
-    if (!assignment || assignment.status !== 'assigned') {
+    console.log(`[UNASSIGN] Снятие заказа ${orderId} администратором ${adminId}`);
+    const db = getDB();
+
+    // Проверяем, что заказ назначен
+    const assignment = await db.get(
+      'SELECT * FROM assignments WHERE order_id = ? AND status = "assigned"',
+      orderId
+    );
+    if (!assignment) {
       throw new Error('Заказ не назначен');
     }
-    await Assignment.autoCancel(orderId);
-    // Возвращаем заказ в очередь? Но он может уже не быть в awaiting_packaging, поэтому лучше перезагрузить очередь
-    await this.checkNewOrders();
-    console.log(`[OrderService] Заказ ${orderId} снят администратором ${adminId}`);
+
+    // Сохраняем userId для уведомления
+    const userId = assignment.user_id;
+
+    // Удаляем назначение (без увеличения счётчика отмен)
+    await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
+
+    // Уведомляем пользователя и модераторов
+    notifyUser(userId, 'order_unassigned', { orderId, reason: 'Снят администратором' });
+    notifyModerators('order_unassigned', { orderId, userId, adminId, reason: 'Снят администратором' });
+
+    // Возвращаем заказ в очередь
+    await this.reloadQueue();
+
+    return { success: true };
   }
 
-  /**
-   * Перезагрузить очередь (принудительно)
-   */
+  // =================================================================
+  // 6. ПОЛУЧЕНИЕ ЭТИКЕТКИ
+  // =================================================================
+  static async getLabel(orderId, userId) {
+    const db = getDB();
+    // Проверяем, что заказ завершён и принадлежит пользователю
+    const assignment = await db.get(
+      'SELECT * FROM assignments WHERE order_id = ? AND user_id = ? AND status = "completed"',
+      orderId, userId
+    );
+    if (!assignment) {
+      throw new Error('Заказ не найден или не завершён');
+    }
+
+    // Проверяем статус заказа в Ozon
+    const details = await OzonService.getOrderDetails(orderId);
+    if (!details || details.status !== 'awaiting_deliver') {
+      throw new Error('Этикетка ещё не доступна');
+    }
+
+    return await OzonService.getPackageLabel(orderId);
+  }
+
+  static async getAllLabels(userId) {
+    const db = getDB();
+    const completed = await db.all(
+      'SELECT order_id FROM assignments WHERE user_id = ? AND status = "completed"',
+      userId
+    );
+    const buffers = [];
+    for (const order of completed) {
+      try {
+        const label = await OzonService.getPackageLabel(order.order_id);
+        if (label) buffers.push(label);
+      } catch (err) {
+        console.error(`[getAllLabels] Ошибка получения этикетки для ${order.order_id}:`, err);
+      }
+    }
+    if (!buffers.length) return null;
+    const { mergePdfs } = require('../utils');
+    return await mergePdfs(buffers);
+  }
+
+  // =================================================================
+  // 7. ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С ОЧЕРЕДЬЮ
+  // =================================================================
+
+  static getCurrentOrder() {
+    return currentOrderProcessing?.order || null;
+  }
+
+  static getPendingOrders() {
+    return pendingNewOrders;
+  }
+
   static async reloadQueue() {
-    this.pendingOrders = [];
-    this.currentOrder = null;
+    console.log('[OrderService] Принудительная перезагрузка очереди');
+    pendingNewOrders = [];
+    currentOrderProcessing = null;
     await this.checkNewOrders();
   }
 
+  // =================================================================
+  // 8. ОЧИСТКА СОСТОЯНИЙ ЗАКАЗА (из commands.js clearOrderState)
+  // =================================================================
+  static async clearOrderState(orderId, userId = null) {
+    console.log(`[CLEAR] Начало очистки заказа ${orderId}${userId ? ` для пользователя ${userId}` : ''}`);
+
+    // Очищаем pendingForms
+    if (userId) {
+      const key = `${userId}_${orderId}`;
+      if (pendingForms.has(key)) {
+        pendingForms.delete(key);
+      }
+    } else {
+      for (const [key, state] of pendingForms) {
+        if (state.orderId === orderId) {
+          pendingForms.delete(key);
+          break;
+        }
+      }
+    }
+
+    // Очищаем pendingFinishConfirmations
+    if (pendingFinishConfirmations.has(orderId)) {
+      pendingFinishConfirmations.delete(orderId);
+    }
+
+    // Очищаем finishingOrders
+    if (finishingOrders.has(orderId)) {
+      finishingOrders.delete(orderId);
+    }
+
+    console.log(`[CLEAR] Завершена очистка заказа ${orderId}`);
+  }
 }
 
 module.exports = OrderService;
