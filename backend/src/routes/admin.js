@@ -25,6 +25,7 @@ router.get('/export/team-info', adminController.exportTeamInfo);
 
 // --- Конфигурация materials-prices.json ---
 router.get('/materials', adminController.getMaterials);
+router.post('/materials/upload', upload.single('file'), adminController.uploadMaterials);
 
 // --- Склады ---
 router.get('/warehouses', adminController.getWarehouses);
@@ -47,7 +48,6 @@ router.post('/earnings/reset', authorize('admin'), adminController.resetAllEarni
 // --- Административные команды ---
 router.post('/assignments/clear', authorize('admin'), adminController.clearAssignments);
 router.post('/orders/reload-queue', authorize('admin'), adminController.reloadQueue);
-router.post('/materials/upload', upload.single('file'), adminController.uploadMaterials);
 
 // --- Команды Модератора ---
 // Получить текущий заказ для модерации

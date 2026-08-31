@@ -1,7 +1,7 @@
 ### Переменные
 @baseUrl = http://localhost:5000
 # Ввести админский access токен (после авторизации)
-@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImlhdCI6MTc4ODEyNDA1NiwiZXhwIjoxNzg4MTI0OTU2fQ.AIF9sI2CqgU3oksvoVzCvovwhFF8s-cl-9U_ixfO6wQ
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImlhdCI6MTc4ODE2NzE4NCwiZXhwIjoxNzg4MTY4MDg0fQ.VBtftMFnqo-az65lqXjOe0SAbbkzCQR4aUVJUCazvh0
 
 ### Получить всех пользователей
 GET {{baseUrl}}/api/admin/users
@@ -100,7 +100,7 @@ Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
 Content-Disposition: form-data; name="file"; filename="materials-prices.json"
 Content-Type: application/json
 
-< ./materials-prices.json
+< ../materials-prices.json
 ------WebKitFormBoundary--
 
 ### Экспорт team-info (активные сотрудники) — скачает файл

@@ -374,9 +374,15 @@ exports.uploadMaterials = async (req, res, next) => {
  */
 exports.getMaterials = async (req, res, next) => {
   try {
-    const data = MaterialsService.getMaterials();
+    const data = {
+      materials: MaterialsService.getMaterials(),
+      specialOffers: MaterialsService.getSpecialOffers(),
+      minEarnings: MaterialsService.getMinEarnings(),
+      colors: MaterialsService.getColors(),
+    };
     res.json(data);
   } catch (err) {
+    console.error('[getMaterials] Ошибка:', err);
     next(err);
   }
 };
