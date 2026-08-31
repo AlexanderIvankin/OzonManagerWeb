@@ -1,9 +1,10 @@
-// src/services/SyncService.js
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const path = require('path');
 const { User, Warehouse } = require('../models');
 const { getDB } = require('../config/database');
 const bcrypt = require('bcrypt');
+const OzonService = require('./OzonService');
 
 /**
  * Сервис синхронизации пользователей из Excel.
@@ -155,6 +156,110 @@ class SyncService {
 
     console.log(`[SyncService] Синхронизация завершена: обновлено ${updated}, создано ${created}, пропущено ${skipped}`);
     return { updated, created, skipped };
+  }
+
+  /**
+    * Экспортирует пользователей и их склады в Excel (обратная синхронизация)
+    * @param {number} adminUserId - ID администратора (для лога)
+    * @param {boolean} includeFired - включать уволенных
+    * @param {string} outputFileName - имя файла
+    * @returns {Promise<string>} - путь к созданному файлу
+    */
+  static async exportTeamInfoXlsx(adminUserId, includeFired = false, outputFileName = 'team-info.xlsx') {
+    const db = getDB();
+
+    // 1. Синхронизируем склады перед экспортом
+    try {
+      const warehousesFromOzon = await OzonService.fetchWarehouses();
+      if (warehousesFromOzon.length) {
+        await Warehouse.syncAll(warehousesFromOzon);
+        console.log('[SyncService] Склады синхронизированы перед экспортом');
+      }
+    } catch (err) {
+      console.warn('[SyncService] Не удалось синхронизировать склады перед экспортом:', err.message);
+    }
+
+    // 2. Получаем пользователей
+    const users = await User.getAll({ includeFired, includeAll: true });
+    const warehouses = await Warehouse.getAll();
+
+    // 3. Получаем связи пользователь-склад
+    const userWarehouses = await db.all('SELECT user_id, warehouse_id FROM user_warehouses');
+    const map = new Map();
+    for (const uw of userWarehouses) {
+      if (!map.has(uw.user_id)) map.set(uw.user_id, new Set());
+      map.get(uw.user_id).add(uw.warehouse_id);
+    }
+
+    // 4. Создаём Excel
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Сотрудники');
+
+    // Заголовки: Сотрудник, E-mail, Telegram ID, Телефон, Принтеров, Коэф., разделитель, склады
+    const header1 = ['Сотрудник', 'E-mail', 'Telegram ID', 'Телефон', 'Число принтеров', 'Коэффициент Заработка', ''];
+    const header2 = ['', '', '', '', '', '', ''];
+    for (const wh of warehouses) {
+      header1.push('');
+      header2.push(`${wh.name} (ID: ${wh.warehouse_id})`);
+    }
+
+    const row1 = worksheet.addRow(header1);
+    const row2 = worksheet.addRow(header2);
+
+    // Слияние для "Склады"
+    if (warehouses.length) {
+      const startCol = 8;
+      const endCol = 7 + warehouses.length;
+      const startLetter = String.fromCharCode(64 + startCol);
+      const endLetter = String.fromCharCode(64 + endCol);
+      worksheet.mergeCells(`${startLetter}1:${endLetter}1`);
+      row1.getCell(startCol).value = 'Склады';
+    }
+
+    // Стили
+    [row1, row2].forEach(row => {
+      row.eachCell(cell => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font = { bold: true };
+      });
+    });
+
+    // Ширина
+    const widths = [45, 45, 30, 30, 30, 30, 15];
+    for (let i = 0; i < widths.length; i++) {
+      worksheet.getColumn(i + 1).width = widths[i];
+    }
+    for (let i = 0; i < warehouses.length; i++) {
+      worksheet.getColumn(8 + i).width = 75;
+    }
+
+    // Данные
+    for (const user of users) {
+      const whSet = map.get(user.id) || new Set();
+      const rowData = [
+        user.name,
+        user.email || '',
+        user.tg_user_id || '',
+        user.phone || '',
+        user.capacity,
+        user.earnings_factor || 1.0,
+        '',
+      ];
+      for (const wh of warehouses) {
+        rowData.push(whSet.has(wh.warehouse_id) ? '+' : '');
+      }
+      const dataRow = worksheet.addRow(rowData);
+      dataRow.eachCell((cell, colNum) => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        if (colNum === 3 || colNum === 4) cell.numFmt = '@'; // TG и телефон текстом
+        if (colNum === 6) cell.numFmt = '0.00';
+      });
+    }
+
+    const outputPath = path.join(__dirname, '../../', outputFileName);
+    await workbook.xlsx.writeFile(outputPath);
+    console.log(`[SyncService] Экспорт в ${outputFileName} выполнен`);
+    return outputPath;
   }
 }
 

@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { Earnings, User } = require('../models');
 const ProductStat = require('../models/ProductStat');
+const MaterialsService = require('./MaterialsService');
 const { formatDateDDMMYYYY } = require('../utils');
 
 /**
@@ -10,29 +11,26 @@ const { formatDateDDMMYYYY } = require('../utils');
  */
 class EarningsService {
   /**
-   * Рассчитывает заработок для заказа по товарам и статистике.
-   * Использует материалы и вес из product_stats, а также коэффициент сотрудника.
-   * @param {Object} orderDetails - детали заказа от Ozon
-   * @param {Object} user - объект пользователя (с полем earnings_factor)
-   * @param {Object} materialsData - { materials: { materialName: pricePerGram }, minEarnings: number }
-   * @returns {Promise<{ total: number, details: Array, allHaveStats: boolean }>}
+   * Рассчитывает заработок для заказа
+   * Берёт данные из MaterialsService
    */
-  static async calculateOrderEarnings(orderDetails, user, materialsData) {
+  static async calculateOrderEarnings(orderDetails, user) {
     const { products } = orderDetails;
     const earningsDetails = [];
     let totalEarnings = 0;
     let allHaveStats = true;
     const factor = user.earnings_factor || 1.0;
-    const MIN_EARNINGS = materialsData.minEarnings || 250;
-    const specialOffers = materialsData.specialOffers || {};
+    const materials = MaterialsService.getMaterials();
+    const MIN_EARNINGS = MaterialsService.getMinEarnings();
 
     for (const product of products) {
       const offerId = product.offer_id;
       if (!offerId) continue;
 
-      // Проверяем специальное предложение
-      if (specialOffers[offerId] !== undefined) {
-        const earningsPerUnit = specialOffers[offerId] * factor;
+      // Специальное предложение
+      const specialPrice = MaterialsService.getSpecialOffer(offerId);
+      if (specialPrice !== null) {
+        const earningsPerUnit = specialPrice * factor;
         const quantity = product.quantity || 1;
         totalEarnings += earningsPerUnit * quantity;
         earningsDetails.push({
@@ -48,7 +46,7 @@ class EarningsService {
         continue;
       }
 
-      // Обычный расчёт по статистике
+      // Обычный расчёт
       const stats = await ProductStat.get(offerId);
       if (!stats) {
         allHaveStats = false;
@@ -56,7 +54,7 @@ class EarningsService {
         continue;
       }
 
-      const materialPrice = materialsData.materials[stats.material] || 0;
+      const materialPrice = materials[stats.material] || 0;
       const weight = stats.weight_grams || 0;
       let earningsPerUnit = materialPrice * weight;
       if (earningsPerUnit < MIN_EARNINGS) earningsPerUnit = MIN_EARNINGS;

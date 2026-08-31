@@ -329,7 +329,7 @@ class OrderService {
       let earningsData = null;
       if (orderDetails && orderDetails.products) {
         const materialsData = { materials: MATERIALS_PRICES, minEarnings: MIN_EARNINGS, specialOffers };
-        earningsData = await EarningsService.calculateOrderEarnings(orderDetails, user, materialsData);
+        earningsData = await EarningsService.calculateOrderEarnings(orderDetails, user);
         if (!earningsData.allHaveStats) {
           console.warn(`[FINISH] Не все товары имеют статистику для заказа ${orderId}`);
         }

@@ -60,6 +60,11 @@ class User {
     return user || null;
   }
 
+  static async findByTgId(tgUserId) {
+    const db = getDB();
+    return db.get('SELECT * FROM users WHERE tg_user_id = ?', tgUserId);
+  }
+
   static async update(id, fields) {
     const db = getDB();
     const allowed = ['name', 'phone', 'capacity', 'earnings_factor', 'role', 'is_fired', 'taking_orders'];

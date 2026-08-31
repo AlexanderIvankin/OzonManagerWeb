@@ -20,6 +20,11 @@ router.delete('/users/:id', adminController.fireUser);
 
 // --- Синхронизация из Excel ---
 router.post('/sync/employees', upload.single('file'), adminController.syncEmployees);
+// --- Экспорт team-info ---
+router.get('/export/team-info', adminController.exportTeamInfo);
+
+// --- Конфигурация materials-prices.json ---
+router.get('/materials', adminController.getMaterials);
 
 // --- Склады ---
 router.get('/warehouses', adminController.getWarehouses);

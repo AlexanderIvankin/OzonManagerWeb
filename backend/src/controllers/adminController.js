@@ -5,6 +5,7 @@ const SyncService = require('../services/SyncService');
 const OzonService = require('../services/OzonService');
 const OrderService = require('../services/OrderService');
 const EarningsService = require('../services/EarningsService');
+const MaterialsService = require('../services/MaterialsService');
 const { getLocalTimestamp } = require('../utils');
 
 /**
@@ -97,6 +98,20 @@ exports.syncEmployees = async (req, res, next) => {
     const result = await SyncService.syncFromExcel(req.file.path, req.user.id);
     res.json({ message: 'Sync completed', ...result });
   } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Экспорт базы данных сотрудников и складов в Excel
+ */
+exports.exportTeamInfo = async (req, res, next) => {
+  try {
+    const includeFired = req.query.includeFired === 'true';
+    const filePath = await SyncService.exportTeamInfoXlsx(req.user.id, includeFired);
+    res.download(filePath);
+  } catch (err) {
+    console.error('[exportTeamInfo] Ошибка:', err);
     next(err);
   }
 };
@@ -235,7 +250,7 @@ exports.getUserStats = async (req, res, next) => {
 exports.exportMonthlyEarnings = async (req, res, next) => {
   try {
     const { month } = req.query;
-    const filePath = await OrderService.exportMonthlyEarnings(month);
+    const filePath = await EarningsService.exportMonthlyEarnings(month);
     res.download(filePath);
   } catch (err) {
     console.error('[exportMonthlyEarnings] Ошибка:', err);
@@ -342,15 +357,26 @@ exports.uploadMaterials = async (req, res, next) => {
     } catch (parseErr) {
       return res.status(400).json({ error: 'Invalid JSON file' });
     }
-    if (!data.materials || typeof data.materials !== 'object') {
-      throw new Error('Invalid materials format');
-    }
-    const targetPath = path.join(__dirname, '../../materials-prices.json');
-    fs.copyFileSync(filePath, targetPath);
-    fs.unlinkSync(filePath);
+    // Сохраняем через сервис
+    MaterialsService.updateMaterials(data, filePath);
     res.json({ message: 'Materials updated successfully' });
   } catch (err) {
     console.error('[uploadMaterials] Ошибка:', err);
+    if (err.message && err.message.includes('Invalid')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * Скачать актуальный файл материалов (materials-prices.json)
+ */
+exports.getMaterials = async (req, res, next) => {
+  try {
+    const data = MaterialsService.getMaterials();
+    res.json(data);
+  } catch (err) {
     next(err);
   }
 };

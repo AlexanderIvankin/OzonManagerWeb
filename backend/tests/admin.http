@@ -87,7 +87,11 @@ Authorization: Bearer {{adminToken}}
 POST {{baseUrl}}/api/admin/orders/reload-queue
 Authorization: Bearer {{adminToken}}
 
-### Загрузить файл материалов
+### Получить текущие настройки материалов
+GET {{baseUrl}}/api/admin/materials
+Authorization: Bearer {{adminToken}}
+
+### Загрузить файл материалов (materials-prices.json)
 POST {{baseUrl}}/api/admin/materials/upload
 Authorization: Bearer {{adminToken}}
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
@@ -98,3 +102,11 @@ Content-Type: application/json
 
 < ./materials-prices.json
 ------WebKitFormBoundary--
+
+### Экспорт team-info (активные сотрудники) — скачает файл
+GET {{baseUrl}}/api/admin/export/team-info
+Authorization: Bearer {{adminToken}}
+
+### Экспорт team-info с уволенными — скачает файл
+GET {{baseUrl}}/api/admin/export/team-info?includeFired=true
+Authorization: Bearer {{adminToken}}
