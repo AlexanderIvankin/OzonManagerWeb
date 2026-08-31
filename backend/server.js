@@ -18,11 +18,27 @@ const PORT = process.env.PORT || 5000;
 
 // Security middleware
 //app.use(helmet());
-app.use(cors({
-//  origin: '*', // временно разрешаем все источники
- origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
-  credentials: true
-}));
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Разрешаем запросы без origin (например, из Postman) или с localhost
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      process.env.CLIENT_ORIGIN, // если указан в .env
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`[CORS] Блокируем origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
 app.use(express.static('public'));
 app.use(express.json());
 

@@ -16,25 +16,27 @@ const initialState: AuthState = {
   error: null,
 };
 
-export const login = createAsyncThunk(
+export const login = createAsyncThunk<
+  { user: User; accessToken: string; refreshToken: string },
+  { usernameOrEmail: string; password: string }
+>(
   'auth/login',
-  async ({ usernameOrEmail, password }: { usernameOrEmail: string; password: string }) => {
-    const response = await api.post('/auth/login', { usernameOrEmail, password });
-    return response.data; // { user, accessToken, refreshToken }
-  }
-);
-
-export const register = createAsyncThunk(
-  'auth/register',
-  async (userData: any) => {
-    const response = await api.post('/auth/register', userData);
+  async (credentials) => {
+    const response = await api.post('/auth/login', credentials);
     return response.data;
   }
 );
 
-export const logout = createAsyncThunk('auth/logout', async (_, { getState }) => {
-  const state = getState() as any;
-  const refreshToken = state.auth.refreshToken;
+export const register = createAsyncThunk<User, any>(
+  'auth/register',
+  async (userData) => {
+    const response = await api.post('/auth/register', userData);
+    return response.data.user;
+  }
+);
+
+export const logout = createAsyncThunk('auth/logout', async () => {
+  const refreshToken = localStorage.getItem('refreshToken');
   if (refreshToken) {
     await api.post('/auth/logout', { refreshToken });
   }
@@ -61,9 +63,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.error.message || 'Login failed';
       })
-      .addCase(register.fulfilled, (state, action) => {
-        // После регистрации пользователь ещё не авторизован – просто показываем сообщение
-      })
+      .addCase(register.fulfilled, (state) => {})
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.accessToken = null;
