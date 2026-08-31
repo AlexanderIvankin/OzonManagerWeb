@@ -2,6 +2,7 @@
 const { getLocalTime, getLocalDate } = require('./utils');
 const OrderService = require('./services/OrderService');
 const OzonService = require('./services/OzonService');
+const EarningsService = require('./services/EarningsService');
 const { createDbBackup } = require('./config/database'); // если добавим функцию бэкапа
 
 let checkInterval = null;
@@ -138,7 +139,7 @@ function startMonthlyExportChecker() {
         const prevMonth = new Date(localDate.getFullYear(), localDate.getMonth() - 1, 1);
         const monthStr = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
         console.log(`[SCHEDULER] Запуск автоматического экспорта за ${monthStr}`);
-        await OrderService.exportMonthlyEarnings(monthStr);
+        await EarningsService.exportMonthlyEarnings(monthStr);
         // Можно уведомить админа
       }
     } catch (err) {

@@ -1,7 +1,7 @@
 ### Переменные
 @baseUrl = http://localhost:5000
 # Ввести админский access токен (после авторизации)
-@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImlhdCI6MTc4ODE2NzE4NCwiZXhwIjoxNzg4MTY4MDg0fQ.VBtftMFnqo-az65lqXjOe0SAbbkzCQR4aUVJUCazvh0
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjMsImlhdCI6MTc4ODE4NTI3MywiZXhwIjoxNzg4MTg2MTczfQ.rid7spsMof9Dxb2QSw_G2wwE0Fq4OvRbEqMeh8Rj9IQ
 
 ### Получить всех пользователей
 GET {{baseUrl}}/api/admin/users

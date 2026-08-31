@@ -19,8 +19,8 @@ const PORT = process.env.PORT || 5000;
 // Security middleware
 //app.use(helmet());
 app.use(cors({
-  origin: '*', // временно разрешаем все источники
-//  origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
+//  origin: '*', // временно разрешаем все источники
+ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
   credentials: true
 }));
 app.use(express.static('public'));
@@ -59,24 +59,24 @@ initSocket(server);
     console.log('✅ Подключение к БД установлено');
 
     // Запускаем планировщик
-    // const SYNC_ORDERS_TIME = parseInt(process.env.SYNC_ORDERS_TIME) || 60;
-    // scheduler.startOrderChecker(SYNC_ORDERS_TIME, OrderService.checkNewOrders);
-    // scheduler.startCooldownCleaner();
-    // scheduler.startDailyBackupChecker();
-    // scheduler.startDailyPromotionCleaner();
-    // scheduler.startMonthlyExportChecker();
+    const SYNC_ORDERS_TIME = parseInt(process.env.SYNC_ORDERS_TIME) || 60;
+    scheduler.startOrderChecker(SYNC_ORDERS_TIME, OrderService.checkNewOrders);
+    scheduler.startCooldownCleaner();
+    scheduler.startDailyBackupChecker();
+    scheduler.startDailyPromotionCleaner();
+    scheduler.startMonthlyExportChecker();
 
-    // console.log('✅ Планировщик запущен');
+    console.log('✅ Планировщик запущен');
 
-    // // Первоначальная загрузка очереди
-    // setTimeout(async () => {
-    //   try {
-    //     await OrderService.checkNewOrders();
-    //     console.log('✅ Первоначальная загрузка очереди заказов выполнена');
-    //   } catch (err) {
-    //     console.error('❌ Ошибка первоначальной загрузки очереди:', err);
-    //   }
-    // }, 5000);
+    // Первоначальная загрузка очереди
+    setTimeout(async () => {
+      try {
+        await OrderService.checkNewOrders();
+        console.log('✅ Первоначальная загрузка очереди заказов выполнена');
+      } catch (err) {
+        console.error('❌ Ошибка первоначальной загрузки очереди:', err);
+      }
+    }, 5000);
 
     // Запускаем сервер
     server.listen(PORT, () => {
