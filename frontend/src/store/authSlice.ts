@@ -1,6 +1,6 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../api';
-import { User } from '../types';
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import api from "../api";
+import { User } from "../types";
 
 interface AuthState {
   user: User | null;
@@ -11,7 +11,7 @@ interface AuthState {
 
 const initialState: AuthState = {
   user: null,
-  accessToken: localStorage.getItem('accessToken'),
+  accessToken: localStorage.getItem("accessToken"),
   isLoading: false,
   error: null,
 };
@@ -19,33 +19,34 @@ const initialState: AuthState = {
 export const login = createAsyncThunk<
   { user: User; accessToken: string; refreshToken: string },
   { usernameOrEmail: string; password: string }
->(
-  'auth/login',
-  async (credentials) => {
-    const response = await api.post('/auth/login', credentials);
-    return response.data;
-  }
-);
+>("auth/login", async (credentials) => {
+  const response = await api.post("/auth/login", credentials);
+  return response.data;
+});
 
 export const register = createAsyncThunk<User, any>(
-  'auth/register',
+  "auth/register",
   async (userData) => {
-    const response = await api.post('/auth/register', userData);
+    const response = await api.post("/auth/register", userData);
     return response.data.user;
-  }
+  },
 );
 
-export const logout = createAsyncThunk('auth/logout', async () => {
-  const refreshToken = localStorage.getItem('refreshToken');
+export const logout = createAsyncThunk("auth/logout", async () => {
+  const refreshToken = localStorage.getItem("refreshToken");
   if (refreshToken) {
-    await api.post('/auth/logout', { refreshToken });
+    await api.post("/auth/logout", { refreshToken });
   }
 });
 
 const authSlice = createSlice({
-  name: 'auth',
+  name: "auth",
   initialState,
-  reducers: {},
+  reducers: {
+    updateUser(state, action) {
+      state.user = action.payload;
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(login.pending, (state) => {
@@ -56,21 +57,22 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.user = action.payload.user;
         state.accessToken = action.payload.accessToken;
-        localStorage.setItem('accessToken', action.payload.accessToken);
-        localStorage.setItem('refreshToken', action.payload.refreshToken);
+        localStorage.setItem("accessToken", action.payload.accessToken);
+        localStorage.setItem("refreshToken", action.payload.refreshToken);
       })
       .addCase(login.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.error.message || 'Login failed';
+        state.error = action.error.message || "Login failed";
       })
-      .addCase(register.fulfilled, (state) => {})
+      .addCase(register.fulfilled, () => {})
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.accessToken = null;
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
       });
   },
 });
 
+export const { updateUser } = authSlice.actions;
 export default authSlice.reducer;

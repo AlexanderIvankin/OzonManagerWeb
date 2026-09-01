@@ -1,21 +1,25 @@
-import { useSelector } from 'react-redux';
-import { RootState } from '../../store';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Users } from "./Users";
+import { Warehouses } from "./Warehouses";
+import { OrdersManagement } from "./OrdersManagement";
+import { Materials } from "./Materials";
+import { EarningsManagement } from "./EarningsManagement";
+import { ExportTeamInfo } from "./ExportTeamInfo";
+import { AdminDashboard } from "./AdminDashboard";
 
 export const AdminPanel = () => {
-  const user = useSelector((state: RootState) => state.auth.user);
-
   return (
-    <div className="container mx-auto py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle>Панель администратора</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p>Добро пожаловать, {user?.name} (роль: {user?.role})</p>
-          <p className="text-sm text-muted-foreground mt-4">Здесь будет админка: управление пользователями, складами, заказами и т.д.</p>
-        </CardContent>
-      </Card>
+    <div className="container mx-auto py-6">
+      <Routes>
+        <Route path="/" element={<AdminDashboard />} />
+        <Route path="/users" element={<Users />} />
+        <Route path="/warehouses" element={<Warehouses />} />
+        <Route path="/orders" element={<OrdersManagement />} />
+        <Route path="/materials" element={<Materials />} />
+        <Route path="/earnings" element={<EarningsManagement />} />
+        <Route path="/export" element={<ExportTeamInfo />} />
+        <Route path="*" element={<Navigate to="/admin" replace />} />
+      </Routes>
     </div>
   );
 };

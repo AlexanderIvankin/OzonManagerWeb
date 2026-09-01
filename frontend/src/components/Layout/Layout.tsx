@@ -4,6 +4,7 @@ import { RootState } from "../../store";
 import { logout } from "../../store/authSlice";
 import { AppDispatch } from "../../store";
 import { Button } from "@/components/ui/button";
+import { Toaster } from "sonner";
 
 export const Layout = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -48,12 +49,38 @@ export const Layout = () => {
             </Link>
           )}
           {user?.role === "admin" && (
-            <Link
-              to="/admin/users"
-              className="block px-3 py-2 rounded-md hover:bg-accent"
-            >
-              👥 Пользователи
-            </Link>
+            <>
+              <Link
+                to="/admin/users"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                👥 Пользователи
+              </Link>
+              <Link
+                to="/admin/warehouses"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                🏭 Склады
+              </Link>
+              <Link
+                to="/admin/orders"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                📦 Очередь заказов
+              </Link>
+              <Link
+                to="/admin/materials"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                📁 Материалы
+              </Link>
+              <Link
+                to="/admin/earnings"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                💰 Заработок
+              </Link>
+            </>
           )}
         </nav>
         <div className="border-t pt-4">
@@ -67,6 +94,9 @@ export const Layout = () => {
       <main className="flex-1 overflow-auto p-6">
         <Outlet />
       </main>
+
+      {/* Toaster для уведомлений */}
+      <Toaster position="top-right" />
     </div>
   );
 };
