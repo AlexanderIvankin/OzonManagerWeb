@@ -41,6 +41,8 @@ router.get('/users/:id/stats', adminController.getUserStats);
 
 // --- Заработок ---
 router.get('/earnings/monthly', adminController.exportMonthlyEarnings);
+router.get('/earnings/active', adminController.getActiveEarningsAll);
+router.get('/earnings/active/export', adminController.exportActiveEarnings);
 router.post('/earnings/adjust', adminController.addEarningsAdjustment);
 router.post('/earnings/settle/:id', adminController.settleEarnings);
 router.post('/earnings/reset', authorize('admin'), adminController.resetAllEarnings); // только админ

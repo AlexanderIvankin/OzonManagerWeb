@@ -1,6 +1,7 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
+const { notifyUser } = require('../socket');
 const { Earnings, User } = require('../models');
 const ProductStat = require('../models/ProductStat');
 const MaterialsService = require('./MaterialsService');
@@ -170,10 +171,67 @@ class EarningsService {
 
   /**
    * Экспорт активного заработка (с корректировками) в Excel.
+   * @returns {Promise<string>} - путь к созданному файлу
    */
   static async exportActiveEarnings() {
-    // Аналогично, но используем earnings_active и adjustments_active
-    // Реализуем позже при необходимости
+    // Получаем всех пользователей
+    const users = await User.getAll({ includeAll: true });
+    const rows = [];
+
+    for (const user of users) {
+      // Активные заработки (без учёта периода, т.к. активный заработок – это всё, что не обнулено)
+      const activeEarnings = await Earnings.getActive(user.id, 0, Date.now());
+      const totalBase = activeEarnings.reduce((sum, e) => sum + e.amount, 0);
+      const orderCount = activeEarnings.length;
+      const adjustments = await Earnings.getActiveAdjustmentsSum(user.id, 0, Date.now());
+      const totalWithAdjustments = totalBase + adjustments;
+
+      if (totalWithAdjustments !== 0 || orderCount > 0) {
+        rows.push({
+          'ID сотрудника': user.id,
+          'Сотрудник': user.name,
+          'Количество заказов': orderCount,
+          'Заработок (базовый)': totalBase.toFixed(2),
+          'Корректировки': adjustments.toFixed(2),
+          'Заработок (итоговый)': totalWithAdjustments.toFixed(2),
+        });
+      }
+    }
+
+    if (!rows.length) {
+      throw new Error('Нет активных заработков.');
+    }
+
+    // Генерация Excel
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Активный заработок');
+    const headers = ['ID сотрудника', 'Сотрудник', 'Количество заказов', 'Заработок (базовый)', 'Корректировки', 'Заработок (итоговый)'];
+    const headerRow = worksheet.addRow(headers);
+    headerRow.eachCell(cell => {
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font = { bold: true };
+    });
+    for (const rowData of rows) {
+      const row = worksheet.addRow(Object.values(rowData));
+      row.eachCell(cell => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+    }
+    const columnWidths = [15, 40, 25, 20, 20, 25];
+    worksheet.columns.forEach((col, index) => {
+      col.width = columnWidths[index] || 20;
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `active_earnings_${new Date().toISOString().slice(0, 7)}.xlsx`;
+    const outputDir = path.join(__dirname, '../../outputs');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    const outputPath = path.join(outputDir, fileName);
+    fs.writeFileSync(outputPath, buffer);
+    console.log(`[EarningsService] Экспорт активного заработка сохранён: ${outputPath}`);
+    return outputPath;
   }
 
   /**
@@ -182,7 +240,16 @@ class EarningsService {
   static async addAdjustment(userId, amount, reason = '') {
     await Earnings.addAdjustment(userId, amount, reason);
     await Earnings.addActiveAdjustment(userId, amount, reason);
-    // TODO: отправить уведомление пользователю через WebSocket
+    // Отправляем уведомление через WebSocket
+    try {
+      notifyUser(userId, 'earnings_adjusted', {
+        amount,
+        reason,
+        message: `Ваш заработок скорректирован на ${amount > 0 ? '+' : ''}${amount} руб.${reason ? ' Причина: ' + reason : ''}`
+      });
+    } catch (err) {
+      console.warn('[EarningsService] Не удалось отправить уведомление пользователю', err);
+    }
   }
 
   /**

@@ -19,7 +19,7 @@ export const ProtectedRoute = ({
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/profile" replace />;
   }
 
   return children ? children : <Outlet />;

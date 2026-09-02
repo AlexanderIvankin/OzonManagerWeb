@@ -50,7 +50,7 @@ export const Login = () => {
       } else if (result.user.role === "employee") {
         navigate("/orders");
       } else {
-        navigate("/dashboard");
+        navigate("/profile");
       }
     } catch (err: any) {
       setError(err.message || "Ошибка входа");
@@ -89,6 +89,7 @@ export const Login = () => {
                 id="password"
                 type="password"
                 placeholder="Введите пароль"
+                className="mb-[20px]"
                 {...register("password")}
               />
               {errors.password && (

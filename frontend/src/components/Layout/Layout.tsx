@@ -27,10 +27,13 @@ export const Layout = () => {
         </div>
         <nav className="flex-1 space-y-1">
           <Link
-            to="/dashboard"
+            to="/profile"
             className="block px-3 py-2 rounded-md hover:bg-accent"
           >
-            📊 Дашборд
+            <span className="inline-block align-middle -translate-y-[3px]">
+              🪪
+            </span>{" "}
+            Профиль
           </Link>
           {["employee", "moderator", "admin"].includes(user?.role || "") && (
             <Link
@@ -54,7 +57,10 @@ export const Layout = () => {
                 to="/admin/users"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >
-                👥 Пользователи
+                <span className="inline-block align-middle -translate-y-[2px]">
+                  👥
+                </span>{" "}
+                Пользователи
               </Link>
               <Link
                 to="/admin/warehouses"

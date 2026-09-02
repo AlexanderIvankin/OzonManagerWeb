@@ -66,10 +66,10 @@ export const Warehouses = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Название</TableHead>
-                <TableHead>Адрес</TableHead>
-                <TableHead>Тип</TableHead>
+                <TableHead className="text-center">ID</TableHead>
+                <TableHead className="text-center">Название</TableHead>
+                <TableHead className="text-center">Адрес</TableHead>
+                <TableHead className="text-center">Тип</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -88,12 +88,12 @@ export const Warehouses = () => {
               ) : (
                 warehouses.map((wh) => (
                   <TableRow key={wh.warehouse_id}>
-                    <TableCell className="font-mono text-sm">
+                    <TableCell className="text-center font-mono text-sm">
                       {wh.warehouse_id}
                     </TableCell>
-                    <TableCell>{wh.name}</TableCell>
-                    <TableCell>{wh.address || "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">{wh.name}</TableCell>
+                    <TableCell className="text-center">{wh.address || "—"}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant={wh.is_rfbs ? "default" : "secondary"}>
                         {wh.is_rfbs ? "realFBS" : "FBS"}
                       </Badge>

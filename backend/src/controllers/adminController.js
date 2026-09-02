@@ -250,6 +250,10 @@ exports.getUserStats = async (req, res, next) => {
 exports.exportMonthlyEarnings = async (req, res, next) => {
   try {
     const { month } = req.query;
+    // Валидация формата month
+    if (month && !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Неверный формат месяца. Используйте YYYY-MM' });
+    }
     const filePath = await EarningsService.exportMonthlyEarnings(month);
     res.download(filePath);
   } catch (err) {
@@ -257,6 +261,45 @@ exports.exportMonthlyEarnings = async (req, res, next) => {
     if (err.message && err.message.includes('Нет данных')) {
       return res.status(404).json({ error: err.message });
     }
+    next(err);
+  }
+};
+
+exports.exportActiveEarnings = async (req, res, next) => {
+  try {
+    const filePath = await EarningsService.exportActiveEarnings();
+    res.download(filePath);
+  } catch (err) {
+    console.error('[exportActiveEarnings] Ошибка:', err);
+    if (err.message && err.message.includes('Нет активных заработков')) {
+      return res.status(404).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * Получить активный заработок всех сотрудников
+ */
+exports.getActiveEarningsAll = async (req, res, next) => {
+  try {
+    const users = await User.getAll({ includeAll: true, includeFired: false });
+    const result = [];
+    for (const user of users) {
+      // Только для сотрудников (role не 'user')
+      if (user.role === 'user') continue;
+      const base = await Earnings.getActiveSum(user.id, 0, Date.now());
+      const adjustments = await Earnings.getActiveAdjustmentsSum(user.id, 0, Date.now());
+      const total = base + adjustments;
+      result.push({
+        ...user,
+        activeEarningsBase: base,
+        activeEarningsAdjustments: adjustments,
+        activeEarningsTotal: total,
+      });
+    }
+    res.json(result);
+  } catch (err) {
     next(err);
   }
 };
@@ -357,8 +400,12 @@ exports.uploadMaterials = async (req, res, next) => {
     } catch (parseErr) {
       return res.status(400).json({ error: 'Invalid JSON file' });
     }
-    // Сохраняем через сервис
-    MaterialsService.updateMaterials(data, filePath);
+    if (!data.materials || typeof data.materials !== 'object') {
+      throw new Error('Invalid materials format');
+    }
+    // Сохраняем в постоянный файл
+    MaterialsService.updateMaterials(data);
+    fs.unlinkSync(filePath);
     res.json({ message: 'Materials updated successfully' });
   } catch (err) {
     console.error('[uploadMaterials] Ошибка:', err);

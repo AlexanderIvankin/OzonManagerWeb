@@ -101,7 +101,7 @@ export const Register = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="capacity">Количество принтеров (опционально)</Label>
-              <Input id="capacity" type="number" placeholder="1" {...registerField('capacity')} />
+              <Input className="mb-[20px]" id="capacity" type="number" placeholder="1" {...registerField('capacity')} />
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
           </CardContent>

@@ -39,6 +39,17 @@ export const logout = createAsyncThunk("auth/logout", async () => {
   }
 });
 
+export const restoreSession = createAsyncThunk(
+  "auth/restoreSession",
+  async () => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) throw new Error("No token");
+    // Запрашиваем профиль пользователя
+    const response = await api.get("/auth/me");
+    return response.data; // предполагаем, что возвращает объект пользователя
+  },
+);
+
 const authSlice = createSlice({
   name: "auth",
   initialState,
@@ -70,6 +81,17 @@ const authSlice = createSlice({
         state.accessToken = null;
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
+      })
+      .addCase(restoreSession.fulfilled, (state, action) => {
+        state.user = action.payload;
+        state.isLoading = false;
+      })
+      .addCase(restoreSession.rejected, (state) => {
+        state.user = null;
+        state.accessToken = null;
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        state.isLoading = false;
       });
   },
 });

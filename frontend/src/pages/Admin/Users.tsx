@@ -100,15 +100,15 @@ export const Users = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Имя</TableHead>
-                <TableHead>Логин</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Роль</TableHead>
-                <TableHead>Принтеры</TableHead>
-                <TableHead>Коэф.</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead className="text-right">Действия</TableHead>
+                <TableHead className="text-center">ID</TableHead>
+                <TableHead className="text-center">Имя</TableHead>
+                <TableHead className="text-center">Логин</TableHead>
+                <TableHead className="text-center">Email</TableHead>
+                <TableHead className="text-center">Роль</TableHead>
+                <TableHead className="text-center">Принтеры</TableHead>
+                <TableHead className="text-center">Коэф.</TableHead>
+                <TableHead className="text-center">Статус</TableHead>
+                <TableHead className="text-center">Действия</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -130,16 +130,27 @@ export const Users = () => {
                     key={user.id}
                     className={user.is_fired ? "opacity-50" : ""}
                   >
-                    <TableCell>{user.id}</TableCell>
-                    <TableCell>{user.name}</TableCell>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{user.role}</Badge>
+                    <TableCell className="text-center">{user.id}</TableCell>
+                    <TableCell className="text-center">{user.name}</TableCell>
+                    <TableCell className="text-center">
+                      {user.username}
                     </TableCell>
-                    <TableCell>{user.capacity}</TableCell>
-                    <TableCell>{user.earnings_factor}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">{user.email}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant="outline"
+                        className={`font-normal ${user.role === "admin" || user.role === "moderator" ? "font-bold" : ""}`}
+                      >
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {user.capacity}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {user.earnings_factor}
+                    </TableCell>
+                    <TableCell className="text-center">
                       {user.is_fired ? (
                         <Badge variant="destructive">Уволен</Badge>
                       ) : user.taking_orders ? (
@@ -148,8 +159,13 @@ export const Users = () => {
                         <Badge variant="secondary">Не принимает</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Dialog>
+                    <TableCell className="text-center space-x-1">
+                      <Dialog
+                        open={editingUser?.id === user.id}
+                        onOpenChange={(open) => {
+                          if (!open) setEditingUser(null);
+                        }}
+                      >
                         <DialogTrigger
                           render={
                             <Button
@@ -239,7 +255,18 @@ export const Users = () => {
                                     }
                                   >
                                     <SelectTrigger>
-                                      <SelectValue />
+                                      <SelectValue>
+                                        {(val) =>
+                                          (
+                                            ({
+                                              user: "Пользователь",
+                                              employee: "Сотрудник",
+                                              moderator: "Модератор",
+                                              admin: "Администратор",
+                                            }) as Record<string, string>
+                                          )[String(val)] ?? String(val)
+                                        }
+                                      </SelectValue>
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="user">
@@ -273,7 +300,13 @@ export const Users = () => {
                                     }
                                   >
                                     <SelectTrigger>
-                                      <SelectValue />
+                                      <SelectValue>
+                                        {(val) =>
+                                          String(val) === "true"
+                                            ? "Принимает"
+                                            : "Не принимает"
+                                        }
+                                      </SelectValue>
                                     </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="true">

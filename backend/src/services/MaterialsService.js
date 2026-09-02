@@ -66,9 +66,9 @@ class MaterialsService {
   }
 
   /**
-   * Обновляет настройки материалов и сохраняет в файл
+   * Обновляет настройки материалов и сохраняет в файл (всегда в постоянный путь)
    */
-  static updateMaterials(data, filePath = null) {
+  static updateMaterials(data, customFilePath = null) {
     if (!data.materials || typeof data.materials !== 'object') {
       throw new Error('Invalid materials format');
     }
@@ -77,9 +77,10 @@ class MaterialsService {
     this.#minEarnings = data.minEarnings || 250;
     this.#colors = data.colors || [];
 
-    const targetPath = filePath || this.#filePath;
+    // Всегда сохраняем в основной путь, если не передан кастомный (используется для тестов)
+    const targetPath = customFilePath || this.#filePath;
     fs.writeFileSync(targetPath, JSON.stringify(data, null, 2));
-    console.log('[MaterialsService] Настройки материалов сохранены');
+    console.log('[MaterialsService] Настройки материалов сохранены в', targetPath);
   }
 
   /**

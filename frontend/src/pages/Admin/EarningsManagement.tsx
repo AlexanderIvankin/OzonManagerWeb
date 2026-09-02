@@ -1,64 +1,99 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { adminApi } from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+interface EmployeeEarnings {
+  id: number;
+  name: string;
+  username: string;
+  email: string;
+  activeEarningsBase: number;
+  activeEarningsAdjustments: number;
+  activeEarningsTotal: number;
+  role: string;
+  is_fired: boolean;
+}
 
 export const EarningsManagement = () => {
-  const [userId, setUserId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [reason, setReason] = useState("");
-  const [month, setMonth] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<EmployeeEarnings[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState<EmployeeEarnings | null>(
+    null,
+  );
+  const [adjustAmount, setAdjustAmount] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [month, setMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
-  const handleAddAdjustment = async () => {
-    if (!userId || !amount) {
-      toast.error("Введите ID сотрудника и сумму");
-      return;
-    }
+  const loadData = async () => {
     setLoading(true);
     try {
-      await adminApi.addEarningsAdjustment(
-        parseInt(userId),
-        parseFloat(amount),
-        reason,
-      );
-      toast.success("Корректировка добавлена");
-      setAmount("");
-      setReason("");
+      const result = await adminApi.getActiveEarningsAll();
+      setData(result);
     } catch (err: any) {
-      toast.error(err.message || "Ошибка добавления корректировки");
+      toast.error(err.message || "Не удалось загрузить данные");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSettle = async () => {
-    if (!userId) {
-      toast.error("Введите ID сотрудника");
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleSettle = async (userId: number) => {
+    if (!confirm("Обнулить активный заработок сотрудника?")) return;
+    try {
+      await adminApi.settleEarnings(userId);
+      toast.success("Активный заработок обнулён");
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка");
+    }
+  };
+
+  const handleAddAdjustment = async (userId: number) => {
+    const amount = parseFloat(adjustAmount);
+    if (isNaN(amount)) {
+      toast.error("Введите корректную сумму");
       return;
     }
-    if (!confirm(`Обнулить активный заработок сотрудника ${userId}?`)) return;
-    setLoading(true);
     try {
-      const result = await adminApi.settleEarnings(parseInt(userId));
-      toast.success(
-        `Активный заработок обнулён. Сумма: ${result.clearedAmount} руб.`,
-      );
+      await adminApi.addEarningsAdjustment(userId, amount, adjustReason);
+      toast.success("Корректировка добавлена");
+      setAdjustAmount("");
+      setAdjustReason("");
+      setSelectedUser(null);
+      loadData();
     } catch (err: any) {
-      toast.error(err.message || "Ошибка обнуления");
-    } finally {
-      setLoading(false);
+      toast.error(err.message || "Ошибка");
     }
   };
 
   const handleExport = async () => {
-    if (!month) {
-      toast.error("Выберите месяц");
-      return;
-    }
+    if (!month) return;
     try {
       const blob = await adminApi.exportMonthlyEarnings(month);
       const url = window.URL.createObjectURL(blob);
@@ -73,96 +108,180 @@ export const EarningsManagement = () => {
     }
   };
 
+  const handleResetAll = async () => {
+    if (!confirm("Сбросить ВСЕ заработки (необратимо)?")) return;
+    try {
+      await adminApi.resetAllEarnings();
+      toast.success("Все заработки сброшены");
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-10 text-muted-foreground">Загрузка...</div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Управление заработком</h1>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>➕ Добавить корректировку</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>ID сотрудника</Label>
-              <Input
-                type="number"
-                placeholder="Например: 1"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Сумма (может быть отрицательной)</Label>
-              <Input
-                type="number"
-                placeholder="Например: 100 или -50"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Причина (опционально)</Label>
-              <Input
-                placeholder="Премия, штраф, ..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            <Button
-              onClick={handleAddAdjustment}
-              disabled={loading || !userId || !amount}
-            >
-              Добавить корректировку
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>🧹 Обнулить активный заработок</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>ID сотрудника</Label>
-              <Input
-                type="number"
-                placeholder="Например: 1"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-              />
-            </div>
-            <Button
-              variant="destructive"
-              onClick={handleSettle}
-              disabled={loading || !userId}
-            >
-              Обнулить заработок
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>📊 Экспорт заработка</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-end gap-4">
-              <div className="flex-1 space-y-2">
-                <Label>Месяц (YYYY-MM)</Label>
-                <Input
-                  type="month"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                />
-              </div>
-              <Button onClick={handleExport} disabled={!month}>
-                📥 Скачать Excel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Управление заработком</h1>
+        <Button onClick={loadData} disabled={loading}>
+          🔄 Обновить
+        </Button>
       </div>
+
+      {/* Экспорт и сброс */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Экспорт и действия</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-4">
+          <div>
+            <Label className="mb-[15px]">Месяц</Label>
+            <Input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <Button onClick={handleExport}>📥 Скачать отчёт</Button>
+          <Button variant="destructive" onClick={handleResetAll}>
+            ⚠️ Сбросить все заработки
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Таблица сотрудников */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Активный заработок сотрудников</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-center">Сотрудник</TableHead>
+                <TableHead className="text-center">Роль</TableHead>
+                <TableHead className="text-center">Базовый</TableHead>
+                <TableHead className="text-center">Корректировки</TableHead>
+                <TableHead className="text-center">Итого</TableHead>
+                <TableHead className="text-center">Действия</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center">
+                    Нет данных
+                  </TableCell>
+                </TableRow>
+              ) : (
+                data.map((user) => (
+                  <TableRow key={user.id}>
+                    <TableCell className="text-center">{user.name}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        className={
+                          user.role === "admin" || user.role === "moderator"
+                            ? "font-bold"
+                            : ""
+                        }
+                        variant="outline"
+                      >
+                        {user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {user.activeEarningsBase.toFixed(2)}
+                    </TableCell>
+                    <TableCell
+                      className={
+                        "text-center" +
+                        (user.activeEarningsAdjustments !== 0
+                          ? " text-blue-600"
+                          : "")
+                      }
+                    >
+                      {user.activeEarningsAdjustments.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-center font-bold">
+                      {user.activeEarningsTotal.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-center space-x-1">
+                      <Dialog>
+                        <DialogTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="leading-none"
+                              onClick={() => setSelectedUser(user)}
+                            />
+                          }
+                        >
+                          ✏️ Корректировка
+                        </DialogTrigger>
+                        {selectedUser && selectedUser.id === user.id && (
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>
+                                Корректировка для {selectedUser.name}
+                              </DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4 py-4">
+                              <div>
+                                <Label>Сумма (отрицательная — штраф)</Label>
+                                <Input
+                                  type="number"
+                                  placeholder="200"
+                                  value={adjustAmount}
+                                  onChange={(e) =>
+                                    setAdjustAmount(e.target.value)
+                                  }
+                                />
+                              </div>
+                              <div>
+                                <Label>Причина</Label>
+                                <Input
+                                  placeholder="Премия за перевыполнение"
+                                  value={adjustReason}
+                                  onChange={(e) =>
+                                    setAdjustReason(e.target.value)
+                                  }
+                                />
+                              </div>
+                              <Button
+                                onClick={() =>
+                                  handleAddAdjustment(selectedUser.id)
+                                }
+                              >
+                                Добавить корректировку
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        )}
+                      </Dialog>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="leading-none"
+                        onClick={() => handleSettle(user.id)}
+                      >
+                        Обнулить
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 };

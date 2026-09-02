@@ -80,6 +80,9 @@ export const adminApi = {
       })
       .then((res) => res.data),
 
+  getActiveEarningsAll: () =>
+    api.get("/admin/earnings/active").then((res) => res.data),
+
   addEarningsAdjustment: (userId: number, amount: number, reason?: string) =>
     api
       .post("/admin/earnings/adjust", { userId, amount, reason })
