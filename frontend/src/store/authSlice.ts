@@ -39,14 +39,26 @@ export const logout = createAsyncThunk("auth/logout", async () => {
   }
 });
 
+// Кэш промиса восстановления сессии: защита от повторных /auth/me
+// (например из-за двойного монтирования в React.StrictMode в dev)
+let restoreSessionPromise: Promise<any> | null = null;
+
 export const restoreSession = createAsyncThunk(
   "auth/restoreSession",
   async () => {
     const token = localStorage.getItem("accessToken");
     if (!token) throw new Error("No token");
+
+    if (!restoreSessionPromise) {
+      restoreSessionPromise = api
+        .get("/auth/me")
+        .then((response) => response.data)
+        .finally(() => {
+          restoreSessionPromise = null;
+        });
+    }
     // Запрашиваем профиль пользователя
-    const response = await api.get("/auth/me");
-    return response.data; // предполагаем, что возвращает объект пользователя
+    return restoreSessionPromise;
   },
 );
 

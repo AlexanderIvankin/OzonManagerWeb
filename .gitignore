@@ -5,6 +5,8 @@ backups/
 exports/
 ServerFiles/
 
+backend/outputs/
+
 backend/bot.db
 backend/bot_web.db
 backend/bot.db-journal

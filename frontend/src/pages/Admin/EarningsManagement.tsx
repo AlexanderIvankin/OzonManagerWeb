@@ -104,7 +104,23 @@ export const EarningsManagement = () => {
       window.URL.revokeObjectURL(url);
       toast.success("Файл скачан");
     } catch (err: any) {
-      toast.error(err.message || "Ошибка экспорта");
+      // При responseType: "blob" ответы об ошибках тоже приходят как Blob,
+      // поэтому err.message — только "Request failed with status code 404",
+      // а нормальный текст сервера лежит внутри err.response.data (Blob).
+      if (err.response?.status === 404) {
+        let message = "Нет данных для экспорта за выбранный месяц";
+        if (err.response.data instanceof Blob) {
+          try {
+            const parsed = JSON.parse(await err.response.data.text());
+            if (parsed?.error) message = parsed.error;
+          } catch {
+            // тело не JSON — оставляем сообщение по умолчанию
+          }
+        }
+        toast.error(message);
+      } else {
+        toast.error(err.message || "Ошибка экспорта");
+      }
     }
   };
 
@@ -136,12 +152,12 @@ export const EarningsManagement = () => {
 
       {/* Экспорт и сброс */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex justify-center">
           <CardTitle>Экспорт и действия</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-4">
           <div>
-            <Label className="mb-[15px]">Месяц</Label>
+            <Label className="mb-[15px] justify-center">Месяц</Label>
             <Input
               type="month"
               value={month}
@@ -150,7 +166,11 @@ export const EarningsManagement = () => {
             />
           </div>
           <Button onClick={handleExport}>📥 Скачать отчёт</Button>
-          <Button variant="destructive" onClick={handleResetAll}>
+          <Button
+            className="ml-auto"
+            variant="destructive"
+            onClick={handleResetAll}
+          >
             ⚠️ Сбросить все заработки
           </Button>
         </CardContent>
@@ -158,7 +178,7 @@ export const EarningsManagement = () => {
 
       {/* Таблица сотрудников */}
       <Card>
-        <CardHeader>
+        <CardHeader className="text-center">
           <CardTitle>Активный заработок сотрудников</CardTitle>
         </CardHeader>
         <CardContent>

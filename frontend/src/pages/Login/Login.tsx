@@ -78,7 +78,7 @@ export const Login = () => {
                 {...register("usernameOrEmail")}
               />
               {errors.usernameOrEmail && (
-                <p className="text-sm text-red-500">
+                <p className="text-sm mb-[15px] text-red-500">
                   {errors.usernameOrEmail.message}
                 </p>
               )}
@@ -93,12 +93,12 @@ export const Login = () => {
                 {...register("password")}
               />
               {errors.password && (
-                <p className="text-sm text-red-500">
+                <p className="text-sm mb-[15px] text-red-500">
                   {errors.password.message}
                 </p>
               )}
             </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <p className="text-sm mb-[15px] text-red-500">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col space-y-2">
             <Button type="submit" className="w-full" disabled={loading}>

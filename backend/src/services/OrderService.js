@@ -139,7 +139,7 @@ class OrderService {
     try {
       const allOrders = await OzonService.fetchAwaitingOrders();
       const activeOrderIds = allOrders.map(o => o.posting_number);
-      await this.cleanExpiredAssignments(activeOrderIds);
+      await OrderService.cleanExpiredAssignments(activeOrderIds);
 
       if (!allOrders.length) {
         if (pendingNewOrders.length === 0) {

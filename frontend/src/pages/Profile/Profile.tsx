@@ -1,6 +1,8 @@
 import { useSelector, useDispatch } from "react-redux";
+import { useState, useEffect } from "react";
 import { RootState, AppDispatch } from "../../store";
-import { logout } from "../../store/authSlice";
+import { logout, updateUser } from "../../store/authSlice";
+import { userApi } from "../../api/user";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,142 +12,280 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { Separator } from "@/components/ui/separator";
 
 export const Profile = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const dispatch = useDispatch<AppDispatch>();
+  const [takingOrders, setTakingOrders] = useState(
+    user?.taking_orders || false,
+  );
+  const [activeEarnings, setActiveEarnings] = useState<{
+    baseEarnings: number;
+    adjustments: number;
+    total: number;
+  } | null>(null);
+  const [monthlyEarnings, setMonthlyEarnings] = useState<{
+    total: number;
+    count: number;
+  } | null>(null);
+  const [loadingEarnings, setLoadingEarnings] = useState(false);
+  const [loadingToggle, setLoadingToggle] = useState(false);
 
   const handleLogout = async () => {
     await dispatch(logout());
     window.location.href = "/login";
   };
 
-  if (!user) {
-    return <div className="text-center py-10">Загрузка...</div>;
-  }
+  const loadActiveEarnings = async () => {
+    try {
+      const data = await userApi.getActiveEarnings();
+      setActiveEarnings(data);
+    } catch (err: any) {
+      toast.error(err.message || "Не удалось загрузить активный заработок");
+    }
+  };
 
-  const isEmployee = ["employee", "moderator", "admin"].includes(user.role);
-  const isAdminOrModerator = ["moderator", "admin"].includes(user.role);
+  const loadMonthlyEarnings = async () => {
+    try {
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const data = await userApi.getMonthlyEarnings(month);
+      setMonthlyEarnings({ total: data.total, count: data.count });
+    } catch (err: any) {
+      toast.error(err.message || "Не удалось загрузить заработок за месяц");
+    }
+  };
+
+  const refreshEarnings = async () => {
+    setLoadingEarnings(true);
+    await Promise.allSettled([loadActiveEarnings(), loadMonthlyEarnings()]);
+    setLoadingEarnings(false);
+  };
+
+  const handleToggleOrders = async () => {
+    if (loadingToggle) return;
+
+    setLoadingToggle(true);
+    try {
+      const result = await userApi.toggleTakingOrders();
+      const nextTakingOrders = Boolean(result.taking_orders);
+      setTakingOrders(nextTakingOrders);
+      // Синхронизируем состояние в Redux, чтобы оно не терялось после перезагрузки
+      if (user) {
+        dispatch(updateUser({ ...user, taking_orders: nextTakingOrders }));
+      }
+      toast.success(
+        `Приём заказов ${nextTakingOrders ? "включён" : "выключен"}`,
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка переключения");
+    } finally {
+      setLoadingToggle(false);
+    }
+  };
+
+  // Загружаем заработок только при загрузке пользователя или смене роли.
+  // Ключевая деталь: НЕ зависим от user как объекта (ссылки на него меняются при
+  // updateUser/refresh), иначе каждый такой апдейт вызывал бы лишние запросы.
+  useEffect(() => {
+    if (user && user.role !== "user") {
+      refreshEarnings();
+    }
+  }, [user?.role, user?.id]);
+
+  // Синхронизируем переключатель с серверным значением taking_orders
+  // (на первом рендере user ещё null, поэтому useState не может взять его значение)
+  useEffect(() => {
+    if (user) {
+      setTakingOrders(Boolean(user.taking_orders));
+    }
+  }, [user?.taking_orders]);
 
   return (
-    <div className="container mx-auto py-10">
-      <Card className="max-w-2xl mx-auto">
+    <div className="container mx-auto py-10 max-w-4xl">
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Добро пожаловать, {user.name}!</span>
-            <Badge variant={isEmployee ? "default" : "secondary"}>
-              {user.role === "admin" && "🧑‍💻 Администратор"}
-              {user.role === "moderator" && "🕵️ Модератор"}
-              {user.role === "employee" && "👷 Сотрудник"}
-              {user.role === "user" && "👤 Пользователь"}
-            </Badge>
-          </CardTitle>
-          <CardDescription>Управление заказами и заработком</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-2xl mb-[10px]">
+                👋 {user?.name}
+              </CardTitle>
+              <CardDescription>
+                <Badge
+                  variant={
+                    user?.role === "admin"
+                      ? "default"
+                      : user?.role === "moderator"
+                        ? "secondary"
+                        : user?.role === "employee"
+                          ? "outline"
+                          : "destructive"
+                  }
+                >
+                  {user?.role === "admin"
+                    ? "🧑‍💻 Администратор"
+                    : user?.role === "moderator"
+                      ? "🕵️ Модератор"
+                      : user?.role === "employee"
+                        ? "👷 Сотрудник"
+                        : "👤 Пользователь"}
+                </Badge>
+              </CardDescription>
+            </div>
+            <Button variant="destructive" onClick={handleLogout}>
+              Выйти
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Основная информация */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-muted-foreground">Логин</p>
-              <p className="font-medium">{user.username}</p>
+              <p className="text-sm font-medium text-muted-foreground">Логин</p>
+              <p>{user?.username}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Email</p>
-              <p className="font-medium">{user.email}</p>
+              <p className="text-sm font-medium text-muted-foreground">Email</p>
+              <p>{user?.email}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Телефон</p>
-              <p className="font-medium">{user.phone || "—"}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Принтеров</p>
-              <p className="font-medium">{user.capacity || "1"}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">
-                Коэффициент заработка
+              <p className="text-sm font-medium text-muted-foreground">
+                Телефон
               </p>
-              <p className="font-medium">{user.earnings_factor || "1.0"}</p>
+              <p>{user?.phone || "—"}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Telegram ID</p>
-              <p className="font-medium">{user.tg_user_id || "—"}</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Количество принтеров
+              </p>
+              <p>{user?.capacity}</p>
             </div>
-          </div>
-          <div className="border-t pt-4">
-            <p className="text-sm text-muted-foreground">Статус:</p>
-            <Badge variant={user.is_fired ? "destructive" : "outline"}>
-              {user.is_fired ? "Уволен" : "Активен"}
-            </Badge>
-            {user.taking_orders && (
-              <Badge variant="default" className="ml-2">
-                Принимает заказы
-              </Badge>
-            )}
           </div>
 
-          {user.role === "user" && (
-            <div className="border-t pt-4 text-amber-600 bg-amber-50 p-3 rounded-md">
-              ⚠️ Ваш аккаунт ещё не подтверждён сотрудником. Обратитесь к
-              администратору или модератору для активации доступа к заказам.
+          <Separator />
+
+          {/* Для роли user – сообщение о необходимости подтверждения */}
+          {user?.role === "user" && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
+              <p className="font-medium">
+                ⚠️ Ваш аккаунт ожидает подтверждения
+              </p>
+              <p className="text-sm">
+                Обратитесь к администратору или модератору для получения прав
+                сотрудника.
+              </p>
             </div>
           )}
 
-          {isEmployee && (
+          {/* Для сотрудников, модераторов и админов – переключатель приёма заказов */}
+          {user?.role !== "user" && (
+            <div className="flex items-center justify-center gap-4 py-2">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={takingOrders}
+                  onCheckedChange={handleToggleOrders}
+                  disabled={loadingToggle}
+                  id="taking-orders"
+                />
+                <Label
+                  htmlFor="taking-orders"
+                  className={
+                    loadingToggle ? "cursor-not-allowed" : "cursor-pointer"
+                  }
+                >
+                  {takingOrders
+                    ? "✅ Принимаю заказы"
+                    : "❌ Не принимаю заказы"}
+                </Label>
+              </div>
+              {loadingToggle && (
+                <span className="text-sm text-muted-foreground">
+                  Сохранение...
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Заработок (для сотрудников и выше) */}
+          {user?.role !== "user" && (
             <>
-              {user.stats && (
-                <div className="border-t pt-4">
-                  <p className="text-sm text-muted-foreground">Статистика:</p>
-                  <div className="grid grid-cols-3 gap-4 mt-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Завершённых заказов
-                      </p>
-                      <p className="font-medium">{user.stats.total_orders}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Отменённых
-                      </p>
-                      <p className="font-medium">
-                        {user.stats.canceled_orders}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">
-                        Общая сумма
-                      </p>
-                      <p className="font-medium">
-                        {user.stats.total_amount.toFixed(2)} руб.
-                      </p>
-                    </div>
-                  </div>
+              <Separator />
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">💰 Заработок</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">
+                        Активный заработок
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingEarnings ? (
+                        <p className="text-sm">Загрузка...</p>
+                      ) : activeEarnings ? (
+                        <div className="space-y-1">
+                          <p className="text-2xl font-bold">
+                            {activeEarnings.total.toFixed(2)} ₽
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Базовый: {activeEarnings.baseEarnings.toFixed(2)} ₽
+                            <br />
+                            Корректировки:{" "}
+                            {activeEarnings.adjustments > 0 ? "+" : ""}
+                            {activeEarnings.adjustments.toFixed(2)} ₽
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Нет данных
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">
+                        Заработок за этот месяц
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingEarnings ? (
+                        <p className="text-sm">Загрузка...</p>
+                      ) : monthlyEarnings ? (
+                        <div className="space-y-1">
+                          <p className="text-2xl font-bold">
+                            {monthlyEarnings.total.toFixed(2)} ₽
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Количество заказов: {monthlyEarnings.count}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          Нет данных
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
                 </div>
-              )}
-              {user.activeOrders && user.activeOrders.length > 0 && (
-                <div className="border-t pt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Активные заказы:
-                  </p>
-                  <ul className="text-sm space-y-1 mt-2">
-                    {user.activeOrders.map((order) => (
-                      <li key={order.order_id}>
-                        Заказ {order.order_id} (с{" "}
-                        {new Date(order.assigned_at).toLocaleDateString()})
-                      </li>
-                    ))}
-                  </ul>
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={refreshEarnings}
+                    disabled={loadingEarnings}
+                  >
+                    {loadingEarnings ? "Обновление..." : "🔄 Обновить заработок"}
+                  </Button>
                 </div>
-              )}
+              </div>
             </>
           )}
-
-          <Button
-            onClick={handleLogout}
-            variant="destructive"
-            className="w-full mt-4"
-          >
-            Выйти
-          </Button>
         </CardContent>
       </Card>
     </div>
