@@ -99,8 +99,11 @@ export const FillStatsDialog = ({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger>{children}</DialogTrigger>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Заполнение статистики для {offerId}</DialogTitle>
+        <DialogHeader className="pt-10">
+          <DialogTitle className="text-center">
+            <div>Заполнение статистики для</div>
+            <code className="mt-1 block text-center">{offerId}</code>
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">

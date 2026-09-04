@@ -30,6 +30,24 @@ export interface Warehouse {
   is_rfbs: boolean;
 }
 
+export interface AdminActiveOrder {
+  orderId: string;
+  userId: number;
+  userName: string;
+  assignedAt: number;
+  warehouseName?: string | null;
+  warehouseId?: string | null;
+  statsStatus: "filled" | "missing";
+  missingStats: string[];
+  products: Array<{
+    name: string;
+    quantity: number;
+    offer_id?: string;
+    sku?: string;
+    images?: Array<{ url: string; name: string }>;
+  }>;
+}
+
 export const adminApi = {
   // === Пользователи ===
   getUsers: (params?: {
@@ -59,6 +77,9 @@ export const adminApi = {
     api
       .get("/admin/orders/awaiting", { params: { warehouseId } })
       .then((res) => res.data),
+
+  getActiveOrders: () =>
+    api.get<AdminActiveOrder[]>("/admin/orders/active").then((res) => res.data),
 
   getOrderDetails: (orderId: string) =>
     api.get(`/admin/orders/${orderId}/details`).then((res) => res.data),

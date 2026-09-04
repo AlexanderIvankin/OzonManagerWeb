@@ -10,6 +10,21 @@ const { getDB } = require('../config/database')
 const { getLocalTimestamp } = require('../utils');
 
 /**
+ * Перегенерирует Excel-файлы сотрудников на сервере (team-info.xlsx и employees-db.xlsx),
+ * чтобы они всегда соответствовали состоянию БД после действий админа на сайте.
+ * Ошибки перегенерации не критичны — логируем и не выбрасываем.
+ */
+async function refreshServerExports() {
+  try {
+    await SyncService.exportTeamInfoXlsx(null, false, 'team-info.xlsx', { syncWarehouses: false });
+    await SyncService.exportTeamInfoXlsx(null, true, 'employees-db.xlsx', { syncWarehouses: false });
+    console.log('[adminController] Excel-файлы сотрудников перегенерированы');
+  } catch (err) {
+    console.error('[adminController] Ошибка перегенерации Excel-файлов:', err.message);
+  }
+}
+
+/**
  * Получить список всех пользователей (с фильтрацией)
  */
 exports.getUsers = async (req, res, next) => {
@@ -63,6 +78,8 @@ exports.updateUser = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    // Перегенерируем Excel-файлы сотрудников на сервере
+    await refreshServerExports();
     res.json(user);
   } catch (err) {
     next(err);
@@ -75,13 +92,17 @@ exports.updateUser = async (req, res, next) => {
 exports.fireUser = async (req, res, next) => {
   try {
     const userId = parseInt(req.params.id);
-    const user = await User.update(userId, { is_fired: 1 });
+    // При увольнении выключаем приём заказов и понижаем роль до 'user',
+    // чтобы уволенный не имел доступа к сотрудническим возможностям
+    const user = await User.update(userId, { is_fired: 1, taking_orders: 0, role: 'user' });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
     // Снять все активные назначения
     const db = require('../config/database').getDB();
     await db.run('DELETE FROM assignments WHERE user_id = ? AND status = "assigned"', userId);
+    // Перегенерируем Excel-файлы сотрудников на сервере
+    await refreshServerExports();
     res.json({ message: 'User fired successfully' });
   } catch (err) {
     next(err);
@@ -235,6 +256,50 @@ exports.unassignOrder = async (req, res, next) => {
     if (err.message && err.message.includes('не назначен')) {
       return res.status(400).json({ error: err.message });
     }
+    next(err);
+  }
+};
+
+/**
+ * Получить ВСЕ активные заказы (для админа): сотрудник, склад, состав и фото
+ */
+exports.getActiveOrdersAll = async (req, res, next) => {
+  try {
+    const active = await Assignment.getAllActive();
+    const result = [];
+    for (const a of active) {
+      // Детали заказа из Ozon (состав, склад)
+      const details = await OzonService.getOrderDetails(a.order_id);
+      // Статус статистики по всем товарам заказа
+      let statsStatus = 'filled';
+      const missingStats = [];
+      if (details && details.products) {
+        for (const p of details.products) {
+          if (!p.offer_id) continue;
+          const stat = await ProductStat.get(p.offer_id);
+          if (!stat) {
+            statsStatus = 'missing';
+            missingStats.push(p.offer_id);
+          }
+        }
+      }
+      // Фото по каждому товару (через кэш — фото грузятся с Ozon 1 раз на offer_id)
+      const products = await OrderService.attachProductImages(details?.products || []);
+      result.push({
+        orderId: a.order_id,
+        userId: a.user_id,
+        userName: a.user_name,
+        assignedAt: a.assigned_at,
+        warehouseName: details?.analytics_data?.warehouse || null,
+        warehouseId: details?.delivery_method?.warehouse_id || details?.warehouse_id || null,
+        statsStatus,
+        missingStats,
+        products,
+      });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('[getActiveOrdersAll] Ошибка:', err);
     next(err);
   }
 };

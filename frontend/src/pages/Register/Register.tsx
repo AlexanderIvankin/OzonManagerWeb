@@ -11,13 +11,24 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { register } from '../../store/authSlice';
 import { AppDispatch } from '../../store';
+import {
+  formatPhoneInput,
+  isValidPhone,
+  PHONE_FORMAT_HINT,
+} from '../../lib/utils';
 
 const registerSchema = z.object({
   username: z.string().min(3, 'Минимум 3 символа'),
   email: z.string().email('Некорректный email'),
   password: z.string().min(6, 'Минимум 6 символов'),
   name: z.string().min(1, 'Введите имя'),
-  phone: z.string().optional(),
+  phone: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || v.trim() === '' || isValidPhone(v),
+      'Введите номер в формате ' + PHONE_FORMAT_HINT,
+    ),
   capacity: z.string().optional(),
 });
 
@@ -33,6 +44,7 @@ export const Register = () => {
   const {
     register: registerField,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -97,7 +109,19 @@ export const Register = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Телефон (опционально)</Label>
-              <Input id="phone" placeholder="+7 999 123-45-67" {...registerField('phone')} />
+              <Input
+                id="phone"
+                placeholder="+7 (999) 999-99-99"
+                inputMode="tel"
+                {...registerField('phone')}
+                onChange={(e) => {
+                  const formatted = formatPhoneInput(e.target.value);
+                  setValue('phone', formatted, { shouldValidate: true });
+                }}
+              />
+              {errors.phone && (
+                <p className="text-sm text-red-500">{errors.phone.message}</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="capacity">Количество принтеров (опционально)</Label>

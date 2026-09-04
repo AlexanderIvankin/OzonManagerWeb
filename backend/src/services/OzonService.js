@@ -247,7 +247,7 @@ class OzonService {
       const response = await requestWithRetry(
         () => apiClient.post('/v3/posting/fbs/get', {
           posting_number: orderId,
-          with: { financial_data: true }
+          with: { financial_data: true, analytics_data: true }
         }),
         { context: `getOrderDetails_${orderId}` }
       );

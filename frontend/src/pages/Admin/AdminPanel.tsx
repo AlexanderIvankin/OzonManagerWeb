@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Users } from "./Users";
 import { Warehouses } from "./Warehouses";
 import { OrdersManagement } from "./OrdersManagement";
+import { ActiveOrders } from "./ActiveOrders";
 import { Materials } from "./Materials";
 import { EarningsManagement } from "./EarningsManagement";
 import { ExportTeamInfo } from "./ExportTeamInfo";
@@ -15,6 +16,7 @@ export const AdminPanel = () => {
         <Route path="/users" element={<Users />} />
         <Route path="/warehouses" element={<Warehouses />} />
         <Route path="/orders" element={<OrdersManagement />} />
+        <Route path="/active-orders" element={<ActiveOrders />} />
         <Route path="/materials" element={<Materials />} />
         <Route path="/earnings" element={<EarningsManagement />} />
         <Route path="/export" element={<ExportTeamInfo />} />

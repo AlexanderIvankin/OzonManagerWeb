@@ -75,6 +75,12 @@ export const Layout = () => {
                 📦 Очередь заказов
               </Link>
               <Link
+                to="/admin/active-orders"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                📋 Активные заказы
+              </Link>
+              <Link
                 to="/admin/materials"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >

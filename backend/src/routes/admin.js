@@ -33,6 +33,7 @@ router.post('/warehouses/sync', adminController.syncWarehouses);
 
 // --- Заказы ---
 router.get('/orders/awaiting', adminController.getAwaitingOrders);
+router.get('/orders/active', adminController.getActiveOrdersAll);
 router.get('/orders/:orderId/details', adminController.getOrderDetails);
 router.post('/orders/:orderId/assign', adminController.assignOrder);
 router.post('/orders/:orderId/unassign', adminController.unassignOrder);

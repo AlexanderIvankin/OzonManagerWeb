@@ -71,7 +71,8 @@ class User {
     const setClauses = [];
     const values = [];
     for (const [key, val] of Object.entries(fields)) {
-      if (allowed.includes(key)) {
+      // Пропускаем undefined, чтобы частичные обновления не затирали остальные поля
+      if (allowed.includes(key) && val !== undefined) {
         setClauses.push(`${key} = ?`);
         values.push(val);
       }
@@ -105,7 +106,8 @@ class User {
     const setClauses = [];
     const values = [];
     for (const [key, val] of Object.entries(updates)) {
-      if (allowed.includes(key)) {
+      // Пропускаем undefined, чтобы частичные обновления не затирали остальные поля
+      if (allowed.includes(key) && val !== undefined) {
         setClauses.push(`${key} = ?`);
         values.push(val);
       }

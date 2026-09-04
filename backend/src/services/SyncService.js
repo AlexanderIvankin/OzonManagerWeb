@@ -165,18 +165,20 @@ class SyncService {
     * @param {string} outputFileName - имя файла
     * @returns {Promise<string>} - путь к созданному файлу
     */
-  static async exportTeamInfoXlsx(adminUserId, includeFired = false, outputFileName = 'team-info.xlsx') {
+  static async exportTeamInfoXlsx(adminUserId, includeFired = false, outputFileName = 'team-info.xlsx', { syncWarehouses = true } = {}) {
     const db = getDB();
 
-    // 1. Синхронизируем склады перед экспортом
-    try {
-      const warehousesFromOzon = await OzonService.fetchWarehouses();
-      if (warehousesFromOzon.length) {
-        await Warehouse.syncAll(warehousesFromOzon);
-        console.log('[SyncService] Склады синхронизированы перед экспортом');
+    // 1. Синхронизируем склады перед экспортом (по умолчанию; отключается при фоновой перегенерации)
+    if (syncWarehouses) {
+      try {
+        const warehousesFromOzon = await OzonService.fetchWarehouses();
+        if (warehousesFromOzon.length) {
+          await Warehouse.syncAll(warehousesFromOzon);
+          console.log('[SyncService] Склады синхронизированы перед экспортом');
+        }
+      } catch (err) {
+        console.warn('[SyncService] Не удалось синхронизировать склады перед экспортом:', err.message);
       }
-    } catch (err) {
-      console.warn('[SyncService] Не удалось синхронизировать склады перед экспортом:', err.message);
     }
 
     // 2. Получаем пользователей

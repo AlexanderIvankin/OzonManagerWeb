@@ -1,13 +1,10 @@
 import { useEffect, useState } from "react";
-import { useSelector } from "react-redux";
-import { RootState } from "../../store";
 import { ordersApi, Order } from "../../api/orders";
 import { OrderCard } from "../../components/OrderCard";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 export const Orders = () => {
-  const user = useSelector((state: RootState) => state.auth.user);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +41,6 @@ export const Orders = () => {
     }
   };
 
-  const isAdminOrModerator = ["admin", "moderator"].includes(user?.role || "");
-
   return (
     <div className="container mx-auto py-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -77,7 +72,6 @@ export const Orders = () => {
               key={order.orderId}
               order={order}
               onOrderUpdated={loadOrders}
-              showAdminActions={isAdminOrModerator}
             />
           ))}
         </div>

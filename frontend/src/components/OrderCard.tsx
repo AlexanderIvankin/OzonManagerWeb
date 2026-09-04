@@ -16,13 +16,11 @@ import { ProductImages } from "./ProductImages";
 interface OrderCardProps {
   order: Order;
   onOrderUpdated: () => void;
-  showAdminActions?: boolean;
 }
 
 export const OrderCard = ({
   order,
   onOrderUpdated,
-  showAdminActions = false,
 }: OrderCardProps) => {
   const [loading, setLoading] = useState(false);
 
@@ -76,7 +74,9 @@ export const OrderCard = ({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
-          <span>Заказ {order.orderId}</span>
+          <span>
+            Заказ <code>{order.orderId}</code>
+          </span>
           <Badge
             variant={order.statsStatus === "filled" ? "default" : "destructive"}
           >
@@ -138,24 +138,15 @@ export const OrderCard = ({
         </Button>
         <Button
           variant="secondary"
+          className="ml-auto"
           onClick={handleDownloadLabel}
           disabled={loading}
         >
           📄 Скачать этикетку
         </Button>
-        {showAdminActions && (
-          <>
-            <Button variant="outline" size="sm">
-              👤 Назначить
-            </Button>
-            <Button variant="outline" size="sm" className="text-red-500">
-              Снять
-            </Button>
-          </>
-        )}
       </CardFooter>
       {missingOfferIds.length > 0 && (
-        <div className="px-6 pb-4">
+        <div className="flex justify-center px-6 pb-4">
           <FillStatsDialog
             offerId={missingOfferIds[0]}
             onSuccess={onOrderUpdated}

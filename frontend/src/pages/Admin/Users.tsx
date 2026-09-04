@@ -28,6 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  formatPhoneInput,
+  isValidPhone,
+  PHONE_FORMAT_HINT,
+} from "@/lib/utils";
 
 export const Users = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -55,6 +60,13 @@ export const Users = () => {
   }, [showFired]);
 
   const handleUpdateUser = async (user: User) => {
+    // Валидация телефона: если указан — ровно 11 цифр
+    if (user.phone && user.phone.trim() !== "" && !isValidPhone(user.phone)) {
+      toast.error(
+        "Телефон должен содержать ровно 11 цифр в формате +7 (999) 999-99-99",
+      );
+      return;
+    }
     try {
       await adminApi.updateUser(user.id, user);
       toast.success(`Пользователь ${user.name} обновлён`);
@@ -73,6 +85,21 @@ export const Users = () => {
       loadUsers();
     } catch (err: any) {
       toast.error(err.message || "Ошибка увольнения");
+    }
+  };
+
+  const handleRestoreUser = async (user: User) => {
+    if (!confirm(`Восстановить пользователя ${user.name}?`)) return;
+    try {
+      await adminApi.updateUser(user.id, {
+        is_fired: false,
+        taking_orders: true,
+        role: "employee",
+      });
+      toast.success(`Пользователь ${user.name} восстановлен`);
+      loadUsers();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка восстановления");
     }
   };
 
@@ -201,14 +228,20 @@ export const Users = () => {
                                 <div className="space-y-2">
                                   <Label>Телефон</Label>
                                   <Input
-                                    value={editingUser.phone || ""}
+                                    placeholder="+7 (999) 999-99-99"
+                                    value={formatPhoneInput(
+                                      editingUser.phone || "",
+                                    )}
                                     onChange={(e) =>
                                       setEditingUser({
                                         ...editingUser,
-                                        phone: e.target.value,
+                                        phone: formatPhoneInput(e.target.value),
                                       })
                                     }
                                   />
+                                  <p className="text-xs text-muted-foreground">
+                                    {PHONE_FORMAT_HINT}
+                                  </p>
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-4">
@@ -336,7 +369,15 @@ export const Users = () => {
                           )}
                         </DialogContent>
                       </Dialog>
-                      {!user.is_fired && (
+                      {user.is_fired ? (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleRestoreUser(user)}
+                        >
+                          🔄 Восстановить
+                        </Button>
+                      ) : (
                         <Button
                           variant="destructive"
                           size="sm"

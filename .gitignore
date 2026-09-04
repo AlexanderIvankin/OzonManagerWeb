@@ -12,6 +12,7 @@ backend/bot_web.db
 backend/bot.db-journal
 
 backend/team-info.xlsx
+backend/employees-db.xlsx
 *.xlsx~
 *.xls~
 ~$*.xlsx
