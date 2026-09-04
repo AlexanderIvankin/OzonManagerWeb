@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { ordersApi, Order } from "../api/orders";
 import { toast } from "sonner";
 import { FillStatsDialog } from "./FillStatsDialog";
+import { ProductImages } from "./ProductImages";
 
 interface OrderCardProps {
   order: Order;
@@ -104,15 +105,20 @@ export const OrderCard = ({
         {order.products.length > 0 && (
           <div className="mt-2">
             <div className="font-semibold">Состав:</div>
-            <ul className="text-sm space-y-1">
+            <ul className="text-sm space-y-3">
               {order.products.map((p, idx) => (
                 <li key={idx}>
-                  {p.name} — {p.quantity} шт.
-                  {p.offer_id && (
-                    <span className="text-xs text-muted-foreground">
-                      {" "}
-                      (offer_id: {p.offer_id})
-                    </span>
+                  <div>
+                    {p.name} — {p.quantity} шт.
+                    {p.offer_id && (
+                      <span className="text-xs text-muted-foreground">
+                        {" "}
+                        (offer_id: {p.offer_id})
+                      </span>
+                    )}
+                  </div>
+                  {p.images && p.images.length > 0 && (
+                    <ProductImages productName={p.name} images={p.images} />
                   )}
                 </li>
               ))}
@@ -150,7 +156,10 @@ export const OrderCard = ({
       </CardFooter>
       {missingOfferIds.length > 0 && (
         <div className="px-6 pb-4">
-          <FillStatsDialog offerId={missingOfferIds[0]} onSuccess={onOrderUpdated}>
+          <FillStatsDialog
+            offerId={missingOfferIds[0]}
+            onSuccess={onOrderUpdated}
+          >
             <Button variant="outline" size="sm">
               📝 Заполнить статистику
             </Button>

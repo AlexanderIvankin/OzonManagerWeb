@@ -270,9 +270,19 @@ class OzonService {
       );
       const items = response.data.items || [];
       const imageMap = {};
+      const MAX_IMAGES_PER_PRODUCT = 6; // максимум фото на 1 товар (сетка 3x2)
       for (const item of items) {
-        const img = item.primary_image?.[0] || item.images?.[0];
-        if (img) imageMap[item.sku] = img;
+        const collected = [];
+        if (Array.isArray(item.primary_image)) collected.push(...item.primary_image);
+        if (Array.isArray(item.images)) collected.push(...item.images);
+        const uniqueUrls = [];
+        for (const u of collected) {
+          if (!u || typeof u !== 'string') continue;
+          if (uniqueUrls.includes(u)) continue;
+          uniqueUrls.push(u);
+          if (uniqueUrls.length >= MAX_IMAGES_PER_PRODUCT) break;
+        }
+        if (uniqueUrls.length) imageMap[item.sku] = uniqueUrls;
       }
       return imageMap;
     } catch (error) {

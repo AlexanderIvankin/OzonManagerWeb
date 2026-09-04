@@ -47,13 +47,14 @@ exports.getActiveOrders = async (req, res, next) => {
           }
         }
       }
+      // Привязываем фото к каждому товару (через кэш — фото грузятся с Ozon 1 раз на offer_id)
+      const products = await OrderService.attachProductImages(details?.products || []);
       result.push({
         orderId: order.order_id,
         assignedAt: order.assigned_at,
         statsStatus,
         missingStats,
-        products: details?.products || [],
-        // другие поля при необходимости
+        products,
       });
     }
     res.json(result);

@@ -3,7 +3,7 @@ const { Assignment, UserStats, Earnings, ProductStat, User } = require('../model
 const { getDB } = require('../config/database');
 const { notifyUser, notifyModerators } = require('../socket');
 const { escapeHtml } = require('../utils');
-const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders } = require('../state');
+const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders, productImagesCache } = require('../state');
 const EarningsService = require('./EarningsService');
 
 // Глобальное состояние очереди (в памяти)
@@ -375,6 +375,14 @@ class OrderService {
         // Завершаем заказ
         await Assignment.complete(orderId);
 
+        // Очищаем in-memory кэш фотографий для товаров этого заказа
+        // (заказ завершён — фото больше не нужны на страницах активных заказов)
+        if (orderDetails && Array.isArray(orderDetails.products)) {
+          for (const p of orderDetails.products) {
+            if (p.offer_id) productImagesCache.delete(String(p.offer_id));
+          }
+        }
+
         await db.run('COMMIT');
         transactionCompleted = true;
         console.log(`[FINISH] Транзакция успешно закоммичена для заказа ${orderId}`);
@@ -551,6 +559,58 @@ class OrderService {
     pendingNewOrders = [];
     currentOrderProcessing = null;
     await this.checkNewOrders();
+  }
+
+// =================================================================
+  // 7.5 ПРИВЯЗКА ФОТОГРАФИЙ К ТОВАРАМ С ИСПОЛЬЗОВАНИЕМ КЭША
+  // =================================================================
+  // Для каждого offer_id фото грузятся с Ozon только один раз и кладутся в in-memory кэш
+  // (productImagesCache). При повторных запросах (обновлении страниц админом/пользователем)
+  // фото берутся из кэша. При завершении заказа кэш по его offer_id очищается (см. finishOrder).
+  static async attachProductImages(products) {
+    if (!Array.isArray(products) || !products.length) return products || [];
+
+    const needSkus = new Set(); // SKU, для которых фото ещё нет ни в кэше, ни в товаре
+
+    // 1. Привязываем фото из кэша по offer_id
+    for (const p of products) {
+      if (p.offer_id) {
+        const cached = productImagesCache.get(String(p.offer_id));
+        if (cached && cached.images && cached.images.length) {
+          p.images = cached.images.map(url => ({ url, name: p.name }));
+        } else if (p.sku) {
+          needSkus.add(String(p.sku));
+        }
+      } else if (p.sku) {
+        // У товара нет offer_id — грузим по sku (кэшировать некуда)
+        needSkus.add(String(p.sku));
+      }
+    }
+
+    // 2. Догружаем с Ozon только недостающие фото
+    if (needSkus.size) {
+      const imageMap = await OzonService.fetchProductsImages(Array.from(needSkus));
+      for (const p of products) {
+        if (p.images || !p.sku) continue;
+        const urls = imageMap[String(p.sku)];
+        if (!urls || !urls.length) continue;
+        p.images = urls.map(url => ({ url, name: p.name }));
+        if (p.offer_id) {
+          productImagesCache.set(String(p.offer_id), {
+            sku: String(p.sku),
+            images: urls,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
+
+    // 3. Если фото не нашлось — ставим пустой массив
+    for (const p of products) {
+      if (!p.images) p.images = [];
+    }
+
+    return products;
   }
 
   // =================================================================

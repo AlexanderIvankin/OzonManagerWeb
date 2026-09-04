@@ -6,6 +6,7 @@ const OzonService = require('../services/OzonService');
 const OrderService = require('../services/OrderService');
 const EarningsService = require('../services/EarningsService');
 const MaterialsService = require('../services/MaterialsService');
+const { getDB } = require('../config/database')
 const { getLocalTimestamp } = require('../utils');
 
 /**
@@ -147,8 +148,28 @@ exports.syncWarehouses = async (req, res, next) => {
 exports.getAwaitingOrders = async (req, res, next) => {
   try {
     const { warehouseId } = req.query;
-    const orders = await OzonService.fetchAwaitingOrders(warehouseId);
-    res.json(orders);
+    const allOrders = await OzonService.fetchAwaitingOrders(warehouseId);
+    // Получаем все назначенные заказы из БД
+    const db = getDB();
+    const assigned = await db.all('SELECT order_id FROM assignments WHERE status = "assigned"');
+    const assignedSet = new Set(assigned.map(a => a.order_id));
+    // Фильтруем только неназначенные
+    const freeOrders = allOrders.filter(order => !assignedSet.has(order.posting_number));
+
+    // Для каждого заказа привязываем фото к каждому товару.
+    // Фото берутся из in-memory кэша (1 запрос к Ozon на offer_id, дальше из кэша)
+    const ordersWithImages = await Promise.all(freeOrders.map(async (order) => {
+      const details = await OzonService.getOrderDetails(order.posting_number);
+      // Состав берём из деталей (там есть sku) — это гарантирует привязку фото к p.offer_id,
+      // запасной вариант — состав из списка заказов
+      const sourceProducts = (details && Array.isArray(details.products) && details.products.length)
+        ? details.products
+        : (order.products || []);
+      const products = await OrderService.attachProductImages(sourceProducts);
+      return { ...order, products, details };
+    }));
+
+    res.json(ordersWithImages);
   } catch (err) {
     next(err);
   }

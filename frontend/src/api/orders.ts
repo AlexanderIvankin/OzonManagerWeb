@@ -5,13 +5,17 @@ export interface Order {
   assignedAt: number;
   statsStatus: "filled" | "missing";
   missingStats: string[];
-  products: Array<{
-    name: string;
-    quantity: number;
-    offer_id?: string;
-    sku?: string;
-    price?: number;
-  }>;
+  products: OrderProduct[];
+  // images убраны с верхнего уровня — фото теперь привязаны к каждому товару (products[].images)
+}
+
+export interface OrderProduct {
+  name: string;
+  quantity: number;
+  offer_id?: string;
+  sku?: string;
+  price?: number;
+  images?: Array<{ url: string; name: string }>;
 }
 
 export interface FinishOrderResponse {

@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
+import { ProductImages } from "../../components/ProductImages";
 
 interface AwaitingOrder {
   posting_number: string;
@@ -19,6 +19,7 @@ interface AwaitingOrder {
     quantity: number;
     offer_id?: string;
     sku?: string;
+    images?: Array<{ url: string; name: string }>;
   }>;
   warehouse_id?: string;
   analytics_data?: { warehouse?: string };
@@ -49,7 +50,6 @@ export const OrdersManagement = () => {
 
   const loadEmployees = async () => {
     try {
-      // Получаем активных сотрудников (всех, кто не уволен и принимает заказы)
       const users = await adminApi.getUsers({
         includeAll: true,
         includeFired: false,
@@ -77,7 +77,6 @@ export const OrdersManagement = () => {
     try {
       await adminApi.assignOrder(orderId, parseInt(employeeId));
       toast.success(`Заказ ${orderId} назначен`);
-      // Обновляем список заказов
       loadOrders();
     } catch (err: any) {
       toast.error(err.message || "Ошибка назначения");
@@ -90,7 +89,11 @@ export const OrdersManagement = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          Очередь заказов (awaiting_packaging)
+          Очередь заказов (awaiting_packaging)<br></br>
+          <span className="flex text-muted-foreground justify-center">
+            Число заказов в очереди:{" "}
+            <span className="text-blue-600">&nbsp;{orders.length}</span>
+          </span>
         </h1>
         <Button onClick={loadOrders} disabled={loading}>
           🔄 Обновить
@@ -110,28 +113,52 @@ export const OrdersManagement = () => {
           {orders.map((order) => (
             <Card key={order.posting_number}>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>Заказ {order.posting_number}</span>
-                  <Badge variant="outline">
-                    Склад:{" "}
-                    {order.analytics_data?.warehouse ||
-                      order.warehouse_id ||
-                      "не указан"}
-                  </Badge>
+                <CardTitle>
+                  <span className="text-xl">
+                    Заказ <code>{order.posting_number}</code>
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <div className="font-semibold">Состав:</div>
-                  <ul className="text-sm space-y-1">
+                  <div className="font-semibold mb-1">Склад:</div>
+                  <div>
+                    {order.analytics_data?.warehouse || "не указан"}
+                    {order.warehouse_id && (
+                      <span className="text-sm text-muted-foreground">
+                        {" "}
+                        (ID: {order.warehouse_id})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold text-xl mb-[10px]">Состав:</div>
+                  <ul className="text-sm space-y-5">
                     {order.products?.map((p, idx) => (
                       <li key={idx}>
-                        {p.name} — {p.quantity} шт.
-                        {p.offer_id && (
-                          <span className="text-xs text-muted-foreground">
-                            {" "}
-                            (offer_id: {p.offer_id})
+                        <div>
+                          <span className="font-bold">
+                            {idx + 1}
+                            {". "}
                           </span>
+                          {p.name} — {p.quantity} шт.
+                          {p.offer_id && (
+                            <span className="text-l text-muted-foreground">
+                              {" "}
+                              <br></br>(offer_id:{" "}
+                              <span className="font-bold">
+                                <code>{p.offer_id}</code>
+                              </span>
+                              )
+                            </span>
+                          )}
+                        </div>
+                        {p.images && p.images.length > 0 && (
+                          <ProductImages
+                            productName={p.name}
+                            images={p.images}
+                          />
                         )}
                       </li>
                     ))}
@@ -148,13 +175,19 @@ export const OrdersManagement = () => {
                         }))
                       }
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Выберите сотрудника">
+                      <SelectTrigger className="w-full h-10 text-base">
+                        <SelectValue
+                          className="text-base font-medium"
+                          placeholder="Выберите сотрудника"
+                        >
                           {(val) => {
+                            if (!val) return "Выберите сотрудника";
                             const emp = employees.find(
-                              (e) => String(e.id) === val,
+                              (e) => String(e.id) === String(val),
                             );
-                            return emp ? emp.name : "";
+                            return emp
+                              ? `${emp.name} (ID: ${emp.id})`
+                              : String(val);
                           }}
                         </SelectValue>
                       </SelectTrigger>
@@ -168,6 +201,8 @@ export const OrdersManagement = () => {
                     </Select>
                   </div>
                   <Button
+                    size="lg"
+                    className="h-10 px-5 text-base"
                     onClick={() =>
                       handleAssign(
                         order.posting_number,
