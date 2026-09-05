@@ -1,9 +1,9 @@
 // src/scheduler.js
-const { getLocalTime, getLocalDate } = require('./utils');
+const { getLocalTime, getLocalDate, getLocalTimestamp } = require('./utils');
 const OrderService = require('./services/OrderService');
 const OzonService = require('./services/OzonService');
 const EarningsService = require('./services/EarningsService');
-const { createDbBackup } = require('./config/database'); // если добавим функцию бэкапа
+const BackupService = require('./services/BackupService');
 
 let checkInterval = null;
 let isPaused = false;
@@ -15,7 +15,7 @@ function startOrderChecker(intervalMinutes, callback) {
   if (checkInterval) clearInterval(checkInterval);
   checkInterval = setInterval(async () => {
     if (isPaused) return;
-    console.log(`[SCHEDULER] Проверка заказов в ${new Date().toISOString()}`);
+    console.log(`[SCHEDULER] Проверка заказов в ${getLocalTimestamp()}`);
     try {
       await callback();
     } catch (err) {
@@ -60,7 +60,7 @@ function startDailyBackupChecker() {
       const localTime = getLocalTime();
       if (localTime.hours === 0 && localTime.minutes === 0) {
         console.log('[SCHEDULER] Запуск ежедневного автобэкапа БД...');
-        await createDbBackup();
+        await BackupService.createDbBackup();
         // Можно отправить уведомление администратору (через WebSocket или email)
       }
     } catch (err) {

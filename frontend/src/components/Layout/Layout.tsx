@@ -87,6 +87,12 @@ export const Layout = () => {
                 📁 Материалы
               </Link>
               <Link
+                to="/admin/export"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                📤 Экспорт данных
+              </Link>
+              <Link
                 to="/admin/earnings"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >

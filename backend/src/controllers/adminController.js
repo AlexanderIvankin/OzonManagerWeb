@@ -6,8 +6,10 @@ const OzonService = require('../services/OzonService');
 const OrderService = require('../services/OrderService');
 const EarningsService = require('../services/EarningsService');
 const MaterialsService = require('../services/MaterialsService');
-const { getDB } = require('../config/database')
-const { getLocalTimestamp } = require('../utils');
+const BackupService = require('../services/BackupService');
+const ProductStatsService = require('../services/ProductStatsService');
+const { getDB, getDBPath } = require('../config/database')
+const { getLocalTimestamp, getDbBaseName, getVersionedFileName } = require('../utils');
 
 /**
  * Перегенерирует Excel-файлы сотрудников на сервере (team-info.xlsx и employees-db.xlsx),
@@ -351,15 +353,78 @@ exports.exportMonthlyEarnings = async (req, res, next) => {
   }
 };
 
-exports.exportActiveEarnings = async (req, res, next) => {
+/**
+ * Экспорт статистики товаров (материал/цвет/вес) в Excel
+ */
+exports.exportProductStats = async (req, res, next) => {
   try {
-    const filePath = await EarningsService.exportActiveEarnings();
-    res.download(filePath);
+    const filePath = await ProductStatsService.exportProductStatsXlsx();
+    // product-stats-1.xlsx | product-stats.xlsx
+    res.download(filePath, getVersionedFileName('product-stats', 'xlsx'));
   } catch (err) {
-    console.error('[exportActiveEarnings] Ошибка:', err);
-    if (err.message && err.message.includes('Нет активных заработков')) {
+    console.error('[exportProductStats] Ошибка:', err);
+    if (err.message && err.message.includes('Нет данных')) {
       return res.status(404).json({ error: err.message });
     }
+    next(err);
+  }
+};
+
+/**
+ * Скачать копию файла базы данных (только админ).
+ * Используется VACUUM INTO — консистентный снимок БД на момент запроса.
+ */
+exports.downloadDatabase = async (req, res, next) => {
+  try {
+    const db = getDB();
+    const outputDir = path.join(__dirname, '../../outputs');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    const backupPath = path.join(outputDir, `db_backup_${Date.now()}.db`);
+    // VACUUM INTO требует литерал пути в SQL — экранируем слэши и кавычки
+    const sqlPath = backupPath.replace(/\\/g, '/').replace(/'/g, "''");
+    await db.exec(`VACUUM INTO '${sqlPath}'`);
+    // bot_web-1.db | bot_web.db (базовое имя берётся из DB_PATH)
+    res.download(backupPath, getVersionedFileName(getDbBaseName(), 'db'), (downloadErr) => {
+      // Временный снимок больше не нужен
+      fs.unlink(backupPath, () => {});
+      if (downloadErr) {
+        console.error('[downloadDatabase] Ошибка отправки файла:', downloadErr);
+      }
+    });
+  } catch (err) {
+    console.error('[downloadDatabase] Ошибка:', err);
+    next(err);
+  }
+};
+
+/**
+ * Создать бэкап базы данных вручную (команда администратора).
+ * Файл сохраняется в папку backend/backups с датой-временем в имени.
+ */
+exports.createBackup = async (req, res, next) => {
+  try {
+    const backupPath = await BackupService.createDbBackup({ includeTime: true });
+    if (!backupPath) {
+      return res.status(500).json({ error: 'Не удалось создать бэкап (файл БД не найден)' });
+    }
+    res.json({ message: 'Бэкап создан', file: path.basename(backupPath) });
+  } catch (err) {
+    console.error('[createBackup] Ошибка:', err);
+    next(err);
+  }
+};
+
+/**
+ * Скачать текущий materials-prices.json
+ */
+exports.downloadMaterials = async (req, res, next) => {
+  try {
+    // materials-prices-1.json | materials-prices.json
+    res.download(MaterialsService.getFilePath(), getVersionedFileName('materials-prices', 'json'));
+  } catch (err) {
+    console.error('[downloadMaterials] Ошибка:', err);
     next(err);
   }
 };
@@ -478,6 +543,19 @@ exports.uploadMaterials = async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
+    // Строгая проверка имени файла: настройки всегда пишутся в актуальный
+    // версионированный файл, поэтому чужое имя — вероятная ошибка конфигурации
+    const expectedName = MaterialsService.getFileName();
+    if (req.file.originalname !== expectedName) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        // временный файл multer не критичен
+      }
+      return res.status(400).json({
+        error: `Неверное имя файла: "${req.file.originalname}". Ожидается "${expectedName}" (актуальная версия настроек)`,
+      });
+    }
     const filePath = req.file.path;
     let data;
     try {
@@ -512,6 +590,9 @@ exports.getMaterials = async (req, res, next) => {
       specialOffers: MaterialsService.getSpecialOffers(),
       minEarnings: MaterialsService.getMinEarnings(),
       colors: MaterialsService.getColors(),
+      // Каноничное имя файла с учётом BOT_VERSION — для строгой
+      // проверки имени при загрузке и подписей на кнопках клиента
+      fileName: MaterialsService.getFileName(),
     };
     res.json(data);
   } catch (err) {

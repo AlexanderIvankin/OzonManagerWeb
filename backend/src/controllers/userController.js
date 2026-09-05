@@ -1,6 +1,10 @@
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const OrderService = require('../services/OrderService');
 const OzonService = require('../services/OzonService');
+const { getLocalDate } = require('../utils');
+
+// Строгое ограничение веса пластика в граммах (10 кг) — как в бот-версии
+const MAX_WEIGHT_GRAMS = 10000;
 
 /**
  * Получить профиль текущего пользователя
@@ -149,7 +153,8 @@ exports.getMonthlyEarnings = async (req, res, next) => {
       fromDate = new Date(year, m - 1, 1).getTime();
       toDate = new Date(year, m, 1).getTime() - 1;
     } else {
-      const now = new Date();
+      // Текущий месяц по локальному времени (TIMEZONE), как в планировщике
+      const now = getLocalDate();
       const year = now.getFullYear();
       const m = now.getMonth();
       fromDate = new Date(year, m, 1).getTime();
@@ -218,10 +223,21 @@ exports.fillStats = async (req, res, next) => {
     if (!offerId || !material || !color || !weight) {
       return res.status(400).json({ error: 'Missing fields' });
     }
-    if (weight <= 0) {
-      return res.status(400).json({ error: 'Weight must be positive' });
+    // Валидация веса (паритет с фронтом): поддерживаем оба разделителя
+    // ("12.5" и "12,5"), строгий формат — максимум одна цифра после
+    // разделителя, положительное число в пределах MAX_WEIGHT_GRAMS
+    const weightNormalized = String(weight).trim().replace(',', '.');
+    const weightNum = Number(weightNormalized);
+    if (!Number.isFinite(weightNum) || weightNum <= 0) {
+      return res.status(400).json({ error: 'Вес должен быть положительным числом (например, 12.5)' });
     }
-    await ProductStat.upsert(offerId, material, color, weight, userId);
+    if (!/^\d+(\.\d)?$/.test(weightNormalized)) {
+      return res.status(400).json({ error: 'Вес указывается с точностью до 0.1 г (одна цифра после запятой)' });
+    }
+    if (weightNum > MAX_WEIGHT_GRAMS) {
+      return res.status(400).json({ error: `Вес не может быть больше ${MAX_WEIGHT_GRAMS} г (10 кг)` });
+    }
+    await ProductStat.upsert(offerId, material, color, weightNum, userId);
     res.json({ message: 'Stats saved' });
   } catch (err) {
     console.error('[fillStats] Ошибка:', err);

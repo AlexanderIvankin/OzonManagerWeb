@@ -2,10 +2,10 @@ const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const { notifyUser } = require('../socket');
-const { Earnings, User } = require('../models');
+const { Earnings } = require('../models');
 const ProductStat = require('../models/ProductStat');
 const MaterialsService = require('./MaterialsService');
-const { formatDateDDMMYYYY } = require('../utils');
+const { getLocalDate, getVersionedDatedFileName } = require('../utils');
 
 /**
  * Сервис для работы с заработком: расчёт, экспорт, корректировки
@@ -88,17 +88,22 @@ class EarningsService {
    */
   static async exportMonthlyEarnings(monthStr = null) {
     let fromDate, toDate;
+    // Метка месяца для имени файла: YYYY-MM в локальном времени (TIMEZONE)
+    let monthLabel;
     if (monthStr) {
       if (!/^\d{4}-\d{2}$/.test(monthStr)) {
         throw new Error('Неверный формат. Используйте YYYY-MM');
       }
+      monthLabel = monthStr;
       const [year, month] = monthStr.split('-').map(Number);
       fromDate = new Date(year, month - 1, 1).getTime();
       toDate = new Date(year, month, 1).getTime() - 1;
     } else {
-      const now = new Date();
+      // Текущий месяц по локальному времени (TIMEZONE), как в планировщике
+      const now = getLocalDate();
       const year = now.getFullYear();
       const month = now.getMonth();
+      monthLabel = `${year}-${String(month + 1).padStart(2, '0')}`;
       fromDate = new Date(year, month, 1).getTime();
       toDate = new Date(year, month + 1, 1).getTime() - 1;
     }
@@ -158,7 +163,8 @@ class EarningsService {
     });
 
     const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `monthly_earnings_${monthStr || (new Date(fromDate).toISOString().slice(0, 7))}.xlsx`;
+    // monthly_earnings-1_2026-09.xlsx | monthly_earnings_2026-09.xlsx (как в бот-версии)
+    const fileName = getVersionedDatedFileName('monthly_earnings', 'xlsx', monthLabel);
     const outputDir = path.join(__dirname, '../../outputs');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
@@ -166,71 +172,6 @@ class EarningsService {
     const outputPath = path.join(outputDir, fileName);
     fs.writeFileSync(outputPath, buffer);
     console.log(`[EarningsService] Файл сохранён: ${outputPath}`);
-    return outputPath;
-  }
-
-  /**
-   * Экспорт активного заработка (с корректировками) в Excel.
-   * @returns {Promise<string>} - путь к созданному файлу
-   */
-  static async exportActiveEarnings() {
-    // Получаем всех пользователей
-    const users = await User.getAll({ includeAll: true });
-    const rows = [];
-
-    for (const user of users) {
-      // Активные заработки (без учёта периода, т.к. активный заработок – это всё, что не обнулено)
-      const activeEarnings = await Earnings.getActive(user.id, 0, Date.now());
-      const totalBase = activeEarnings.reduce((sum, e) => sum + e.amount, 0);
-      const orderCount = activeEarnings.length;
-      const adjustments = await Earnings.getActiveAdjustmentsSum(user.id, 0, Date.now());
-      const totalWithAdjustments = totalBase + adjustments;
-
-      if (totalWithAdjustments !== 0 || orderCount > 0) {
-        rows.push({
-          'ID сотрудника': user.id,
-          'Сотрудник': user.name,
-          'Количество заказов': orderCount,
-          'Заработок (базовый)': totalBase.toFixed(2),
-          'Корректировки': adjustments.toFixed(2),
-          'Заработок (итоговый)': totalWithAdjustments.toFixed(2),
-        });
-      }
-    }
-
-    if (!rows.length) {
-      throw new Error('Нет активных заработков.');
-    }
-
-    // Генерация Excel
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Активный заработок');
-    const headers = ['ID сотрудника', 'Сотрудник', 'Количество заказов', 'Заработок (базовый)', 'Корректировки', 'Заработок (итоговый)'];
-    const headerRow = worksheet.addRow(headers);
-    headerRow.eachCell(cell => {
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.font = { bold: true };
-    });
-    for (const rowData of rows) {
-      const row = worksheet.addRow(Object.values(rowData));
-      row.eachCell(cell => {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-    }
-    const columnWidths = [15, 40, 25, 20, 20, 25];
-    worksheet.columns.forEach((col, index) => {
-      col.width = columnWidths[index] || 20;
-    });
-
-    const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `active_earnings_${new Date().toISOString().slice(0, 7)}.xlsx`;
-    const outputDir = path.join(__dirname, '../../outputs');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    const outputPath = path.join(outputDir, fileName);
-    fs.writeFileSync(outputPath, buffer);
-    console.log(`[EarningsService] Экспорт активного заработка сохранён: ${outputPath}`);
     return outputPath;
   }
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminApi } from "../../api/admin";
+import { adminApi, getBlobErrorMessage, getDownloadFileName } from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,19 +20,25 @@ interface MaterialsData {
   specialOffers: Record<string, number>;
   minEarnings: number;
   colors: string[];
+  // Каноничное имя файла настроек с учётом BOT_VERSION (materials-prices-1.json)
+  fileName?: string;
 }
 
 export const Materials = () => {
   const [data, setData] = useState<MaterialsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  // Актуальное имя файла настроек (приходит с сервера, зависит от BOT_VERSION)
+  const [expectedFileName, setExpectedFileName] = useState("");
 
   const loadMaterials = async () => {
     setLoading(true);
     try {
       const result = await adminApi.getMaterials();
       setData(result);
+      setExpectedFileName(result.fileName || "");
     } catch (err: any) {
       toast.error(err.message || "Не удалось загрузить настройки материалов");
     } finally {
@@ -50,9 +56,28 @@ export const Materials = () => {
     }
   };
 
+  // Строгое совпадение имени с актуальным версионированным файлом
+  const fileNameMismatch =
+    file !== null && expectedFileName !== "" && file.name !== expectedFileName;
+
   const handleUpload = async () => {
     if (!file) {
       toast.error("Выберите файл");
+      return;
+    }
+    // Настройки всегда сохраняются в актуальный версионированный файл,
+    // поэтому чужое имя файла = вероятная ошибка конфигурации — отклоняем
+    if (fileNameMismatch) {
+      toast.error(
+        `Неверное имя файла: "${file.name}". Ожидается "${expectedFileName}"`,
+      );
+      return;
+    }
+    // Запасная проверка, если сервер не сообщил имя (старый бэкенд)
+    if (!expectedFileName && !/^materials-prices(-\d+)?\.json$/.test(file.name)) {
+      toast.error(
+        "Неверное имя файла: ожидается materials-prices.json или materials-prices-<версия>.json",
+      );
       return;
     }
     setUploading(true);
@@ -65,9 +90,33 @@ export const Materials = () => {
       if (input) input.value = "";
       loadMaterials(); // перезагрузить данные
     } catch (err: any) {
-      toast.error(err.message || "Ошибка загрузки");
+      // Показываем текст ошибки с сервера (например, про несовпадение имени)
+      toast.error(err.response?.data?.error || err.message || "Ошибка загрузки");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await adminApi.downloadMaterials();
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = getDownloadFileName(
+        res,
+        expectedFileName || "materials-prices.json",
+      );
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success("Файл скачан");
+    } catch (err: any) {
+      toast.error(
+        await getBlobErrorMessage(err, "Ошибка скачивания файла настроек"),
+      );
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -101,7 +150,10 @@ export const Materials = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="file-upload">Файл materials-prices.json</Label>
+            <Label htmlFor="file-upload">
+              Файл настроек (ожидается{" "}
+              {expectedFileName || "materials-prices.json"})
+            </Label>
             <Input
               id="file-upload"
               type="file"
@@ -109,9 +161,42 @@ export const Materials = () => {
               onChange={handleFileChange}
               className="mt-1"
             />
+            {fileNameMismatch && (
+              <p className="text-xs text-red-500 mt-1">
+                ⚠️ Имя файла не совпадает с актуальным: {expectedFileName}
+              </p>
+            )}
           </div>
-          <Button onClick={handleUpload} disabled={!file || uploading}>
-            {uploading ? "Загрузка..." : "📤 Загрузить"}
+          <Button
+            onClick={handleUpload}
+            disabled={!file || uploading || fileNameMismatch}
+          >
+            {uploading
+              ? "Загрузка..."
+              : `📤 Загрузить ${expectedFileName || "materials-prices.json"}`}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Карточка со скачиванием текущих настроек */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Текущий файл настроек</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Скачайте актуальный {expectedFileName || "materials-prices.json"},
+            чтобы сохранить копию текущих настроек или отредактировать его для
+            повторной загрузки.
+          </p>
+          <Button
+            onClick={handleDownload}
+            disabled={downloading}
+            variant="outline"
+          >
+            {downloading
+              ? "Скачивание..."
+              : `📥 Скачать ${expectedFileName || "materials-prices.json"}`}
           </Button>
         </CardContent>
       </Card>

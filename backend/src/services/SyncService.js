@@ -5,6 +5,7 @@ const { User, Warehouse } = require('../models');
 const { getDB } = require('../config/database');
 const bcrypt = require('bcrypt');
 const OzonService = require('./OzonService');
+const { getVersionedFileName } = require('../utils');
 
 /**
  * Сервис синхронизации пользователей из Excel.
@@ -258,9 +259,13 @@ class SyncService {
       });
     }
 
-    const outputPath = path.join(__dirname, '../../', outputFileName);
+    // Имя файла версонируется, если задан BOT_VERSION:
+    // team-info-1.xlsx | team-info.xlsx; employees-db-1.xlsx | employees-db.xlsx
+    const baseName = outputFileName.replace(/\.xlsx$/i, '');
+    const finalFileName = getVersionedFileName(baseName, 'xlsx');
+    const outputPath = path.join(__dirname, '../../', finalFileName);
     await workbook.xlsx.writeFile(outputPath);
-    console.log(`[SyncService] Экспорт в ${outputFileName} выполнен`);
+    console.log(`[SyncService] Экспорт в ${finalFileName} выполнен`);
     return outputPath;
   }
 }
