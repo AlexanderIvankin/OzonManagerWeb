@@ -20,11 +20,15 @@ router.delete('/users/:id', adminController.fireUser);
 
 // --- Синхронизация из Excel ---
 router.post('/sync/employees', upload.single('file'), adminController.syncEmployees);
-// --- Экспорт team-info ---
+// --- Экспорт данных ---
 router.get('/export/team-info', adminController.exportTeamInfo);
+router.get('/export/product-stats', adminController.exportProductStats);
+router.get('/export/database', authorize('admin'), adminController.downloadDatabase); // только админ
+router.post('/backup', authorize('admin'), adminController.createBackup); // ручной бэкап, только админ
 
 // --- Конфигурация materials-prices.json ---
 router.get('/materials', adminController.getMaterials);
+router.get('/materials/download', adminController.downloadMaterials);
 router.post('/materials/upload', upload.single('file'), adminController.uploadMaterials);
 
 // --- Склады ---
@@ -43,7 +47,6 @@ router.get('/users/:id/stats', adminController.getUserStats);
 // --- Заработок ---
 router.get('/earnings/monthly', adminController.exportMonthlyEarnings);
 router.get('/earnings/active', adminController.getActiveEarningsAll);
-router.get('/earnings/active/export', adminController.exportActiveEarnings);
 router.post('/earnings/adjust', adminController.addEarningsAdjustment);
 router.post('/earnings/settle/:id', adminController.settleEarnings);
 router.post('/earnings/reset', authorize('admin'), adminController.resetAllEarnings); // только админ

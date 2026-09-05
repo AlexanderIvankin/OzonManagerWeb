@@ -19,6 +19,9 @@ import {
 import { toast } from "sonner";
 import api from "../api";
 
+// Строгое ограничение веса пластика в граммах (10 кг) — как в бот-версии
+const MAX_WEIGHT_GRAMS = 10000;
+
 interface FillStatsDialogProps {
   offerId: string;
   onSuccess: () => void;
@@ -73,8 +76,29 @@ export const FillStatsDialog = ({
   }, [open]);
 
   const handleSubmit = async () => {
-    if (!material || !color || !weight || parseFloat(weight) <= 0) {
-      toast.error("Заполните все поля корректно");
+    // Поддерживаем оба разделителя: "12.5" и "12,5" -> приводим запятую к точке
+    const weightNormalized = weight.trim().replace(",", ".");
+    if (!material || !color || !weightNormalized) {
+      toast.error("Заполните все поля");
+      return;
+    }
+    // Строгий формат: целая часть из цифр и максимум ОДНА цифра после
+    // разделителя (отсекаем "12.55", "12.", ",5", "1e3" и прочий ввод)
+    if (!/^\d+(\.\d)?$/.test(weightNormalized)) {
+      toast.error(
+        "Введите вес числом — не более одной цифры после запятой (например, 12.5)",
+      );
+      return;
+    }
+    const weightNum = Number(weightNormalized);
+    if (weightNum <= 0) {
+      toast.error("Вес должен быть больше нуля");
+      return;
+    }
+    if (weightNum > MAX_WEIGHT_GRAMS) {
+      toast.error(
+        `Вес не может быть больше ${MAX_WEIGHT_GRAMS.toLocaleString("ru-RU")} г (10 кг)`,
+      );
       return;
     }
     setLoading(true);
@@ -83,13 +107,16 @@ export const FillStatsDialog = ({
         offerId,
         material,
         color,
-        weight: parseFloat(weight),
+        weight: weightNum,
       });
       toast.success("Статистика сохранена");
       setOpen(false);
       onSuccess();
     } catch (err: any) {
-      toast.error(err.message || "Ошибка сохранения статистики");
+      // Показываем текст ошибки с сервера (например, про превышение лимита)
+      toast.error(
+        err.response?.data?.error || err.message || "Ошибка сохранения статистики",
+      );
     } finally {
       setLoading(false);
     }
@@ -141,9 +168,16 @@ export const FillStatsDialog = ({
             <Input
               type="number"
               placeholder="150"
+              max={MAX_WEIGHT_GRAMS}
+              step="0.1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Положительное число, не более одной цифры после запятой
+              (например, 12.5 или 12,5). Максимум —{" "}
+              {MAX_WEIGHT_GRAMS.toLocaleString("ru-RU")} г (10 кг).
+            </p>
           </div>
           <Button onClick={handleSubmit} disabled={loading} className="w-full">
             {loading ? "Сохранение..." : "Сохранить статистику"}

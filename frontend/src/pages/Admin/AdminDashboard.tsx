@@ -30,8 +30,8 @@ export const AdminDashboard = () => {
       path: "/admin/materials",
     },
     {
-      title: "📋 Экспорт team-info",
-      description: "Выгрузка списка сотрудников и складов",
+      title: "📤 Экспорт данных",
+      description: "Статистика товаров, сотрудники, файл БД",
       path: "/admin/export",
     },
   ];

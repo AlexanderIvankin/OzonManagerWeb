@@ -6,5 +6,4 @@ module.exports = {
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
   accessTokenExpiry: process.env.ACCESS_TOKEN_EXPIRY || '15m',
   refreshTokenExpiry: process.env.REFRESH_TOKEN_EXPIRY || '30d',
-  dbPath: process.env.DB_PATH || './bot_web.db',
 };

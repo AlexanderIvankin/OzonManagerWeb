@@ -1,4 +1,5 @@
 import api from ".";
+import type { AxiosResponse } from "axios";
 
 export interface User {
   id: number;
@@ -93,13 +94,13 @@ export const adminApi = {
     api.post(`/admin/orders/${orderId}/unassign`).then((res) => res.data),
 
   // === Заработок ===
-  exportMonthlyEarnings: (month: string) =>
-    api
-      .get("/admin/earnings/monthly", {
-        params: { month },
-        responseType: "blob",
-      })
-      .then((res) => res.data),
+  // Blob-методы возвращают полный ответ axios, чтобы страница могла
+  // взять версионированное имя файла из Content-Disposition.
+  exportMonthlyEarnings: (month: string): Promise<AxiosResponse<Blob>> =>
+    api.get("/admin/earnings/monthly", {
+      params: { month },
+      responseType: "blob",
+    }),
 
   getActiveEarningsAll: () =>
     api.get("/admin/earnings/active").then((res) => res.data),
@@ -129,11 +130,66 @@ export const adminApi = {
   },
 
   // === Экспорт team-info ===
-  exportTeamInfo: (includeFired = false) =>
-    api
-      .get("/admin/export/team-info", {
-        params: { includeFired },
-        responseType: "blob",
-      })
-      .then((res) => res.data),
+  exportTeamInfo: (includeFired = false): Promise<AxiosResponse<Blob>> =>
+    api.get("/admin/export/team-info", {
+      params: { includeFired },
+      responseType: "blob",
+    }),
+
+  // === Экспорт статистики товаров (Excel) ===
+  exportProductStats: (): Promise<AxiosResponse<Blob>> =>
+    api.get("/admin/export/product-stats", { responseType: "blob" }),
+
+  // === Скачивание файла базы данных (только админ) ===
+  downloadDatabase: (): Promise<AxiosResponse<Blob>> =>
+    api.get("/admin/export/database", { responseType: "blob" }),
+
+  // === Создание бэкапа БД на сервере (только админ) ===
+  createDbBackup: () => api.post("/admin/backup").then((res) => res.data),
+
+  // === Скачивание текущих настроек materials-prices.json ===
+  downloadMaterials: (): Promise<AxiosResponse<Blob>> =>
+    api.get("/admin/materials/download", { responseType: "blob" }),
+};
+
+/**
+ * Извлекает имя файла из заголовка Content-Disposition.
+ * Сервер отдаёт версионированные имена (materials-prices-1.json,
+ * bot_web-1.db, team-info-1.xlsx и т.п.). Поддерживаются RFC 5987
+ * (filename*=UTF-8'') и обычный filename="...".
+ */
+export const getDownloadFileName = (
+  res: AxiosResponse,
+  fallback: string,
+): string => {
+  const contentDisposition =
+    (res.headers?.["content-disposition"] as string) || "";
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].replace(/"/g, "").trim());
+    } catch {
+      // некорректный URL-encoding — пробуем обычный filename
+    }
+  }
+  const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  if (plainMatch?.[1]) return plainMatch[1].trim();
+  return fallback;
+};
+
+/**
+ * Извлекает текст ошибки из Blob-ответа (при responseType: "blob"
+ * серверные ошибки приходят как Blob в err.response.data).
+ */
+export const getBlobErrorMessage = async (err: any, fallback: string) => {
+  if (err.response?.data instanceof Blob) {
+    try {
+      const text = await err.response.data.text();
+      const parsed = JSON.parse(text);
+      if (parsed?.error) return parsed.error;
+    } catch {
+      // не JSON — используем fallback
+    }
+  }
+  return err.message || fallback;
 };

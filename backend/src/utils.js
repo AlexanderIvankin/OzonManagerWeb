@@ -117,6 +117,58 @@ function getLocalTimestamp() {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+/**
+ * Возвращает версию приложения из переменной окружения BOT_VERSION.
+ * @returns {string|null} - версия или null, если не задана
+ */
+function getAppVersion() {
+  const version = (process.env.BOT_VERSION || '').trim();
+  return version || null;
+}
+
+/**
+ * Базовое имя файла БД (без пути, расширения и суффикса версии).
+ * './bot_web.db' и './bot_web-1.db' -> 'bot_web'; если DB_PATH не задан — 'bot_web'.
+ * Суффикс версии срезается только при активном версионировании (BOT_VERSION
+ * задан), чтобы getVersionedFileName не задваивал его (файл БД уже
+ * версионирован: иначе получилось бы 'bot_web-1-1.db'). Если BOT_VERSION
+ * пуст, имя из DB_PATH берётся как есть — версия в нём часть имени.
+ * @returns {string}
+ */
+function getDbBaseName() {
+  const dbPath = process.env.DB_PATH || './bot_web.db';
+  const fileName = dbPath.split(/[\\/]/).pop() || 'bot_web.db';
+  const base = fileName.replace(/\.db$/i, '') || 'bot_web';
+  const version = (process.env.BOT_VERSION || '').trim();
+  return version ? (base.replace(/-\d+$/, '') || base) : base;
+}
+
+/**
+ * Формирует имя файла с версией (если BOT_VERSION задан в .env).
+ * getVersionedFileName('team-info', 'xlsx') -> 'team-info-1.xlsx' | 'team-info.xlsx'
+ * @param {string} base - базовое имя без расширения
+ * @param {string} ext - расширение без точки
+ * @returns {string}
+ */
+function getVersionedFileName(base, ext) {
+  const version = getAppVersion();
+  return version ? `${base}-${version}.${ext}` : `${base}.${ext}`;
+}
+
+/**
+ * Формирует имя файла с версией (если BOT_VERSION задан) и датой/периодом.
+ * getVersionedDatedFileName('bot_web', 'db', '2026-09-04') -> 'bot_web-1_2026-09-04.db' | 'bot_web_2026-09-04.db'
+ * @param {string} base - базовое имя без расширения
+ * @param {string} ext - расширение без точки
+ * @param {string} datePart - часть с датой/временем (вставляется через '_')
+ * @returns {string}
+ */
+function getVersionedDatedFileName(base, ext, datePart) {
+  const version = getAppVersion();
+  return version ? `${base}-${version}_${datePart}.${ext}` : `${base}_${datePart}.${ext}`;
+}
+
+
 // Функция для формирования вывода в HTML parse mode
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
@@ -134,4 +186,8 @@ module.exports = {
   getLocalTime,
   getLocalTimestamp,
   escapeHtml,
+  getAppVersion,
+  getDbBaseName,
+  getVersionedFileName,
+  getVersionedDatedFileName,
 };

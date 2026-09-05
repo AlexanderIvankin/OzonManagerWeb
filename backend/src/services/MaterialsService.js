@@ -1,24 +1,43 @@
 const fs = require('fs');
 const path = require('path');
+const { getVersionedFileName } = require('../utils');
 
 class MaterialsService {
   static #materials = null;
   static #specialOffers = null;
   static #minEarnings = 250;
   static #colors = [];
-  static #filePath = path.join(__dirname, '../../materials-prices.json');
+  // Легаси-файл (до введения BOT_VERSION): materials-prices.json
+  static #legacyFilePath = path.join(__dirname, '../../materials-prices.json');
+  // Активный файл с суффиксом версии, если задан BOT_VERSION:
+  // materials-prices-1.json | materials-prices.json
+  static #filePath = path.join(__dirname, '../../', getVersionedFileName('materials-prices', 'json'));
 
   /**
-   * Загружает настройки из файла materials-prices.json
+   * Файл для чтения настроек: версионированный, если существует,
+   * иначе легаси materials-prices.json (обратная совместимость).
+   */
+  static #resolveReadPath() {
+    if (fs.existsSync(this.#filePath)) return this.#filePath;
+    if (fs.existsSync(this.#legacyFilePath)) return this.#legacyFilePath;
+    return this.#filePath;
+  }
+
+  /**
+   * Загружает настройки из файла materials-prices[-версия].json
    */
   static loadMaterials() {
     try {
-      if (!fs.existsSync(this.#filePath)) {
-        console.warn('[MaterialsService] Файл materials-prices.json не найден, используются значения по умолчанию');
+      const readPath = this.#resolveReadPath();
+      if (readPath === this.#legacyFilePath && this.#legacyFilePath !== this.#filePath) {
+        console.log('[MaterialsService] Версионированный файл не найден, читаю легаси materials-prices.json');
+      }
+      if (!fs.existsSync(readPath)) {
+        console.warn('[MaterialsService] Файл настроек материалов не найден, используются значения по умолчанию');
         this.#setDefaults();
         return;
       }
-      const raw = fs.readFileSync(this.#filePath, 'utf8');
+      const raw = fs.readFileSync(readPath, 'utf8');
       const data = JSON.parse(raw);
       this.#materials = data.materials || {};
       this.#specialOffers = data.specialOffers || {};
@@ -66,6 +85,23 @@ class MaterialsService {
   }
 
   /**
+   * Путь к актуальному файлу настроек (для скачивания):
+   * версионированный, если существует, иначе легаси-файл.
+   */
+  static getFilePath() {
+    return this.#resolveReadPath();
+  }
+
+  /**
+   * Каноничное имя файла настроек с учётом версии
+   * (materials-prices-1.json | materials-prices.json) —
+   * для строгой проверки имени файла при загрузке.
+   */
+  static getFileName() {
+    return path.basename(this.#filePath);
+  }
+
+  /**
    * Обновляет настройки материалов и сохраняет в файл (всегда в постоянный путь)
    */
   static updateMaterials(data, customFilePath = null) {
@@ -77,7 +113,7 @@ class MaterialsService {
     this.#minEarnings = data.minEarnings || 250;
     this.#colors = data.colors || [];
 
-    // Всегда сохраняем в основной путь, если не передан кастомный (используется для тестов)
+    // Сохраняем в версионированный файл, если не передан кастомный (используется для тестов)
     const targetPath = customFilePath || this.#filePath;
     fs.writeFileSync(targetPath, JSON.stringify(data, null, 2));
     console.log('[MaterialsService] Настройки материалов сохранены в', targetPath);

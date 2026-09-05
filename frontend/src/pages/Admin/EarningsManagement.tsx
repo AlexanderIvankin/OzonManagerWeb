@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminApi } from "../../api/admin";
+import { adminApi, getDownloadFileName } from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -95,11 +95,11 @@ export const EarningsManagement = () => {
   const handleExport = async () => {
     if (!month) return;
     try {
-      const blob = await adminApi.exportMonthlyEarnings(month);
-      const url = window.URL.createObjectURL(blob);
+      const res = await adminApi.exportMonthlyEarnings(month);
+      const url = window.URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `monthly_earnings_${month}.xlsx`;
+      a.download = getDownloadFileName(res, `monthly_earnings_${month}.xlsx`);
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success("Файл скачан");

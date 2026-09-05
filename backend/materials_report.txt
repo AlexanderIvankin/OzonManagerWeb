@@ -1,0 +1,9 @@
+SYNTAX_SERVICE_EXIT=0
+SYNTAX_CONTROLLER_EXIT=0
+[MaterialsService] Настройки материалов загружены
+EXPECTED_FILE_NAME=materials-prices-1.json
+CONTROLLER_REQUIRE_OK
+BACKEND_TEST_EXIT=0
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+BUILD_EXIT=0

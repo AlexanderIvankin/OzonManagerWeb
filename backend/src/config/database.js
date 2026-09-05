@@ -2,13 +2,48 @@ const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const path = require('path');
 const fs = require('fs');
+require('dotenv').config();
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../bot_web.db');
+// Базовый путь к БД (без версии): из DB_PATH или по умолчанию рядом с backend/
+const DB_BASE_PATH = process.env.DB_PATH || path.join(__dirname, '../../bot_web.db');
+
+// Суффикс версии из BOT_VERSION — как в бот-версии (bot-1.db):
+// BOT_VERSION=1 -> bot_web.db -> bot_web-1.db
+const DB_VERSION = (process.env.BOT_VERSION || '').trim();
+
+/**
+ * Вставляет суффикс версии в имя файла: './bot_web.db' -> './bot_web-1.db'.
+ * Уже существующий суффикс "-<число>" заменяется актуальной версией,
+ * чтобы не было задвоения ('bot_web-1-1.db') при смене BOT_VERSION.
+ */
+function withVersionSuffix(dbPath) {
+  if (!DB_VERSION) return dbPath;
+  const dir = path.dirname(dbPath);
+  const ext = path.extname(dbPath);
+  const base = path.basename(dbPath, ext).replace(/-\d+$/, '') || 'bot_web';
+  return path.join(dir, `${base}-${DB_VERSION}${ext}`);
+}
+
+const DB_PATH = withVersionSuffix(DB_BASE_PATH);
 
 let dbInstance = null;
 
 async function initDB() {
   if (dbInstance) return dbInstance;
+
+  // Автоматическая миграция со старого неверсиониованного файла:
+  // если версионированного файла ещё нет, а базовый существует —
+  // переносим данные (копия вместе с WAL/SHM, чтобы не потерять транзакции).
+  // Старый файл остаётся на месте как резервная копия.
+  if (DB_PATH !== DB_BASE_PATH && !fs.existsSync(DB_PATH) && fs.existsSync(DB_BASE_PATH)) {
+    fs.copyFileSync(DB_BASE_PATH, DB_PATH);
+    for (const sidecar of ['-wal', '-shm']) {
+      if (fs.existsSync(DB_BASE_PATH + sidecar)) {
+        fs.copyFileSync(DB_BASE_PATH + sidecar, DB_PATH + sidecar);
+      }
+    }
+    console.log(`🔄 База данных перенесена: ${DB_BASE_PATH} -> ${DB_PATH}`);
+  }
 
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) {
@@ -223,4 +258,11 @@ function getDB() {
   return dbInstance;
 }
 
-module.exports = { initDB, getDB };
+/**
+ * Путь к файлу базы данных (для бэкапа/скачивания)
+ */
+function getDBPath() {
+  return DB_PATH;
+}
+
+module.exports = { initDB, getDB, getDBPath };

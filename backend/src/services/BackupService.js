@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { getDB } = require('../config/database');
+const { getDB, getDBPath } = require('../config/database');
+const { formatLocalTimestamp, getDbBaseName, getVersionedDatedFileName } = require('../utils');
 
 const BACKUP_DIR = path.join(__dirname, '../../backups');
 
@@ -13,7 +14,7 @@ class BackupService {
    * Если бэкап за сегодня уже существует — пропускает.
    * @returns {Promise<string|null>} - путь к созданному бэкапу или null
    */
-  static async createDbBackup() {
+  static async createDbBackup({ includeTime = false } = {}) {
     try {
       // Создаём папку для бэкапов, если её нет
       if (!fs.existsSync(BACKUP_DIR)) {
@@ -21,16 +22,29 @@ class BackupService {
         console.log(`[Backup] Создана папка бэкапов: ${BACKUP_DIR}`);
       }
 
-      const dbPath = process.env.DB_PATH || path.join(__dirname, '../../bot_web.db');
+      const dbPath = getDBPath();
       if (!fs.existsSync(dbPath)) {
         console.error('[Backup] Файл базы данных не найден:', dbPath);
         return null;
       }
 
-      const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      const backupPath = path.join(BACKUP_DIR, `bot_web_${dateStr}.db`);
+      let backupName;
+      if (includeTime) {
+        // Ручной бэкап (команда админа): уникальное имя с локальным временем
+        // bot_web-1_2026-09-04_13-28-13.db | bot_web_2026-09-04_13-28-13.db
+        backupName = getVersionedDatedFileName(getDbBaseName(), 'db', formatLocalTimestamp());
+      } else {
+        // Ежедневный бэкап (планировщик): только дата, один раз в день.
+        // Локальная дата (TIMEZONE), а не UTC: бэкап в 00:00 по Москве
+        // должен попадать на сегодняшний день, а не на вчерашний.
+        const dateStr = formatLocalTimestamp().slice(0, 10); // YYYY-MM-DD
+        // bot_web-1_2026-09-04.db | bot_web_2026-09-04.db
+        backupName = getVersionedDatedFileName(getDbBaseName(), 'db', dateStr);
+      }
+      const backupPath = path.join(BACKUP_DIR, backupName);
 
-      if (fs.existsSync(backupPath)) {
+      // Проверяем существование только для ежедневных бэкапов (без времени)
+      if (!includeTime && fs.existsSync(backupPath)) {
         console.log(`[Backup] Бэкап за сегодня уже существует: ${backupPath}`);
         return backupPath;
       }
