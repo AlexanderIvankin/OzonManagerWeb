@@ -95,9 +95,28 @@ const TEMPLATES = {
   earnings_adjusted: (p) => ({
     user: {
       title: `💰 Корректировка заработка: ${p.amount > 0 ? '+' : ''}${p.amount} руб.`,
-      message: `Ваш заработок скорректирован на ${p.amount > 0 ? '+' : ''}${p.amount} руб.${p.reason ? ` Причина: ${p.reason}` : ''}`,
+      message: `Ваш заработок скорректирован на ${p.amount > 0 ? '+' : ''}${p.amount} руб.${p.adminName ? ` Администратор: ${p.adminName}.` : ''}${p.reason ? ` Причина: ${p.reason}` : ''}`,
     },
     // В журнал действий для персонала не дублируем (сотрудник получит своё)
+    staff: null,
+  }),
+
+  earnings_settled: (p) => ({
+    user: {
+      title: `🏦 Произведён расчёт заработка`,
+      message: `Активный заработок обнулён. Выплачено: ${Number(p.amount || 0).toFixed(2)} руб.${p.adminName ? ` Расчёт произвёл: ${p.adminName}.` : ''}`,
+    },
+    // В журнал действий для персонала не дублируем
+    staff: null,
+  }),
+
+  // Заработок уже 0: отправляется только через WebSocket (persist: false),
+  // в историю «Оповещений» не попадает
+  earnings_settled_zero: (p) => ({
+    user: {
+      title: `🏦 Расчёт заработка`,
+      message: `Активный заработок пуст (0 руб.) — рассчитывать нечего.${p.adminName ? ` Запросил: ${p.adminName}.` : ''}`,
+    },
     staff: null,
   }),
 
@@ -183,23 +202,34 @@ class NotificationService {
   /**
    * Персональное оповещение пользователю: запись в notifications.db + WebSocket.
    * Никогда не бросает исключений — сбой оповещений не должен ломать бизнес-логику.
+   *
+   * @param {number} userId
+   * @param {string} type
+   * @param {object} payload
+   * @param {object} opts - { persist = true }. persist: false — ТОЛЬКО мгновенная
+   *   доставка через WebSocket (toast), БЕЗ записи в историю «Оповещений».
+   *   Используется для незначимых/информационных событий (например,
+   *   «заработок уже 0, рассчитывать нечего»).
    */
-  static async notifyUser(userId, type, payload = {}) {
+  static async notifyUser(userId, type, payload = {}, { persist = true } = {}) {
     try {
       const tpl = TEMPLATES[type] ? TEMPLATES[type](payload) : null;
       const text = tpl && tpl.user;
       if (!text) return;
 
       const search = extractSearchFields(payload);
-      const id = await Notification.create({
-        recipientId: userId,
-        audience: 'user',
-        type,
-        title: text.title,
-        message: text.message,
-        payload,
-        ...search,
-      });
+      let id = null;
+      if (persist) {
+        id = await Notification.create({
+          recipientId: userId,
+          audience: 'user',
+          type,
+          title: text.title,
+          message: text.message,
+          payload,
+          ...search,
+        });
+      }
 
       // Мгновенная доставка через WebSocket (если пользователь онлайн)
       notifyUser(userId, 'notification_new', {
@@ -210,6 +240,7 @@ class NotificationService {
         message: text.message,
         payload,
         createdAt: Date.now(),
+        transient: !persist,
       });
     } catch (err) {
       console.error(

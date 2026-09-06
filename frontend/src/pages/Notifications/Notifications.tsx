@@ -23,6 +23,8 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   order_cancelled: { icon: "❌", label: "Отмена заказа" },
   order_unassigned: { icon: "↩️", label: "Снятие заказа" },
   earnings_adjusted: { icon: "💰", label: "Корректировка заработка" },
+  earnings_settled: { icon: "🏦", label: "Расчёт заработка" },
+  earnings_settled_zero: { icon: "🏦", label: "Расчёт заработка" },
   stats_filled: { icon: "📝", label: "Статистика заполнена" },
   taking_orders_changed: { icon: "🔄", label: "Приём заказов" },
   new_orders_available: { icon: "🆕", label: "Новые заказы в очереди" },
@@ -380,6 +382,32 @@ export const Notifications = () => {
     }
   };
 
+  // Клик по оповещению — отметить прочитанным (если ещё не прочитано).
+  // Для уже прочитанных клик ничего не делает.
+  const handleNotificationClick = async (n: NotificationItem) => {
+    if (isRead(n)) return;
+    try {
+      await notificationsApi.markRead(activeBox, [n.id]);
+      if (unreadOnly) {
+        // при фильтре «только непрочитанные» строка исчезает сразу
+        setItems((prev) => prev.filter((item) => item.id !== n.id));
+        setItemsTotal((t) => Math.max(0, t - 1));
+      } else {
+        // локально гасим строку без перезагрузки списка
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === n.id ? { ...item, is_read: 1 } : item,
+          ),
+        );
+      }
+      loadCounters();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error || "Не удалось отметить прочитанным",
+      );
+    }
+  };
+
   const handleClearRead = async () => {
     try {
       const { changed } = await notificationsApi.clearRead(activeBox);
@@ -500,8 +528,8 @@ export const Notifications = () => {
               🗑 Удалить выбранные
               {selectedErrorIds.size ? ` (${selectedErrorIds.size})` : ""}
             </Button>
-            <Button size="sm" variant="ghost" onClick={handleClearErrors}>
-              Очистить весь журнал
+            <Button size="sm" variant="destructive" onClick={handleClearErrors}>
+              ⚠️ Очистить весь журнал
             </Button>
           </div>
 
@@ -658,8 +686,8 @@ export const Notifications = () => {
               🗑 Удалить выбранные
               {selectedIds.size ? ` (${selectedIds.size})` : ""}
             </Button>
-            <Button size="sm" variant="ghost" onClick={handleClearRead}>
-              Очистить прочитанные
+            <Button size="sm" variant="destructive" onClick={handleClearRead}>
+              ⚠️ Удалить все прочитанные
             </Button>
             <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
               <input
@@ -691,8 +719,14 @@ export const Notifications = () => {
             {items.map((n) => (
               <div
                 key={n.id}
-                className={`flex items-start gap-3 rounded-md border p-3 ${
-                  isRead(n) ? "opacity-70" : "bg-accent/40"
+                onClick={() => handleNotificationClick(n)}
+                title={
+                  isRead(n) ? undefined : "Нажмите, чтобы отметить прочитанным"
+                }
+                className={`flex items-center gap-3 rounded-md border p-3 transition-colors ${
+                  isRead(n)
+                    ? "opacity-70"
+                    : "cursor-pointer bg-accent/40 hover:bg-accent/70"
                 }`}
               >
                 <input
@@ -700,6 +734,7 @@ export const Notifications = () => {
                   className="mt-1 h-4 w-4 accent-primary"
                   checked={selectedIds.has(n.id)}
                   onChange={() => toggleSelect(n.id)}
+                  onClick={(e) => e.stopPropagation()}
                 />
                 <span className="text-xl leading-none">
                   {TYPE_META[n.type]?.icon ?? "🔔"}
@@ -733,7 +768,10 @@ export const Notifications = () => {
                   size="sm"
                   variant="ghost"
                   title="Удалить"
-                  onClick={() => handleDeleteOne(n.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteOne(n.id);
+                  }}
                 >
                   ✕
                 </Button>

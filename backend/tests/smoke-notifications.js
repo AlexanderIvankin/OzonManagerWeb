@@ -74,6 +74,39 @@ const NotificationService = require('../src/services/NotificationService');
     });
     console.log(`Поиск по артикулу OFFER-1: ${byOffer.total}`);
 
+    // 4d. Шаблон корректировки заработка (админ + причина)
+    await NotificationService.notifyUser(1, 'earnings_adjusted', {
+      amount: 200,
+      reason: 'SmokeTest',
+      adminName: 'SmokeAdmin',
+    });
+    const byAdjust = await Notification.getByRecipient(1, {
+      audience: 'user',
+    });
+    const adjustItem = byAdjust.items.find(
+      (n) => n.type === 'earnings_adjusted' && n.payload?.reason === 'SmokeTest',
+    );
+    console.log(
+      `Корректировка создана: ${!!adjustItem}, сообщение: "${adjustItem?.message}"`,
+    );
+
+    // 4e. Транзиентное оповещение (persist: false) — НЕ пишется в историю
+    await NotificationService.notifyUser(
+      1,
+      'earnings_settled_zero',
+      { adminName: 'SmokeAdmin' },
+      { persist: false },
+    );
+    const afterTransient = await Notification.getByRecipient(1, {
+      audience: 'user',
+    });
+    const transientSaved = afterTransient.items.some(
+      (n) => n.type === 'earnings_settled_zero',
+    );
+    console.log(
+      `Транзиентное оповещение НЕ сохранено в историю: ${!transientSaved}`,
+    );
+
     // 5. Прочитка/удаление
     const marked = await Notification.markRead(1, [created[0]]);
     const unreadAfter = await Notification.getUnreadCount(1, { audience: 'user' });
@@ -82,7 +115,7 @@ const NotificationService = require('../src/services/NotificationService');
     // 6. Очистка за собой: удаляем тестовые записи (у всех получателей)
     const db = require('../src/config/notificationsDatabase').getNotificationsDB();
     await db.run(
-      `DELETE FROM notifications WHERE payload LIKE '%TEST-1%' OR payload LIKE '%TEST-2%' OR payload LIKE '%TEST-4%'`
+      `DELETE FROM notifications WHERE payload LIKE '%TEST-1%' OR payload LIKE '%TEST-2%' OR payload LIKE '%TEST-4%' OR payload LIKE '%SmokeTest%'`
     );
     await db.run(`DELETE FROM server_errors WHERE source = 'smokeTest'`);
     const pruned = await Notification.pruneOld(30, 14);
