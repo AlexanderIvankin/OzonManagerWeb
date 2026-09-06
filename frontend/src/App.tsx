@@ -7,6 +7,7 @@ import { Login } from "./pages/Login/Login";
 import { Register } from "./pages/Register/Register";
 import { Profile } from "./pages/Profile/Profile";
 import { Orders } from "./pages/Orders/Orders";
+import { Notifications } from "./pages/Notifications/Notifications";
 import { AdminPanel } from "./pages/Admin/AdminPanel";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Layout } from "./components/Layout/Layout";
@@ -38,6 +39,9 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            {/* Оповещения доступны всем ролям (личные); журнал действий и
+                ошибки сервера отображаются внутри страницы только персоналу */}
+            <Route path="/notifications" element={<Notifications />} />
             <Route
               path="/admin/*"
               element={

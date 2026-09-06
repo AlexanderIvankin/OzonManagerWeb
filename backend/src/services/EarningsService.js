@@ -1,7 +1,7 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
-const { notifyUser } = require('../socket');
+const NotificationService = require('./NotificationService');
 const { Earnings } = require('../models');
 const ProductStat = require('../models/ProductStat');
 const MaterialsService = require('./MaterialsService');
@@ -181,16 +181,11 @@ class EarningsService {
   static async addAdjustment(userId, amount, reason = '') {
     await Earnings.addAdjustment(userId, amount, reason);
     await Earnings.addActiveAdjustment(userId, amount, reason);
-    // Отправляем уведомление через WebSocket
-    try {
-      notifyUser(userId, 'earnings_adjusted', {
-        amount,
-        reason,
-        message: `Ваш заработок скорректирован на ${amount > 0 ? '+' : ''}${amount} руб.${reason ? ' Причина: ' + reason : ''}`
-      });
-    } catch (err) {
-      console.warn('[EarningsService] Не удалось отправить уведомление пользователю', err);
-    }
+    // Оповещение сотруднику: сохраняем в notifications.db + отправляем через WebSocket
+    NotificationService.notifyUser(userId, 'earnings_adjusted', {
+      amount,
+      reason,
+    });
   }
 
   /**

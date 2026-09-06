@@ -6,11 +6,14 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const { initDB } = require('./src/config/database');
+const { initNotificationsDB } = require('./src/config/notificationsDatabase');
 const scheduler = require('./src/scheduler');
 const OrderService = require('./src/services/OrderService');
 const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/user');
 const adminRoutes = require('./src/routes/admin');
+const notificationsRoutes = require('./src/routes/notifications');
+const NotificationService = require('./src/services/NotificationService');
 const { initSocket } = require('./src/socket');
 
 const app = express();
@@ -87,12 +90,15 @@ app.use('/api/auth', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Error handling middleware.
 // ВАЖНО: сигнатура обязана иметь 4 аргумента (даже если некоторые не используются) —
 // по длине функции (fn.length === 4) Express понимает, что это обработчик ошибок.
 app.use((err, _req, res, _next) => {
   console.error(err.stack);
+  // Журналируем ошибку в отдельную БД (notifications.db -> server_errors)
+  NotificationService.logServerError('express', err);
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
@@ -108,11 +114,15 @@ initSocket(server);
     await initDB();
     console.log('✅ Подключение к БД установлено');
 
+    // Отдельная база оповещений (notifications.db): история действий + ошибки сервера
+    await initNotificationsDB();
+
     // Запускаем планировщик
     const SYNC_ORDERS_TIME = parseInt(process.env.SYNC_ORDERS_TIME) || 60;
     scheduler.startOrderChecker(SYNC_ORDERS_TIME, OrderService.checkNewOrders);
     scheduler.startCooldownCleaner();
     scheduler.startDailyBackupChecker();
+    scheduler.startNotificationsCleanup();
     scheduler.startDailyPromotionCleaner();
     scheduler.startMonthlyExportChecker();
 

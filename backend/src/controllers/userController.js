@@ -1,6 +1,7 @@
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const OrderService = require('../services/OrderService');
 const OzonService = require('../services/OzonService');
+const NotificationService = require('../services/NotificationService');
 const { getLocalDate } = require('../utils');
 
 // Строгое ограничение веса пластика в граммах (10 кг) — как в бот-версии
@@ -206,6 +207,14 @@ exports.toggleOrders = async (req, res, next) => {
     if (!user) throw new Error('User not found');
     const newStatus = user.taking_orders === 1 ? 0 : 1;
     await User.update(userId, { taking_orders: newStatus });
+
+    // Оповещение персоналу: сотрудник изменил приём заказов
+    NotificationService.notifyStaff('taking_orders_changed', {
+      userId,
+      userName: user.name,
+      takingOrders: newStatus === 1,
+    });
+
     res.json({ taking_orders: newStatus });
   } catch (err) {
     console.error('[toggleOrders] Ошибка:', err);
@@ -238,6 +247,17 @@ exports.fillStats = async (req, res, next) => {
       return res.status(400).json({ error: `Вес не может быть больше ${MAX_WEIGHT_GRAMS} г (10 кг)` });
     }
     await ProductStat.upsert(offerId, material, color, weightNum, userId);
+
+    // Оповещение персоналу: сотрудник заполнил статистику товара
+    NotificationService.notifyStaff('stats_filled', {
+      userId,
+      userName: req.user.name,
+      offerId,
+      material,
+      color,
+      weight: weightNum,
+    });
+
     res.json({ message: 'Stats saved' });
   } catch (err) {
     console.error('[fillStats] Ошибка:', err);

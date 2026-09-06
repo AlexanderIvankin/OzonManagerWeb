@@ -10,6 +10,11 @@ backend/outputs/
 backend/bot.db
 backend/bot_web.db
 backend/bot.db-journal
+backend/notifications.db
+backend/notifications*.db
+backend/notifications*.db-journal
+backend/notifications*.db-wal
+backend/notifications*.db-shm
 
 backend/team-info.xlsx
 backend/employees-db.xlsx
