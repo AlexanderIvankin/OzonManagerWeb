@@ -128,4 +128,10 @@
   html {
     @apply font-sans;
     }
+  /* ID/артикулы (номер заказа, offer_id, sku, warehouse_id, user id и т.п.):
+     моноширинный «чип». select-all — один клик выделяет всё значение,
+     чтобы сразу скопировать его в буфер обмена */
+  code {
+    @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em] break-all select-all;
+    }
 }

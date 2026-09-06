@@ -203,7 +203,9 @@ export const EarningsManagement = () => {
               ) : (
                 data.map((user) => (
                   <TableRow key={user.id}>
-                    <TableCell className="text-center">{user.name}</TableCell>
+                    <TableCell className="text-center">
+                      <b>{user.name}</b>
+                    </TableCell>
                     <TableCell className="text-center">
                       <Badge
                         className={

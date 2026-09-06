@@ -260,7 +260,9 @@ export const Materials = () => {
                   {Object.entries(data.specialOffers).map(
                     ([offerId, price]) => (
                       <TableRow key={offerId}>
-                        <TableCell>{offerId}</TableCell>
+                        <TableCell>
+                          <code>{offerId}</code>
+                        </TableCell>
                         <TableCell className="text-right">
                           {price.toFixed(2)}
                         </TableCell>

@@ -220,9 +220,9 @@ export const ActiveOrders = () => {
                 <div className="grid gap-1 text-sm">
                   <div>
                     <span className="font-semibold">Сотрудник:</span>{" "}
-                    {order.userName}{" "}
+                    <b>{order.userName}</b>{" "}
                     <span className="text-muted-foreground">
-                      (ID: {order.userId})
+                      (ID: <code>{order.userId}</code>)
                     </span>
                   </div>
                   <div>
@@ -233,7 +233,12 @@ export const ActiveOrders = () => {
                   </div>
                   <div>
                     <span className="font-semibold">Склад:</span>{" "}
-                    {order.warehouseName || order.warehouseId || "не указан"}
+                    {order.warehouseName ||
+                      (order.warehouseId ? (
+                        <code>{order.warehouseId}</code>
+                      ) : (
+                        "не указан"
+                      ))}
                   </div>
                 </div>
                 {order.missingStats.length > 0 && (
@@ -242,7 +247,7 @@ export const ActiveOrders = () => {
                     <div className="flex flex-wrap gap-1">
                       {order.missingStats.map((id) => (
                         <Badge key={id} variant="outline">
-                          {id}
+                          <code>{id}</code>
                         </Badge>
                       ))}
                     </div>
