@@ -96,7 +96,7 @@ export const OrderCard = ({
             <div className="flex flex-wrap gap-1">
               {missingOfferIds.map((id) => (
                 <Badge key={id} variant="outline" className="cursor-pointer">
-                  {id}
+                  <code>{id}</code>
                 </Badge>
               ))}
             </div>
@@ -113,7 +113,7 @@ export const OrderCard = ({
                     {p.offer_id && (
                       <span className="text-xs text-muted-foreground">
                         {" "}
-                        (offer_id: {p.offer_id})
+                        (offer_id: <code>{p.offer_id}</code>)
                       </span>
                     )}
                   </div>

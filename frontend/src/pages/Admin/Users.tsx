@@ -157,8 +157,12 @@ export const Users = () => {
                     key={user.id}
                     className={user.is_fired ? "opacity-50" : ""}
                   >
-                    <TableCell className="text-center">{user.id}</TableCell>
-                    <TableCell className="text-center">{user.name}</TableCell>
+                    <TableCell className="text-center">
+                      <code>{user.id}</code>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <b>{user.name}</b>
+                    </TableCell>
                     <TableCell className="text-center">
                       {user.username}
                     </TableCell>

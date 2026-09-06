@@ -127,7 +127,7 @@ export const OrdersManagement = () => {
                     {order.warehouse_id && (
                       <span className="text-sm text-muted-foreground">
                         {" "}
-                        (ID: {order.warehouse_id})
+                        (ID: <code>{order.warehouse_id}</code>)
                       </span>
                     )}
                   </div>
@@ -185,16 +185,20 @@ export const OrdersManagement = () => {
                             const emp = employees.find(
                               (e) => String(e.id) === String(val),
                             );
-                            return emp
-                              ? `${emp.name} (ID: ${emp.id})`
-                              : String(val);
+                            return emp ? (
+                              <>
+                                <b>{emp.name}</b> (ID: <code>{emp.id}</code>)
+                              </>
+                            ) : (
+                              String(val)
+                            );
                           }}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {employees.map((emp) => (
                           <SelectItem key={emp.id} value={String(emp.id)}>
-                            {emp.name} (ID: {emp.id})
+                            <b>{emp.name}</b> (ID: <code>{emp.id}</code>)
                           </SelectItem>
                         ))}
                       </SelectContent>

@@ -87,14 +87,24 @@ const PayloadDetails = ({
           {products.map((p, i) => (
             <p key={i}>
               • {p.name ?? "—"} — {p.quantity ?? 1} шт.
-              {p.offer_id ? ` (offer_id: ${p.offer_id})` : ""}
+              {p.offer_id ? (
+                <>
+                  {" "}
+                  (offer_id: <code>{p.offer_id}</code>)
+                </>
+              ) : null}
             </p>
           ))}
         </div>
       )}
       {hasMissing && (
         <p className="text-amber-600 dark:text-amber-400">
-          ⚠️ Требуется заполнить статистику: {missingStats!.join(", ")}
+          ⚠️ Требуется заполнить статистику:{" "}
+          {missingStats!.map((o) => (
+            <code key={o} className="mr-1">
+              {o}
+            </code>
+          ))}
         </p>
       )}
       {hasEarnings && (
@@ -102,7 +112,8 @@ const PayloadDetails = ({
           <p className="font-medium text-foreground">Заработок по товарам:</p>
           {earningsDetails!.map((item, i) => (
             <p key={i}>
-              • {item.productName ?? item.offerId} ({item.offerId}) —{" "}
+              • {item.productName ?? item.offerId} (
+              <code>{item.offerId}</code>) —{" "}
               {item.isSpecial
                 ? "спецпредложение"
                 : `${item.material ?? "—"}, ${item.weight ?? 0} г`}{" "}
