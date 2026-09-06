@@ -1,7 +1,7 @@
 const OzonService = require('./OzonService');
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const { getDB } = require('../config/database');
-const { notifyUser, notifyModerators } = require('../socket');
+const NotificationService = require('./NotificationService');
 const { escapeHtml } = require('../utils');
 const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders, productImagesCache } = require('../state');
 const EarningsService = require('./EarningsService');
@@ -11,17 +11,37 @@ let pendingNewOrders = [];
 let currentOrderProcessing = null;
 let orderAssignRetries = new Map();
 
-// Конфигурация
-const MIN_EARNINGS = 250;
-const MATERIALS_PRICES = {
-  'Pet-G': 2.5,
-  'ABS': 2.5,
-  'Нейлон Pa-6': 2.5,
-  'Нейлон Pa-12': 2.5,
-  'НейлонАрмир': 2.5,
-  'ASA': 2.5,
-};
-let specialOffers = null; // загружается из materials-prices.json
+// Конфигурация материалов и минимального заработка загружается внутри
+// EarningsService (MaterialsService) — здесь дубликаты не нужны.
+
+/**
+ * Формирует компактный JSON-слепок деталей заказа для payload оповещения
+ * (по мотивам formatOrderDetails из commands.js, но в структурированном виде).
+ * Сохраняется в notifications.db -> payload и участвует в поиске по offer_id.
+ */
+function buildOrderNotificationDetails(details) {
+  if (!details) return null;
+  return {
+    order_number: details.order_number || null,
+    substatus: details.substatus || null,
+    delivery_method: details.delivery_method
+      ? {
+          name: details.delivery_method.name || null,
+          warehouse_id: details.delivery_method.warehouse_id || null,
+        }
+      : null,
+    products: (details.products || []).map((p) => ({
+      name: p.name || null,
+      sku: p.sku || null,
+      offer_id: p.offer_id || null,
+      quantity: p.quantity || 1,
+      price: p.price?.amount || null,
+      currency: p.price?.currency || 'RUB',
+    })),
+    in_process_at: details.in_process_at || null,
+    tracking_number: details.tracking_number || null,
+  };
+}
 
 class OrderService {
   // =================================================================
@@ -98,34 +118,39 @@ class OrderService {
       if (!assignment.employee_name || assignment.is_fired === 1) {
         console.warn(`[CLEAN] Заказ ${orderId} назначен на некорректного сотрудника (user_id=${assignment.user_id}), снимаем`);
         await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
-        notifyModerators('order_unassigned', {
+
+        // Оповещения: персоналу в журнал действий + сотруднику лично.
+        // Фикс: раньше отправляли по tg_user_id, а комнаты сокета именуются
+        // по user_id — поэтому авто-снятие до сотрудника не доходило.
+        NotificationService.notifyStaff('order_unassigned', {
           orderId,
+          auto: true,
           reason: 'Сотрудник отсутствует или уволен',
-          employeeName: assignment.employee_name || 'не найден'
+          userName: assignment.employee_name || 'не найден',
         });
-        if (assignment.tg_user_id) {
-          notifyUser(assignment.tg_user_id, 'order_unassigned', {
-            orderId,
-            reason: 'Сотрудник отсутствует или уволен'
-          });
-        }
+        NotificationService.notifyUser(assignment.user_id, 'order_unassigned', {
+          orderId,
+          auto: true,
+          reason: 'Сотрудник отсутствует или уволен',
+        });
         continue;
       }
 
       // === 5. Стандартное удаление: заказ больше не в awaiting_packaging ===
       console.log(`[CLEAN] Заказ ${orderId} больше не в awaiting_packaging, отменяем назначение у ${assignment.employee_name}`);
       await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
-      notifyModerators('order_unassigned', {
+
+      NotificationService.notifyStaff('order_unassigned', {
         orderId,
+        auto: true,
         reason: 'Заказ более не актуален (не в awaiting_packaging)',
-        employeeName: assignment.employee_name
+        userName: assignment.employee_name,
       });
-      if (assignment.tg_user_id) {
-        notifyUser(assignment.tg_user_id, 'order_unassigned', {
-          orderId,
-          reason: 'Заказ более не актуален'
-        });
-      }
+      NotificationService.notifyUser(assignment.user_id, 'order_unassigned', {
+        orderId,
+        auto: true,
+        reason: 'Заказ более не актуален',
+      });
     }
 
     console.log('[OrderService] cleanExpiredAssignments завершена');
@@ -168,13 +193,13 @@ class OrderService {
       pendingNewOrders = newOrders;
       console.log(`[CHECK] Очередь обновлена, заказов: ${pendingNewOrders.length}`);
 
-      // Уведомляем модераторов о новых заказах (через WebSocket)
-      notifyModerators('new_orders_available', {
+      // Оповещаем персонал о новых заказах (БД оповещений + WebSocket)
+      NotificationService.notifyStaff('new_orders_available', {
         count: pendingNewOrders.length,
         orders: pendingNewOrders.map(o => ({
           posting_number: o.posting_number,
           products_count: o.products?.length || 0,
-        }))
+        })),
       });
 
       // Если нет активного заказа и есть заказы – берём первый
@@ -231,20 +256,47 @@ class OrderService {
       assignedInDb = true;
       console.log(`[ASSIGN] Заказ ${orderId} записан в БД за сотрудником ${employee.name}`);
 
-      // Дальнейшая логика: статистика, фото, модели, формы статистики (опускаем для краткости)
-      // Здесь мы отправляем уведомление сотруднику через WebSocket
-      notifyUser(userId, 'order_assigned', {
-        orderId,
-        message: `Вам назначен заказ ${orderId}`,
-        details: orderDetails
-      });
+      // === ПРОВЕРКА СТАТИСТИКИ (перенесено из commands.js assignOrder, шаг 4) ===
+      // Каких товаров ещё нет в product_stats — сотрудник заполнит их
+      // через диалог «Заполнить статистику» на странице «Заказы».
+      const missingStats = [];
+      for (const product of orderDetails.products || []) {
+        const offerId = product.offer_id;
+        if (!offerId) continue;
+        const stats = await ProductStat.get(offerId);
+        if (!stats) missingStats.push(offerId);
+      }
 
-      notifyModerators('order_assigned', {
+      // === ОПОВЕЩЕНИЕ О НАЗНАЧЕНИИ (вместо сообщений в Telegram) ===
+      // Одно событие «order_assigned» для обеих аудиторий. В payload кладём
+      // детали заказа (состав с offer_id, склад, трек-номер) + missingStats —
+      // как в бот-версии уходило текстом в сообщении сотруднику и модератору.
+      const assignPayload = {
         orderId,
         userId,
-        employeeName: employee.name,
-        message: 'Заказ назначен'
-      });
+        userName: employee.name,
+        adminId: adminId || null,
+        adminName: adminId
+          ? (await User.getById(adminId))?.name || String(adminId)
+          : null,
+        missingStats,
+        details: buildOrderNotificationDetails(orderDetails),
+      };
+      NotificationService.notifyUser(userId, 'order_assigned', assignPayload);
+      NotificationService.notifyStaff('order_assigned', assignPayload);
+
+      // === ФОТОГРАФИИ: пропускаем ===
+      // В бот-версии фото товаров отправлялись в Telegram (fetchProductsImages).
+      // В веб-версии фото всегда доступны на странице «Заказы»
+      // (attachProductImages) — дублировать в оповещения не нужно.
+
+      // === 3D-МОДЕЛИ: TODO ===
+      // TODO: перенос выдачи 3D-моделей из commands.js assignOrder (шаг 9):
+      //  - выбор моделей по расширениям (.stl/.3mf/.step/.obj/.zip) с учётом
+      //    родительского offer_id (getParentOfferId),
+      //  - текстовые инструкции (textFiles) и skipped-модели -> уведомление персонала,
+      //  - учёт выданных моделей сотруднику (issued_models / addIssuedModel).
+      // Пока модели выдаются вручную (как раньше — через модератора).
 
       orderAssignRetries.delete(orderId);
       console.log(`[ASSIGN] Заказ ${orderId} успешно назначен сотруднику ${employee.name} (ID ${employee.id})`);
@@ -256,10 +308,14 @@ class OrderService {
       if (assignedInDb) {
         // Ошибка после записи в БД — не возвращаем заказ в очередь
         console.error(`[ASSIGN] Заказ ${orderId} уже назначен в БД, в очередь не возвращаем.`);
-        notifyModerators('order_assign_error', {
+        NotificationService.notifyStaff('order_assign_error', {
           orderId,
           error: err.message,
-          employeeName: employee?.name || userId
+          userName: employee?.name || userId,
+        });
+        NotificationService.logServerError('OrderService.assignOrder', err, {
+          orderId,
+          phase: 'after_db_write',
         });
       } else {
         // Ошибка до записи в БД — возвращаем заказ в очередь
@@ -283,10 +339,14 @@ class OrderService {
           }
         } else {
           console.error(`[ASSIGN] Заказ ${orderId} не удалось назначить после 3 попыток.`);
-          notifyModerators('order_assign_failed', {
+          NotificationService.notifyStaff('order_assign_failed', {
             orderId,
             error: err.message,
-            attempts: retries
+            attempts: retries,
+          });
+          NotificationService.logServerError('OrderService.assignOrder', err, {
+            orderId,
+            attempts: retries,
           });
           orderAssignRetries.delete(orderId);
         }
@@ -328,7 +388,7 @@ class OrderService {
       const orderDetails = await OzonService.getOrderDetails(orderId);
       let earningsData = null;
       if (orderDetails && orderDetails.products) {
-        const materialsData = { materials: MATERIALS_PRICES, minEarnings: MIN_EARNINGS, specialOffers };
+        // Конфигурация материалов/спецпредложений загружается внутри EarningsService
         earningsData = await EarningsService.calculateOrderEarnings(orderDetails, user);
         if (!earningsData.allHaveStats) {
           console.warn(`[FINISH] Не все товары имеют статистику для заказа ${orderId}`);
@@ -392,28 +452,30 @@ class OrderService {
         throw txError;
       }
 
-      // Отправляем этикетку (если есть)
-      if (labelBuffer) {
-        // В веб-версии этикетка будет доступна через API /api/user/orders/:orderId/label
-        // Поэтому просто сохраняем в локальном хранилище или возвращаем через WebSocket
-        notifyUser(userId, 'order_finished', {
-          orderId,
-          labelAvailable: true,
-          earnings: earningsData?.total || 0
-        });
-      } else {
-        notifyUser(userId, 'order_finished', {
-          orderId,
-          labelAvailable: false,
-          earnings: earningsData?.total || 0
-        });
-      }
-
-      notifyModerators('order_finished', {
+      // Оповещения: сотруднику (этикетка/заработок) + персоналу в журнал действий.
+      // В payload кладём детализацию заработка по товарам — в бот-версии она
+      // отправлялась сотруднику отдельным сообщением «💰 Заработок за заказ».
+      const finishedPayload = {
+        orderId,
+        labelAvailable: !!labelBuffer,
+        earnings: earningsData?.total || 0,
+        earningsDetails: (earningsData?.details || []).map((item) => ({
+          offerId: item.offerId,
+          productName: item.productName,
+          material: item.material,
+          weight: item.weight,
+          quantity: item.quantity,
+          earningsPerUnit: item.earningsPerUnit,
+          totalForProduct: item.totalForProduct,
+          isSpecial: item.isSpecial,
+        })),
+      };
+      NotificationService.notifyUser(userId, 'order_finished', finishedPayload);
+      NotificationService.notifyStaff('order_finished', {
         orderId,
         userId,
-        employeeName: user.name,
-        earnings: earningsData?.total || 0
+        userName: user.name,
+        ...finishedPayload,
       });
 
       // Очищаем состояния
@@ -459,9 +521,14 @@ class OrderService {
     // Увеличиваем счётчик отменённых заказов (вина пользователя)
     await UserStats.incrementCanceled(userId);
 
-    // Уведомляем пользователя и модераторов
-    notifyUser(userId, 'order_cancelled', { orderId });
-    notifyModerators('order_cancelled', { orderId, userId, reason: 'Отменён пользователем' });
+    // Оповещения: сотруднику + персоналу в журнал действий
+    const cancelledUser = await User.getById(userId);
+    NotificationService.notifyUser(userId, 'order_cancelled', { orderId });
+    NotificationService.notifyStaff('order_cancelled', {
+      orderId,
+      userId,
+      userName: cancelledUser?.name || userId,
+    });
 
     // Возвращаем заказ в очередь (перезагружаем)
     await this.reloadQueue();
@@ -489,9 +556,20 @@ class OrderService {
     // Удаляем назначение (без увеличения счётчика отмен)
     await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
 
-    // Уведомляем пользователя и модераторов
-    notifyUser(userId, 'order_unassigned', { orderId, reason: 'Снят администратором' });
-    notifyModerators('order_unassigned', { orderId, userId, adminId, reason: 'Снят администратором' });
+    // Оповещения: сотруднику + персоналу в журнал действий
+    const unassignedUser = await User.getById(userId);
+    NotificationService.notifyUser(userId, 'order_unassigned', {
+      orderId,
+      auto: false,
+      reason: 'Снят администратором',
+    });
+    NotificationService.notifyStaff('order_unassigned', {
+      orderId,
+      userId,
+      adminId,
+      userName: unassignedUser?.name || userId,
+      reason: 'Снят администратором',
+    });
 
     // Возвращаем заказ в очередь
     await this.reloadQueue();

@@ -38,11 +38,12 @@ function initSocket(server) {
   io.on('connection', (socket) => {
     console.log(`[Socket] Пользователь ${socket.userId} (${socket.role}) подключился`);
 
-    // Подписываем на комнаты в зависимости от роли
+    // Личная комната — всегда (админы/модераторы тоже получают персональные оповещения)
+    socket.join(`user_${socket.userId}`);
+
+    // Комната персонала: журнал действий сотрудников и ошибки сервера
     if (socket.role === 'admin' || socket.role === 'moderator') {
       socket.join('moderators');
-    } else {
-      socket.join(`user_${socket.userId}`);
     }
 
     socket.on('disconnect', () => {

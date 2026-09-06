@@ -1,17 +1,53 @@
+import { useEffect, useState } from "react";
 import { Outlet, Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { logout } from "../../store/authSlice";
 import { AppDispatch } from "../../store";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Toaster } from "sonner";
+import { notificationsApi } from "../../api/notifications";
+import {
+  disconnectSocket,
+  onNotificationNew,
+  onNotificationsChanged,
+} from "../../lib/socket";
 
 export const Layout = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
 
+  // Непрочитанные личные оповещения для бейджа в сайдбаре
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const data = await notificationsApi.unreadCount("mine");
+        if (!cancelled) setUnreadCount(data.count);
+      } catch {
+        // счётчик некритичен
+      }
+    };
+    load();
+
+    // Живое обновление бейджа: новое оповещение или изменение (прочитано/удалено)
+    const offNew = onNotificationNew(load);
+    const offChanged = onNotificationsChanged(load);
+
+    return () => {
+      cancelled = true;
+      offNew();
+      offChanged();
+    };
+  }, []);
+
   const handleLogout = async () => {
+    disconnectSocket();
     await dispatch(logout());
     navigate("/login");
   };
@@ -43,6 +79,17 @@ export const Layout = () => {
               📦 Заказы
             </Link>
           )}
+          <Link
+            to="/notifications"
+            className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent"
+          >
+            <span>🔔 Оповещения</span>
+            {unreadCount > 0 && (
+              <Badge className="ml-2">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </Badge>
+            )}
+          </Link>
           {["moderator", "admin"].includes(user?.role || "") && (
             <Link
               to="/admin"
