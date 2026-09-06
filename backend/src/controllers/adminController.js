@@ -464,9 +464,15 @@ exports.addEarningsAdjustment = async (req, res, next) => {
     if (!userId || amount === undefined) {
       return res.status(400).json({ error: 'userId and amount are required' });
     }
-    await Earnings.addAdjustment(userId, amount, reason || '');
-    await Earnings.addActiveAdjustment(userId, amount, reason || '');
-    // Уведомление пользователю (можно добавить позже через WebSocket)
+    // ВАЖНО: используем сервис (а не методы модели напрямую) —
+    // именно EarningsService.addAdjustment сохраняет обе записи
+    // и отправляет оповещение сотруднику в notifications.db + WebSocket
+    await EarningsService.addAdjustment(
+      userId,
+      amount,
+      reason || '',
+      req.user?.name || null,
+    );
     res.json({ message: 'Adjustment added successfully' });
   } catch (err) {
     next(err);
@@ -479,12 +485,12 @@ exports.addEarningsAdjustment = async (req, res, next) => {
 exports.settleEarnings = async (req, res, next) => {
   try {
     const userId = parseInt(req.params.id);
-    // Получаем сумму активного заработка (для лога)
-    const totalActive = await Earnings.getActiveSum(userId, 0, Date.now());
-    // Очищаем активные записи
-    await Earnings.clearActive(userId);
-    await Earnings.clearActiveAdjustments(userId);
-    res.json({ message: 'Settled', clearedAmount: totalActive });
+    // Сервис очищает активные записи и уведомляет сотрудника об расчёте
+    const { clearedAmount } = await EarningsService.settleEmployee(
+      userId,
+      req.user?.name || null,
+    );
+    res.json({ message: 'Settled', clearedAmount });
   } catch (err) {
     next(err);
   }

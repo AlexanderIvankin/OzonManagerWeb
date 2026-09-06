@@ -176,25 +176,58 @@ class EarningsService {
   }
 
   /**
-   * Добавляет корректировку и уведомляет пользователя (через WebSocket или email)
+   * Добавляет корректировку и уведомляет сотрудника
+   * (notifications.db + WebSocket)
    */
-  static async addAdjustment(userId, amount, reason = '') {
+  static async addAdjustment(userId, amount, reason = '', adminName = null) {
     await Earnings.addAdjustment(userId, amount, reason);
     await Earnings.addActiveAdjustment(userId, amount, reason);
     // Оповещение сотруднику: сохраняем в notifications.db + отправляем через WebSocket
     NotificationService.notifyUser(userId, 'earnings_adjusted', {
       amount,
       reason,
+      adminName,
     });
   }
 
   /**
-   * Производит расчёт с сотрудником (обнуляет активный заработок)
+   * Производит расчёт с сотрудником (обнуляет активный заработок
+   * и активные корректировки) и уведомляет его.
+   *
+   * Сумма расчёта = базовый активный заработок + активные корректировки —
+   * ровно то «Итого», что сотрудник видит в профиле, а админ в управлении
+   * заработком (иначе в оповещение уходила только база, а корректировки
+   * терялись, и при нулевой базе сообщалось «Выплачено: 0 руб.»).
    */
-  static async settleEmployee(userId) {
-    const totalActive = await Earnings.getActiveSum(userId, 0, Date.now());
+  static async settleEmployee(userId, adminName = null) {
+    const baseActive = await Earnings.getActiveSum(userId, 0, Date.now());
+    const adjustmentsActive = await Earnings.getActiveAdjustmentsSum(
+      userId,
+      0,
+      Date.now(),
+    );
+    const totalActive = baseActive + adjustmentsActive;
+
     await Earnings.clearActive(userId);
     await Earnings.clearActiveAdjustments(userId);
+
+    if (totalActive > 0) {
+      // Обычное оповещение: сохраняется в истории «Оповещений» + WebSocket
+      NotificationService.notifyUser(userId, 'earnings_settled', {
+        amount: totalActive,
+        adminName,
+      });
+    } else {
+      // Заработок уже 0: только мгновенное уведомление через WebSocket,
+      // в историю «Оповещений» НЕ пишем (нечего рассчитывать)
+      NotificationService.notifyUser(
+        userId,
+        'earnings_settled_zero',
+        { adminName },
+        { persist: false },
+      );
+    }
+
     return { clearedAmount: totalActive };
   }
 }
