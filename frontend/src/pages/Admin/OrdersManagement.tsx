@@ -21,20 +21,77 @@ interface AwaitingOrder {
     sku?: string;
     images?: Array<{ url: string; name: string }>;
   }>;
-  warehouse_id?: string;
+  warehouse_id?: string | number;
   analytics_data?: { warehouse?: string };
+  // Полные детали заказа приходят из /admin/orders/awaiting (поле details)
+  details?: {
+    delivery_method?: { warehouse_id?: string | number | null };
+  };
 }
+
+interface EmployeeOption {
+  id: number;
+  name: string;
+  capacity?: number;
+  active_count?: number;
+  // ID складов, на которых у сотрудника стоит приоритет (user_warehouses)
+  warehouses: string[];
+}
+
+type ListMode = "priority" | "all";
+
+// === Индикатор наличия 3D-моделей у сотрудника ===
+// Как в боте: 🟢 — все модели заказа выданы, 🟡 — частично, 🔴 — нет.
+// В веб-версии выдача моделей при назначении (assignOrder) ещё не
+// реализована (TODO в OrderService.assignOrder), поэтому индикатор
+// пока всегда показывает «нет моделей» (🔴).
+const MODEL_INDICATOR = "🔴";
+const MODEL_LABEL = "нет моделей";
+
+// ID склада заказа: сначала верхнеуровневый warehouse_id,
+// затем из полных деталей (delivery_method.warehouse_id)
+const getOrderWarehouseId = (order: AwaitingOrder): string | null => {
+  if (order.warehouse_id) return String(order.warehouse_id);
+  const dmWarehouseId = order.details?.delivery_method?.warehouse_id;
+  return dmWarehouseId ? String(dmWarehouseId) : null;
+};
+
+// Сотрудники с приоритетом на складе заказа (аналог кнопки «priority_» в боте)
+const filterPriorityEmployees = (
+  employees: EmployeeOption[],
+  order: AwaitingOrder,
+): EmployeeOption[] => {
+  const warehouseId = getOrderWarehouseId(order);
+  if (!warehouseId) return [];
+  return employees.filter((e) => e.warehouses.includes(warehouseId));
+};
+
+// Подпись сотрудника в стиле бота:
+// 🔴 Имя (ID: 123) | 📦: активные заказы | 🖨️: принтеры | 🗃️: модели
+const renderEmployeeLabel = (emp: EmployeeOption) => (
+  <span className="flex flex-wrap items-center gap-x-1">
+    <span aria-hidden>{MODEL_INDICATOR}</span>
+    <b>{emp.name}</b>
+    <span>
+      (ID: <code>{emp.id}</code>)
+    </span>
+    <span className="text-muted-foreground">
+      | 📦: {emp.active_count ?? 0} | 🖨️: {emp.capacity ?? "—"} | 🗃️:{" "}
+      {MODEL_LABEL}
+    </span>
+  </span>
+);
 
 export const OrdersManagement = () => {
   const [orders, setOrders] = useState<AwaitingOrder[]>([]);
-  const [employees, setEmployees] = useState<
-    Array<{ id: number; name: string }>
-  >([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState<{ [key: string]: boolean }>({});
   const [selectedEmployee, setSelectedEmployee] = useState<{
     [key: string]: string | null;
   }>({});
+  // Какой список сотрудников показывать: приоритетные по складу или все
+  const [listMode, setListMode] = useState<{ [key: string]: ListMode }>({});
 
   const loadOrders = async () => {
     setLoading(true);
@@ -53,13 +110,39 @@ export const OrdersManagement = () => {
       const users = await adminApi.getUsers({
         includeAll: true,
         includeFired: false,
+        // Запрашиваем склады (приоритеты) и число активных заказов
+        withWarehouses: true,
       });
-      const emp = users
+      const emp: EmployeeOption[] = users
         .filter((u) => u.role !== "user" && u.taking_orders)
-        .map((u) => ({ id: u.id, name: u.name }));
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          capacity: u.capacity,
+          active_count: u.active_count ?? 0,
+          warehouses: (u.warehouses || []).map((w) => String(w.warehouse_id)),
+        }));
       setEmployees(emp);
     } catch (err: any) {
       toast.error("Не удалось загрузить сотрудников");
+    }
+  };
+
+  // Переключение списка сотрудников для заказа. Если выбранный сотрудник
+  // не входит в новый список — сбрасываем выбор (как «🔙 Назад» в боте)
+  const changeListMode = (order: AwaitingOrder, mode: ListMode) => {
+    setListMode((prev) => ({ ...prev, [order.posting_number]: mode }));
+    const current = selectedEmployee[order.posting_number];
+    if (!current) return;
+    const targetList =
+      mode === "priority"
+        ? filterPriorityEmployees(employees, order)
+        : employees;
+    if (!targetList.some((e) => String(e.id) === String(current))) {
+      setSelectedEmployee((prev) => ({
+        ...prev,
+        [order.posting_number]: null,
+      }));
     }
   };
 
@@ -110,122 +193,178 @@ export const OrdersManagement = () => {
         </div>
       ) : (
         <div className="grid gap-4">
-          {orders.map((order) => (
-            <Card key={order.posting_number}>
-              <CardHeader>
-                <CardTitle>
-                  <span className="text-xl">
-                    Заказ <code>{order.posting_number}</code>
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="font-semibold mb-1">Склад:</div>
+          {orders.map((order) => {
+            const warehouseId = getOrderWarehouseId(order);
+            const priorityEmployees = filterPriorityEmployees(employees, order);
+            // По умолчанию показываем приоритетных по складу (как в боте),
+            // если склад заказа известен
+            const mode: ListMode =
+              listMode[order.posting_number] ??
+              (warehouseId ? "priority" : "all");
+            const list = mode === "priority" ? priorityEmployees : employees;
+            return (
+              <Card key={order.posting_number}>
+                <CardHeader>
+                  <CardTitle>
+                    <span className="text-xl font-bold">
+                      Заказ <code>{order.posting_number}</code>
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div>
-                    {order.analytics_data?.warehouse || "не указан"}
-                    {order.warehouse_id && (
-                      <span className="text-sm text-muted-foreground">
-                        {" "}
-                        (ID: <code>{order.warehouse_id}</code>)
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <div className="font-semibold text-xl mb-[10px]">Состав:</div>
-                  <ul className="text-sm space-y-5">
-                    {order.products?.map((p, idx) => (
-                      <li key={idx}>
-                        <div>
+                    <div className="font-semibold mb-1">Склад:</div>
+                    <div>
+                      {order.analytics_data?.warehouse || "не указан"}
+                      {warehouseId && (
+                        <span className="text-sm text-muted-foreground">
+                          {" "}
+                          (ID:{" "}
                           <span className="font-bold">
-                            {idx + 1}
-                            {". "}
+                            <code>{warehouseId}</code>
                           </span>
-                          {p.name} — {p.quantity} шт.
-                          {p.offer_id && (
-                            <span className="text-l text-muted-foreground">
-                              {" "}
-                              <br></br>(offer_id:{" "}
-                              <span className="font-bold">
-                                <code>{p.offer_id}</code>
-                              </span>
-                              )
-                            </span>
-                          )}
-                        </div>
-                        {p.images && p.images.length > 0 && (
-                          <ProductImages
-                            productName={p.name}
-                            images={p.images}
-                          />
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <Select
-                      value={selectedEmployee[order.posting_number] || ""}
-                      onValueChange={(val) =>
-                        setSelectedEmployee((prev) => ({
-                          ...prev,
-                          [order.posting_number]: val,
-                        }))
-                      }
-                    >
-                      <SelectTrigger className="w-full h-10 text-base">
-                        <SelectValue
-                          className="text-base font-medium"
-                          placeholder="Выберите сотрудника"
-                        >
-                          {(val) => {
-                            if (!val) return "Выберите сотрудника";
-                            const emp = employees.find(
-                              (e) => String(e.id) === String(val),
-                            );
-                            return emp ? (
-                              <>
-                                <b>{emp.name}</b> (ID: <code>{emp.id}</code>)
-                              </>
-                            ) : (
-                              String(val)
-                            );
-                          }}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {employees.map((emp) => (
-                          <SelectItem key={emp.id} value={String(emp.id)}>
-                            <b>{emp.name}</b> (ID: <code>{emp.id}</code>)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                          )
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <Button
-                    size="lg"
-                    className="h-10 px-5 text-base"
-                    onClick={() =>
-                      handleAssign(
-                        order.posting_number,
-                        selectedEmployee[order.posting_number] || "",
-                      )
-                    }
-                    disabled={
-                      assigning[order.posting_number] ||
-                      !selectedEmployee[order.posting_number]
-                    }
-                  >
-                    {assigning[order.posting_number]
-                      ? "Назначение..."
-                      : "Назначить"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div>
+                    <div className="font-semibold text-xl mb-[10px]">
+                      Состав:
+                    </div>
+                    <ul className="text-sm space-y-5">
+                      {order.products?.map((p, idx) => (
+                        <li key={idx}>
+                          <div>
+                            <span className="font-bold">
+                              {idx + 1}
+                              {". "}
+                            </span>
+                            {p.name} — {p.quantity} шт.
+                            {p.offer_id && (
+                              <span className="text-l text-muted-foreground">
+                                {" "}
+                                <br></br>(offer_id:{" "}
+                                <span className="font-bold">
+                                  <code>{p.offer_id}</code>
+                                </span>
+                                )
+                              </span>
+                            )}
+                          </div>
+                          {p.images && p.images.length > 0 && (
+                            <ProductImages
+                              productName={p.name}
+                              images={p.images}
+                            />
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 space-y-2">
+                      {/* Выбор списка: приоритетные по складу / все (как в боте) */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Список:
+                        </span>
+                        <Button
+                          size="sm"
+                          variant={mode === "priority" ? "default" : "outline"}
+                          onClick={() => changeListMode(order, "priority")}
+                          disabled={!warehouseId}
+                          title={
+                            warehouseId
+                              ? "Сотрудники с приоритетом по складу заказа"
+                              : "Склад заказа не указан"
+                          }
+                        >
+                          👑 По складу ({priorityEmployees.length})
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={mode === "all" ? "default" : "outline"}
+                          onClick={() => changeListMode(order, "all")}
+                        >
+                          👥 Все ({employees.length})
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴 нет),
+                          выдача при назначении пока не реализована
+                        </span>
+                      </div>
+                      <div className="flex flex-row items-center gap-4">
+                        <Select
+                          value={selectedEmployee[order.posting_number] || ""}
+                          onValueChange={(val) =>
+                            setSelectedEmployee((prev) => ({
+                              ...prev,
+                              [order.posting_number]: val,
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="w-full h-10 text-base">
+                            <SelectValue
+                              className="text-base font-medium"
+                              placeholder="Выберите сотрудника"
+                            >
+                              {(val) => {
+                                if (!val) return "Выберите сотрудника";
+                                // Ищем по всем сотрудникам, чтобы выбранное
+                                // значение отображалось и после смены списка
+                                const emp = employees.find(
+                                  (e) => String(e.id) === String(val),
+                                );
+                                return emp
+                                  ? renderEmployeeLabel(emp)
+                                  : String(val);
+                              }}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {list.length === 0 ? (
+                              <div className="px-2 py-3 text-sm text-muted-foreground">
+                                {mode === "priority"
+                                  ? warehouseId
+                                    ? "Нет сотрудников с приоритетом на этом складе — переключитесь на «Все»"
+                                    : "Склад заказа не указан — выберите список «Все»"
+                                  : "Нет доступных сотрудников"}
+                              </div>
+                            ) : (
+                              list.map((emp) => (
+                                <SelectItem key={emp.id} value={String(emp.id)}>
+                                  {renderEmployeeLabel(emp)}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="lg"
+                          className="h-10 px-5 text-base"
+                          onClick={() =>
+                            handleAssign(
+                              order.posting_number,
+                              selectedEmployee[order.posting_number] || "",
+                            )
+                          }
+                          disabled={
+                            assigning[order.posting_number] ||
+                            !selectedEmployee[order.posting_number]
+                          }
+                        >
+                          {assigning[order.posting_number]
+                            ? "Назначение..."
+                            : "Назначить"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

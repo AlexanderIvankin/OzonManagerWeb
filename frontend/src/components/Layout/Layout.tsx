@@ -149,7 +149,7 @@ export const Layout = () => {
           )}
         </nav>
         <div className="border-t pt-4">
-          <Button variant="outline" className="w-full" onClick={handleLogout}>
+          <Button variant="destructive" className="w-full" onClick={handleLogout}>
             Выйти
           </Button>
         </div>

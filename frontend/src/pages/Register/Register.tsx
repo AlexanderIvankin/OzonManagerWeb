@@ -4,7 +4,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,7 +17,7 @@ import {
 } from '../../lib/utils';
 
 const registerSchema = z.object({
-  username: z.string().min(3, 'Минимум 3 символа'),
+  username: z.string().min(6, 'Логин: минимум 6 символов'),
   email: z.string().email('Некорректный email'),
   password: z.string().min(6, 'Минимум 6 символов'),
   name: z.string().min(1, 'Введите имя'),
@@ -29,7 +28,16 @@ const registerSchema = z.object({
       (v) => !v || v.trim() === '' || isValidPhone(v),
       'Введите номер в формате ' + PHONE_FORMAT_HINT,
     ),
-  capacity: z.string().optional(),
+  capacity: z
+    .string()
+    .optional()
+    .refine(
+      (v) =>
+        !v ||
+        v.trim() === '' ||
+        (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 99),
+      'Количество принтеров: целое число от 1 до 99',
+    ),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
@@ -39,7 +47,6 @@ export const Register = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const {
     register: registerField,
@@ -54,7 +61,6 @@ export const Register = () => {
   const onSubmit = async (data: RegisterFormValues) => {
     setLoading(true);
     setError(null);
-    setSuccess(false);
     try {
       await dispatch(register({
         username: data.username,
@@ -64,10 +70,10 @@ export const Register = () => {
         phone: data.phone || '',
         capacity: parseInt(data.capacity || '1'),
       })).unwrap();
-      setSuccess(true);
-      setTimeout(() => navigate('/login'), 2000);
+      // После регистрации — на страницу ввода кода из письма
+      navigate(`/verify-email?email=${encodeURIComponent(data.email)}`);
     } catch (err: any) {
-      setError(err.message || 'Ошибка регистрации');
+      setError(err?.response?.data?.error || err?.message || 'Ошибка регистрации');
     } finally {
       setLoading(false);
     }
@@ -82,11 +88,6 @@ export const Register = () => {
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
-            {success && (
-              <div className="rounded-md bg-green-50 p-3 text-sm text-green-800">
-                Регистрация прошла успешно! Перенаправление на вход...
-              </div>
-            )}
             <div className="space-y-2">
               <Label htmlFor="username">Логин</Label>
               <Input id="username" placeholder="Придумайте логин" {...registerField('username')} />
@@ -130,7 +131,7 @@ export const Register = () => {
             {error && <p className="text-sm text-red-500">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col space-y-2">
-            <Button type="submit" className="w-full" disabled={loading || success}>
+            <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Загрузка...' : 'Зарегистрироваться'}
             </Button>
             <p className="text-sm text-muted-foreground">

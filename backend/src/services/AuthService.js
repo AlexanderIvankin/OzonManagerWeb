@@ -9,6 +9,36 @@ const EmailVerification = require('../models/EmailVerification');
 const EmailService = require('./EmailService');
 
 class AuthService {
+  /**
+   * Минимальная валидация данных регистрации.
+   * Возвращает массив текстов ошибок (пустой массив — всё валидно).
+   */
+  static validateRegisterData(data) {
+    const errors = [];
+    const { username, email, password, capacity } = data;
+
+    // Логин: минимум 6 символов (уникальность проверяет User.create)
+    if (!username || typeof username !== 'string' || username.trim().length < 6) {
+      errors.push('Логин должен содержать минимум 6 символов');
+    }
+    // Email: простая проверка формата *@*.*
+    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      errors.push('Некорректный email');
+    }
+    // Пароль: минимум 6 символов
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      errors.push('Пароль должен содержать минимум 6 символов');
+    }
+    // Количество принтеров: целое число от 1 до 99 (пустое = значение по умолчанию 1)
+    if (capacity !== undefined && capacity !== null && capacity !== '') {
+      const n = Number(capacity);
+      if (!Number.isInteger(n) || n < 1 || n > 99) {
+        errors.push('Количество принтеров должно быть целым числом от 1 до 99');
+      }
+    }
+    return errors;
+  }
+
   static async register(data) {
     const { username, email, password, name, phone, capacity, earningsFactor } = data;
     // Проверяем, что username и email уникальны (это делает User.create)
@@ -20,30 +50,69 @@ class AuthService {
       passwordHash,
       name,
       phone: phone || '',
+      // Диапазон 1..99 проверяется в validateRegisterData; пустое/0 -> дефолт 1
       capacity: capacity || 1,
       earningsFactor: earningsFactor || 1.0,
-      role: 'user', // по умолчанию
+      // До подтверждения email пользователь — 'guest'.
+      // Роль 'user' он получает после ввода кода из письма (см. verifyEmail).
+      role: 'guest',
     });
 
     // Генерируем код
     const code = this.generateVerificationCode();
     await EmailVerification.create(user.id, code);
 
-    // Отправляем письмо (не блокируем ответ)
-    EmailService.sendVerificationEmail(user.email, user.name, code)
-      .catch(err => console.error('Ошибка отправки письма:', err));
+    // Отправляем письмо: ЖДЁМ результат, чтобы не отвечать 201,
+    // когда письмо реально не ушло (иначе пользователь застрянет без кода).
+    try {
+      await EmailService.sendVerificationEmail(user.email, user.name, code);
+    } catch (err) {
+      // Откатываем регистрацию: удаляем коды и пользователя, чтобы
+      // username/email освободились и регистрацию можно было повторить.
+      console.error('[Auth] Ошибка отправки письма при регистрации:', err.message);
+      await EmailVerification.deleteByUserId(user.id);
+      await User.deleteById(user.id);
+      throw new Error(`Не удалось отправить письмо с кодом подтверждения: ${err.message}`);
+    }
 
-    return user; // но пользователь пока не верифицирован
+    return user; // роль 'guest' — ждём подтверждения email
   }
 
   static async verifyEmail(code) {
     const record = await EmailVerification.findByCode(code);
     if (!record) throw new Error('Неверный или просроченный код');
 
-    // Подтверждаем email
-    await User.update(record.user_id, { email_verified: 1 });
-    await EmailVerification.deleteByCode(code);
-    return { success: true };
+    const user = await User.getById(record.user_id);
+    if (!user) throw new Error('Неверный или просроченный код');
+
+    // Подтверждаем email и выдаём роль 'user'. Роль меняем только у 'guest',
+    // чтобы не понизить роль уже существующего сотрудника/админа.
+    const updates = { email_verified: 1 };
+    if (user.role === 'guest') {
+      updates.role = 'user';
+    }
+    const updated = await User.update(user.id, updates);
+
+    // Коды одноразовые: чистим все коды этого пользователя
+    await EmailVerification.deleteByUserId(user.id);
+
+    return updated;
+  }
+
+  /**
+   * Повторная отправка кода подтверждения (например, письмо не пришло).
+   * Для несуществующего или уже подтверждённого аккаунта — тихий no-op,
+   * чтобы не раскрывать факт регистрации по email.
+   */
+  static async resendCode(email) {
+    const user = await User.getByEmail(email);
+    if (!user || user.role !== 'guest') return;
+
+    const code = this.generateVerificationCode();
+    // Старые коды становятся недействительными
+    await EmailVerification.deleteByUserId(user.id);
+    await EmailVerification.create(user.id, code);
+    await EmailService.sendVerificationEmail(user.email, user.name, code);
   }
 
   static generateVerificationCode() {
@@ -64,6 +133,10 @@ class AuthService {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
       throw new Error('Invalid credentials');
+    }
+    // Неподтверждённые (гости) не допускаются до ввода кода из письма
+    if (user.role === 'guest') {
+      throw new Error('Email not verified');
     }
     // Генерируем токены
     const accessToken = this.generateAccessToken(user.id);
