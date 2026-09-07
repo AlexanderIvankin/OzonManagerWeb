@@ -32,6 +32,24 @@ export const register = createAsyncThunk<User, any>(
   },
 );
 
+// Подтверждение email по коду из письма — после него сервер присваивает роль user
+export const verifyEmail = createAsyncThunk<
+  { message: string; user: User },
+  { code: string }
+>("auth/verifyEmail", async ({ code }) => {
+  const response = await api.post("/auth/verify-email", { code });
+  return response.data;
+});
+
+// Повторная отправка кода подтверждения (если письмо не дошло)
+export const resendCode = createAsyncThunk<{ message: string }, { email: string }>(
+  "auth/resendCode",
+  async ({ email }) => {
+    const response = await api.post("/auth/resend-code", { email });
+    return response.data;
+  },
+);
+
 export const logout = createAsyncThunk("auth/logout", async () => {
   const refreshToken = localStorage.getItem("refreshToken");
   if (refreshToken) {

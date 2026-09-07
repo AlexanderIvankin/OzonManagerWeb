@@ -111,7 +111,7 @@ export const ExportData = () => {
             цвет, вес, кто заполнил, дата) в Excel.
           </p>
           <Button onClick={handleExportProductStats} disabled={loadingStats}>
-            {loadingStats ? "Готовим файл..." : "📥 Скачать статистику товаров"}
+            {loadingStats ? "Готовим файл..." : "📥 Скачать статистику"}
           </Button>
         </CardContent>
       </Card>

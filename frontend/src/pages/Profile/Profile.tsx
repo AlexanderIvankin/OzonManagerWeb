@@ -1,7 +1,7 @@
 import { useSelector, useDispatch } from "react-redux";
 import { useState, useEffect } from "react";
 import { RootState, AppDispatch } from "../../store";
-import { logout, updateUser } from "../../store/authSlice";
+import { updateUser } from "../../store/authSlice";
 import { userApi } from "../../api/user";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,11 +34,6 @@ export const Profile = () => {
   } | null>(null);
   const [loadingEarnings, setLoadingEarnings] = useState(false);
   const [loadingToggle, setLoadingToggle] = useState(false);
-
-  const handleLogout = async () => {
-    await dispatch(logout());
-    window.location.href = "/login";
-  };
 
   const loadActiveEarnings = async () => {
     try {
@@ -109,36 +104,31 @@ export const Profile = () => {
     <div className="container mx-auto py-10 max-w-4xl">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl mb-[10px]">
-                👋 {user?.name}
-              </CardTitle>
-              <CardDescription>
-                <Badge
-                  variant={
-                    user?.role === "admin"
-                      ? "default"
-                      : user?.role === "moderator"
-                        ? "secondary"
-                        : user?.role === "employee"
-                          ? "outline"
-                          : "destructive"
-                  }
-                >
-                  {user?.role === "admin"
-                    ? "🧑‍💻 Администратор"
+          <div className="flex flex-col items-center justify-center mb-[15px]">
+            <CardTitle className="text-2xl mb-[10px]">
+              👋 {user?.name}
+            </CardTitle>
+            <CardDescription>
+              <Badge
+                variant={
+                  user?.role === "admin"
+                    ? "default"
                     : user?.role === "moderator"
-                      ? "🕵️ Модератор"
+                      ? "secondary"
                       : user?.role === "employee"
-                        ? "👷 Сотрудник"
-                        : "👤 Пользователь"}
-                </Badge>
-              </CardDescription>
-            </div>
-            <Button variant="destructive" onClick={handleLogout}>
-              Выйти
-            </Button>
+                        ? "outline"
+                        : "destructive"
+                }
+              >
+                {user?.role === "admin"
+                  ? "🧑‍💻 Администратор"
+                  : user?.role === "moderator"
+                    ? "🕵️ Модератор"
+                    : user?.role === "employee"
+                      ? "👷 Сотрудник"
+                      : "👤 Пользователь"}
+              </Badge>
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -280,7 +270,9 @@ export const Profile = () => {
                     onClick={refreshEarnings}
                     disabled={loadingEarnings}
                   >
-                    {loadingEarnings ? "Обновление..." : "🔄 Обновить заработок"}
+                    {loadingEarnings
+                      ? "Обновление..."
+                      : "🔄 Обновить заработок"}
                   </Button>
                 </div>
               </div>

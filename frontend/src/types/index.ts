@@ -6,9 +6,11 @@ export interface User {
   phone?: string;
   capacity: number;
   earnings_factor: number;
-  role: 'user' | 'employee' | 'moderator' | 'admin';
+  role: 'guest' | 'user' | 'employee' | 'moderator' | 'admin';
   is_fired: boolean;
   taking_orders: boolean;
+  /** 0/1 из SQLite; подтверждение email после регистрации по коду */
+  email_verified?: number;
   tg_user_id?: string;
   created_at: number;
   updated_at: number;

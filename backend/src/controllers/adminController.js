@@ -31,12 +31,46 @@ async function refreshServerExports() {
  */
 exports.getUsers = async (req, res, next) => {
   try {
-    const { includeFired, includeAll, role } = req.query;
+    const { includeFired, includeAll, role, withWarehouses } = req.query;
     const users = await User.getAll({
       includeFired: includeFired === 'true',
       includeAll: includeAll === 'true',
       role
     });
+    // Дополнительно: склады (приоритеты) и количество активных заказов
+    // для каждого пользователя — используется при назначении заказов,
+    // чтобы показать список «приоритетных по складу» сотрудников (как в боте)
+    if (withWarehouses === 'true') {
+      const db = getDB();
+      // Все связи пользователь-склад одним запросом
+      const links = await db.all(`
+        SELECT uw.user_id, w.warehouse_id, w.name, w.address, w.is_rfbs
+        FROM user_warehouses uw
+        JOIN warehouses w ON uw.warehouse_id = w.warehouse_id
+        ORDER BY w.name
+      `);
+      // Количество активных заказов всех пользователей одним запросом
+      const counts = await db.all(
+        "SELECT user_id, COUNT(*) as count FROM assignments WHERE status = 'assigned' GROUP BY user_id"
+      );
+      const warehousesMap = new Map();
+      for (const link of links) {
+        if (!warehousesMap.has(link.user_id)) warehousesMap.set(link.user_id, []);
+        warehousesMap.get(link.user_id).push({
+          warehouse_id: link.warehouse_id,
+          name: link.name,
+          address: link.address,
+          is_rfbs: !!link.is_rfbs,
+        });
+      }
+      const countsMap = new Map(counts.map((c) => [c.user_id, c.count]));
+      res.json(users.map((u) => ({
+        ...u,
+        warehouses: warehousesMap.get(u.id) || [],
+        active_count: countsMap.get(u.id) || 0,
+      })));
+      return;
+    }
     res.json(users);
   } catch (err) {
     next(err);

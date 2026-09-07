@@ -9,7 +9,7 @@ export interface User {
   phone: string;
   capacity: number;
   earnings_factor: number;
-  role: "user" | "employee" | "moderator" | "admin";
+  role: "guest" | "user" | "employee" | "moderator" | "admin";
   is_fired: boolean;
   taking_orders: boolean;
   tg_user_id: string | null;
@@ -21,7 +21,14 @@ export interface User {
     canceled_orders: number;
   };
   activeOrders?: Array<{ order_id: string; assigned_at: number }>;
-  warehouses?: Array<{ warehouse_id: string; name: string; address: string }>;
+  warehouses?: Array<{
+    warehouse_id: string;
+    name: string;
+    address: string;
+    is_rfbs: boolean;
+  }>;
+  // Заполняется только при withWarehouses=true в getUsers
+  active_count?: number;
 }
 
 export interface Warehouse {
@@ -55,6 +62,8 @@ export const adminApi = {
     includeFired?: boolean;
     includeAll?: boolean;
     role?: string;
+    // Добавить к каждому пользователю склады (приоритеты) и active_count
+    withWarehouses?: boolean;
   }) => api.get<User[]>("/admin/users", { params }).then((res) => res.data),
 
   getUserById: (id: number) =>
