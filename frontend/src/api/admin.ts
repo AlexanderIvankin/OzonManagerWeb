@@ -9,7 +9,7 @@ export interface User {
   phone: string;
   capacity: number;
   earnings_factor: number;
-  role: "guest" | "user" | "employee" | "moderator" | "admin";
+  role: "guest" | "user" | "employee" | "moderator" | "admin" | "god";
   is_fired: boolean;
   taking_orders: boolean;
   tg_user_id: string | null;

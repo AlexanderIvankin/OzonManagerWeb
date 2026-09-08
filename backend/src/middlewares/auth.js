@@ -19,6 +19,11 @@ async function authenticate(req, res, next) {
   next();
 }
 
+// Роли персонала с полным доступом к админке.
+// Модератор = Администратор по правам; 'god' — Создатель: те же права,
+// но его профиль защищён от редактирования/увольнения (см. adminController).
+const STAFF_ROLES = ['admin', 'moderator', 'god'];
+
 function requireEmployee(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
   if (req.user.role === 'user') {
@@ -39,4 +44,4 @@ function authorize(...roles) {
   };
 }
 
-module.exports = { authenticate, requireEmployee, authorize };
+module.exports = { authenticate, requireEmployee, authorize, STAFF_ROLES };

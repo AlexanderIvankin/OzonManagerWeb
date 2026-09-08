@@ -133,9 +133,9 @@ type Tab = "mine" | "staff" | "errors";
 
 export const Notifications = () => {
   const user = useSelector((state: RootState) => state.auth.user);
-  // Персонал (журнал действий + ошибки сервера). Легко расширить при
-  // добавлении новых ролей: достаточно дополнить условие.
-  const isStaff = user?.role === "admin" || user?.role === "moderator";
+  // Персонал (журнал действий + ошибки сервера): админ, модератор и Создатель.
+  // Легко расширить при добавлении новых ролей: достаточно дополнить условие.
+  const isStaff = ["admin", "moderator", "god"].includes(user?.role || "");
 
   const [tab, setTab] = useState<Tab>("mine");
 

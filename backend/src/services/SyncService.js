@@ -6,12 +6,28 @@ const { getDB } = require('../config/database');
 const bcrypt = require('bcrypt');
 const OzonService = require('./OzonService');
 const { getVersionedFileName } = require('../utils');
+const config = require('../config');
 
 /**
  * Сервис синхронизации пользователей из Excel.
  * Поддерживает синхронизацию по email (основной) или по tg_user_id.
  */
 class SyncService {
+  /**
+   * Проверяет, принадлежит ли запись из Excel Создателю (роль 'god').
+   * Создатель всегда в единственном числе; его идентификаторы задаются
+   * в .env: GOD_EMAIL (email) и GOD_ID (tg_user_id).
+   * @param {{ email?: string, tgUserId?: string }} data
+   * @returns {boolean}
+   */
+  static isGodIdentity(data) {
+    const email = String(data.email || '').trim().toLowerCase();
+    const tgUserId = String(data.tgUserId || '').trim();
+    if (config.godEmail && email === config.godEmail) return true;
+    if (config.godId && tgUserId === config.godId) return true;
+    return false;
+  }
+
   /**
    * Синхронизация из файла team-info.xlsx
    * @param {string} filePath - путь к файлу
@@ -116,9 +132,26 @@ class SyncService {
         if (data.tgUserId && user.tg_user_id !== data.tgUserId) {
           updateFields.tg_user_id = data.tgUserId;
         }
+        // Роль 'god' (Создатель) выдаётся ТОЛЬКО по идентификаторам из .env
+        if (this.isGodIdentity(data)) {
+          updateFields.role = 'god';
+        }
         // Если роль была 'user' (не admin/moderator) – можно оставить как есть, не меняем
         // Если хотим повысить роль до 'employee' – можно, но пока оставим как есть.
         await User.update(user.id, updateFields);
+
+        // Создатель — в единственном числе: если роль 'god' выдана по .env,
+        // снимаем её со всех остальных (понижаем до 'admin', права сохраняются)
+        if (updateFields.role === 'god') {
+          const otherGods = await db.all(
+            "SELECT id FROM users WHERE role = 'god' AND id != ?",
+            user.id
+          );
+          for (const g of otherGods) {
+            await User.update(g.id, { role: 'admin' });
+            console.log(`[SyncService] Роль 'god' снята с пользователя #${g.id} (понижен до 'admin') — Создатель один: #${user.id}`);
+          }
+        }
 
         // Обновляем склады
         await Warehouse.clearUserWarehouses(user.id);
@@ -142,12 +175,25 @@ class SyncService {
           phone: data.phone,
           capacity: data.capacity,
           earningsFactor: data.earningsFactor,
-          role: 'user',
+          // Создатель создаётся сразу с ролью 'god', остальные — 'user'
+          role: this.isGodIdentity(data) ? 'god' : 'user',
           tgUserId: data.tgUserId || null,
         });
         // Обновляем склады
         for (const whId of data.warehouses) {
           await Warehouse.addUserWarehouse(newUser.id, whId);
+        }
+        // Единственность Создателя: если создан новый 'god', снимаем роль
+        // со всех остальных (понижаем до 'admin')
+        if (newUser.role === 'god') {
+          const otherGods = await db.all(
+            "SELECT id FROM users WHERE role = 'god' AND id != ?",
+            newUser.id
+          );
+          for (const g of otherGods) {
+            await User.update(g.id, { role: 'admin' });
+            console.log(`[SyncService] Роль 'god' снята с пользователя #${g.id} (понижен до 'admin') — Создатель один: #${newUser.id}`);
+          }
         }
         created++;
       } else {

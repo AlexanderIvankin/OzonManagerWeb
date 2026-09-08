@@ -102,6 +102,23 @@ exports.updateUser = async (req, res, next) => {
   try {
     const userId = parseInt(req.params.id);
     const { name, phone, capacity, earnings_factor, role, is_fired, taking_orders } = req.body;
+    const target = await User.getById(userId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    // --- Защита Создателя (роль 'god') ---
+    // Редактировать профиль Создателя может только сам Создатель
+    if (target.role === 'god' && req.user.role !== 'god') {
+      return res.status(403).json({ error: 'Профиль Создателя может редактировать только Создатель' });
+    }
+    // Роль 'god' нельзя выдать или снять вручную — только синхронизацией из Excel
+    if (role !== undefined && role !== target.role && (role === 'god' || target.role === 'god')) {
+      return res.status(403).json({ error: "Роль 'god' (Создатель) управляется только синхронизацией" });
+    }
+    // Создателя нельзя уволить — даже ему самому
+    if (target.role === 'god' && (is_fired === true || is_fired === 1)) {
+      return res.status(403).json({ error: 'Создателя нельзя уволить' });
+    }
     const user = await User.update(userId, {
       name,
       phone,
@@ -128,12 +145,17 @@ exports.updateUser = async (req, res, next) => {
 exports.fireUser = async (req, res, next) => {
   try {
     const userId = parseInt(req.params.id);
+    const target = await User.getById(userId);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    // Создателя нельзя уволить, удалить или понизить
+    if (target.role === 'god') {
+      return res.status(403).json({ error: 'Создателя нельзя уволить' });
+    }
     // При увольнении выключаем приём заказов и понижаем роль до 'user',
     // чтобы уволенный не имел доступа к сотрудническим возможностям
     const user = await User.update(userId, { is_fired: 1, taking_orders: 0, role: 'user' });
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
     // Снять все активные назначения
     const db = require('../config/database').getDB();
     await db.run('DELETE FROM assignments WHERE user_id = ? AND status = "assigned"', userId);
@@ -266,6 +288,7 @@ exports.assignOrder = async (req, res, next) => {
     if (err.message && (
       err.message.includes('не найден') ||
       err.message.includes('уволен') ||
+      err.message.includes('Создателю') ||
       err.message.includes('уже обрабатывается') ||
       err.message.includes('не удалось получить')
     )) {
@@ -471,8 +494,9 @@ exports.getActiveEarningsAll = async (req, res, next) => {
     const users = await User.getAll({ includeAll: true, includeFired: false });
     const result = [];
     for (const user of users) {
-      // Только для сотрудников (role не 'user')
-      if (user.role === 'user') continue;
+      // Только для сотрудников (role не 'user'); Создатель ('god') в списке
+      // заработков не участвует — он не обрабатывает заказы
+      if (user.role === 'user' || user.role === 'god') continue;
       const base = await Earnings.getActiveSum(user.id, 0, Date.now());
       const adjustments = await Earnings.getActiveAdjustmentsSum(user.id, 0, Date.now());
       const total = base + adjustments;

@@ -8,7 +8,8 @@ class User {
     const db = getDB();
     const {
       username, email, passwordHash, name,
-      phone = '', capacity = 1, earningsFactor = 1.0, role = 'user'
+      phone = '', capacity = 1, earningsFactor = 1.0, role = 'user',
+      tgUserId = null
     } = data;
 
     // Проверяем уникальность username и email
@@ -22,9 +23,9 @@ class User {
     }
 
     const result = await db.run(
-      `INSERT INTO users (username, email, password_hash, name, phone, capacity, earnings_factor, role, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      username, email, passwordHash, name, phone, capacity, earningsFactor, role, Date.now(), Date.now()
+      `INSERT INTO users (username, email, password_hash, name, phone, capacity, earnings_factor, role, tg_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      username, email, passwordHash, name, phone, capacity, earningsFactor, role, tgUserId || null, Date.now(), Date.now()
     );
     const id = result.lastID;
     return this.getById(id);
@@ -67,7 +68,7 @@ class User {
 
   static async update(id, fields) {
     const db = getDB();
-    const allowed = ['name', 'phone', 'capacity', 'earnings_factor', 'role', 'is_fired', 'taking_orders', 'email_verified'];
+    const allowed = ['name', 'phone', 'capacity', 'earnings_factor', 'role', 'is_fired', 'taking_orders', 'email_verified', 'tg_user_id'];
     const setClauses = [];
     const values = [];
     for (const [key, val] of Object.entries(fields)) {

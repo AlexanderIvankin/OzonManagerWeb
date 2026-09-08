@@ -33,10 +33,88 @@ class AuthService {
     if (capacity !== undefined && capacity !== null && capacity !== '') {
       const n = Number(capacity);
       if (!Number.isInteger(n) || n < 1 || n > 99) {
-        errors.push('Количество принтеров должно быть целым числом от 1 до 99');
+        errors.push(
+          'Количество принтеров должно быть целым числом от 1 до 99 (или оставьте поле пустым — тогда будет 1)'
+        );
       }
     }
     return errors;
+  }
+
+  /**
+   * Валидация данных при создании аккаунта администратором.
+   * Мягче обычной регистрации:
+   *   • логин и пароль — минимум 1 символ;
+   *   • количество принтеров — любое положительное целое, без верхней границы;
+   *   • из проверок email — только формат *@*.*.
+   * Уникальность username/email обеспечивает User.create (already taken).
+   * Возвращает массив текстов ошибок (пустой массив — всё валидно).
+   */
+  static validateAdminRegisterData(data) {
+    const errors = [];
+    const { username, email, password, capacity, role } = data;
+
+    if (!username || typeof username !== 'string' || username.trim().length < 1) {
+      errors.push('Укажите логин (минимум 1 символ)');
+    }
+    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      errors.push('Некорректный email');
+    }
+    if (!password || typeof password !== 'string' || password.length < 1) {
+      errors.push('Укажите пароль (минимум 1 символ)');
+    }
+    // Количество принтеров: любое положительное целое, без верхней границы
+    // (пустое = значение по умолчанию 1)
+    if (capacity !== undefined && capacity !== null && capacity !== '') {
+      const n = Number(capacity);
+      if (!Number.isInteger(n) || n < 1) {
+        errors.push(
+          'Количество принтеров должно быть положительным целым числом (пусто — тогда будет 1)'
+        );
+      }
+    }
+    // Роль — только из белого списка. 'god' (Создатель) вручную не выдаётся:
+    // он назначается только синхронизацией из Excel по GOD_EMAIL/GOD_ID.
+    if (role !== undefined && role !== null && role !== '') {
+      if (!['user', 'employee', 'moderator', 'admin'].includes(role)) {
+        errors.push('Недопустимая роль');
+      }
+    }
+    return errors;
+  }
+
+  /**
+   * Регистрация аккаунта администратором — в обход подтверждения email:
+   * аккаунт создаётся сразу подтверждённым (email_verified = 1) и активным
+   * с выбранной ролью (по умолчанию 'employee'). Код не генерируется,
+   * письмо не отправляется.
+   */
+  static async adminRegister(data) {
+    const { username, email, password, name, phone, capacity, earningsFactor, role } = data;
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+    const created = await User.create({
+      username: String(username).trim(),
+      email: String(email).trim(),
+      passwordHash,
+      // Если имя не указано — используем логин
+      name: name && String(name).trim() ? String(name).trim() : String(username).trim(),
+      phone: phone || '',
+      // Положительность capacity проверена в validateAdminRegisterData;
+      // пустое -> дефолт 1
+      capacity:
+        capacity === undefined || capacity === null || capacity === ''
+          ? 1
+          : Number(capacity),
+      earningsFactor: earningsFactor || 1.0,
+      // 'god' не входит в белый список — роль по умолчанию 'employee'
+      role: role && ['user', 'employee', 'moderator', 'admin'].includes(role)
+        ? role
+        : 'employee',
+    });
+    // Сразу подтверждаем email, чтобы аккаунт был готов к входу без кода
+    await User.update(created.id, { email_verified: 1 });
+    return User.getById(created.id);
   }
 
   static async register(data) {

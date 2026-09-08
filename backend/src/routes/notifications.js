@@ -1,13 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middlewares/auth');
+const { authenticate, authorize, STAFF_ROLES } = require('../middlewares/auth');
 const Notification = require('../models/Notification');
 const NotificationService = require('../services/NotificationService');
 const { notifyUser } = require('../socket');
-
-// Роли персонала — должны совпадать с STAFF_ROLES в NotificationService.
-// Легко расширить: просто добавьте роль в оба массива.
-const STAFF_ROLES = ['admin', 'moderator'];
 
 // Аутентификация для всех маршрутов
 router.use(authenticate);
@@ -167,7 +163,7 @@ router.post('/clear-read', async (req, res) => {
 // ===========================================================================
 
 // Список ошибок сервера
-router.get('/errors', authorize('admin', 'moderator'), async (req, res) => {
+router.get('/errors', authorize(...STAFF_ROLES), async (req, res) => {
   try {
     const { limit, offset } = parseLimitOffset(req.query);
     const level =
@@ -184,7 +180,7 @@ router.get('/errors', authorize('admin', 'moderator'), async (req, res) => {
 });
 
 // Количество ошибок (для бейджа вкладки)
-router.get('/errors/count', authorize('admin', 'moderator'), async (req, res) => {
+router.get('/errors/count', authorize(...STAFF_ROLES), async (req, res) => {
   try {
     const level =
       req.query.level === 'error' || req.query.level === 'warn'
@@ -199,7 +195,7 @@ router.get('/errors/count', authorize('admin', 'moderator'), async (req, res) =>
 });
 
 // Удалить выбранные ошибки: { ids: number[] }
-router.post('/errors/delete', authorize('admin', 'moderator'), async (req, res) => {
+router.post('/errors/delete', authorize(...STAFF_ROLES), async (req, res) => {
   try {
     const changed = await Notification.deleteErrorsByIds(parseIds(req.body.ids));
     res.json({ changed });
@@ -210,7 +206,7 @@ router.post('/errors/delete', authorize('admin', 'moderator'), async (req, res) 
 });
 
 // Очистить весь журнал ошибок
-router.post('/errors/clear', authorize('admin', 'moderator'), async (req, res) => {
+router.post('/errors/clear', authorize(...STAFF_ROLES), async (req, res) => {
   try {
     const changed = await Notification.clearErrors();
     res.json({ changed });

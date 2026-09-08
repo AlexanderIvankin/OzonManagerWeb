@@ -105,35 +105,42 @@ export const Profile = () => {
       <Card>
         <CardHeader>
           <div className="flex flex-col items-center justify-center mb-[15px]">
-            <CardTitle className="text-2xl mb-[10px]">
-              👋 {user?.name}
+            <CardTitle className="text-2xl mb-[5px]">
+              {user?.name}
             </CardTitle>
             <CardDescription>
               <Badge
                 variant={
-                  user?.role === "admin"
-                    ? "default"
+                  user?.role === "employee"
+                    ? "outline"
                     : user?.role === "moderator"
                       ? "secondary"
-                      : user?.role === "employee"
-                        ? "outline"
-                        : "destructive"
+                      : user?.role === "user"
+                        ? "destructive"
+                        : "default" // admin и god
+                }
+                className={
+                  user?.role === "god"
+                    ? "bg-purple-600 text-white hover:bg-purple-600"
+                    : undefined
                 }
               >
-                {user?.role === "admin"
-                  ? "🧑‍💻 Администратор"
-                  : user?.role === "moderator"
-                    ? "🕵️ Модератор"
-                    : user?.role === "employee"
-                      ? "👷 Сотрудник"
-                      : "👤 Пользователь"}
+                {user?.role === "god"
+                  ? "👻 Создатель"
+                  : user?.role === "admin"
+                    ? "🧑‍💻 Администратор"
+                    : user?.role === "moderator"
+                      ? "🕵️ Модератор"
+                      : user?.role === "employee"
+                        ? "👷 Сотрудник"
+                        : "👤 Пользователь"}
               </Badge>
             </CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           {/* Основная информация */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-5 text-center">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Логин</p>
               <p>{user?.username}</p>
@@ -205,8 +212,10 @@ export const Profile = () => {
             <>
               <Separator />
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold">💰 Заработок</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <h3 className="text-lg font-semibold text-center mb-[24px]">
+                  💰 Заработок
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -218,7 +227,7 @@ export const Profile = () => {
                         <p className="text-sm">Загрузка...</p>
                       ) : activeEarnings ? (
                         <div className="space-y-1">
-                          <p className="text-2xl font-bold">
+                          <p className="text-2xl font-bold mb-[20px]">
                             {activeEarnings.total.toFixed(2)} ₽
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -248,7 +257,7 @@ export const Profile = () => {
                         <p className="text-sm">Загрузка...</p>
                       ) : monthlyEarnings ? (
                         <div className="space-y-1">
-                          <p className="text-2xl font-bold">
+                          <p className="text-2xl font-bold mb-[20px]">
                             {monthlyEarnings.total.toFixed(2)} ₽
                           </p>
                           <p className="text-xs text-muted-foreground">

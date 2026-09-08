@@ -89,10 +89,16 @@ export const Warehouses = () => {
                 warehouses.map((wh) => (
                   <TableRow key={wh.warehouse_id}>
                     <TableCell className="text-center font-mono text-sm">
-                      {wh.warehouse_id}
+                      <span className="text-sm">
+                        <code>{wh.warehouse_id}</code>
+                      </span>
                     </TableCell>
-                    <TableCell className="text-center">{wh.name}</TableCell>
-                    <TableCell className="text-center">{wh.address || "—"}</TableCell>
+                    <TableCell className="text-center font-semibold">
+                      {wh.name}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {wh.address || "—"}
+                    </TableCell>
                     <TableCell className="text-center">
                       <Badge variant={wh.is_rfbs ? "default" : "secondary"}>
                         {wh.is_rfbs ? "realFBS" : "FBS"}

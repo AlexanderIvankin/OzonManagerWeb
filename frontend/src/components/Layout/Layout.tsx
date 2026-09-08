@@ -56,10 +56,12 @@ export const Layout = () => {
     <div className="flex h-screen">
       {/* Sidebar */}
       <aside className="w-64 border-r bg-card p-4 flex flex-col">
-        <div className="mb-8">
+        <div className="mb-20 flex flex-col text-center">
           <h1 className="text-xl font-bold">Ozon Manager</h1>
-          <p className="text-sm text-muted-foreground">{user?.name}</p>
-          <p className="text-xs text-muted-foreground">Роль: {user?.role}</p>
+          <p className="text-sm text-muted-foreground mb-[5px]">{user?.name}</p>
+          <p className="text-xs text-muted-foreground">
+            Роль: <span className="font-bold">{user?.role}</span>
+          </p>
         </div>
         <nav className="flex-1 space-y-1">
           <Link
@@ -71,7 +73,9 @@ export const Layout = () => {
             </span>{" "}
             Профиль
           </Link>
-          {["employee", "moderator", "admin"].includes(user?.role || "") && (
+          {["employee", "moderator", "admin", "god"].includes(
+            user?.role || "",
+          ) && (
             <Link
               to="/orders"
               className="block px-3 py-2 rounded-md hover:bg-accent"
@@ -90,7 +94,9 @@ export const Layout = () => {
               </Badge>
             )}
           </Link>
-          {["moderator", "admin"].includes(user?.role || "") && (
+          {/* Модератор = Администратор: все разделы админки доступны
+              также модератору и Создателю */}
+          {["moderator", "admin", "god"].includes(user?.role || "") && (
             <Link
               to="/admin"
               className="block px-3 py-2 rounded-md hover:bg-accent"
@@ -98,7 +104,7 @@ export const Layout = () => {
               ⚙️ Админка
             </Link>
           )}
-          {user?.role === "admin" && (
+          {["moderator", "admin", "god"].includes(user?.role || "") && (
             <>
               <Link
                 to="/admin/users"
@@ -149,7 +155,11 @@ export const Layout = () => {
           )}
         </nav>
         <div className="border-t pt-4">
-          <Button variant="destructive" className="w-full" onClick={handleLogout}>
+          <Button
+            variant="destructive"
+            className="w-full"
+            onClick={handleLogout}
+          >
             Выйти
           </Button>
         </div>
