@@ -213,10 +213,10 @@ exports.createUserByAdmin = async (req, res, next) => {
  * Значения сбрасываются при перезапуске сервера.
  */
 let godFakeStats = {
-  total_orders: 666,
-  canceled_orders: 13,
-  total_amount: 6666666,
-  earnings_total: 1337133.7,
+  total_orders: 1337,
+  canceled_orders: 666,
+  earnings_total: 999999999.99,
+  total_amount: 666666666.66,
 };
 
 /**
@@ -602,7 +602,7 @@ exports.downloadDatabase = async (req, res, next) => {
     // bot_web-1.db | bot_web.db (базовое имя берётся из DB_PATH)
     res.download(backupPath, getVersionedFileName(getDbBaseName(), 'db'), (downloadErr) => {
       // Временный снимок больше не нужен
-      fs.unlink(backupPath, () => {});
+      fs.unlink(backupPath, () => { });
       if (downloadErr) {
         console.error('[downloadDatabase] Ошибка отправки файла:', downloadErr);
       }

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
+import { RootState } from "../../store";
 import { adminApi } from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +38,8 @@ interface EmployeeOption {
   active_count?: number;
   // ID складов, на которых у сотрудника стоит приоритет (user_warehouses)
   warehouses: string[];
+  // Роль «Создатель» (god): виден в списке только самому Создателю
+  isGod?: boolean;
 }
 
 type ListMode = "priority" | "all";
@@ -83,6 +87,9 @@ const renderEmployeeLabel = (emp: EmployeeOption) => (
 );
 
 export const OrdersManagement = () => {
+  // Текущий пользователь: Создатель виден в списке сотрудников только самому себе
+  // (нужен для самоназначения заказов на тестах)
+  const viewer = useSelector((state: RootState) => state.auth.user);
   const [orders, setOrders] = useState<AwaitingOrder[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,12 +128,21 @@ export const OrdersManagement = () => {
           capacity: u.capacity,
           active_count: u.active_count ?? 0,
           warehouses: (u.warehouses || []).map((w) => String(w.warehouse_id)),
+          isGod: u.role === "god",
         }));
       setEmployees(emp);
     } catch (err: any) {
       toast.error("Не удалось загрузить сотрудников");
     }
   };
+
+  // Список сотрудников, доступный текущему зрителю: Создатель (роль 'god')
+  // показывается в списке только самому себе — для остальных он скрыт,
+  // чтобы не мешал при обычной выдаче заказов (у Создателя есть свои тестовые
+  // заказы, которые он сам себе и назначает)
+  const visibleEmployees = employees.filter(
+    (e) => viewer?.role === "god" || !e.isGod,
+  );
 
   // Переключение списка сотрудников для заказа. Если выбранный сотрудник
   // не входит в новый список — сбрасываем выбор (как «🔙 Назад» в боте)
@@ -136,8 +152,8 @@ export const OrdersManagement = () => {
     if (!current) return;
     const targetList =
       mode === "priority"
-        ? filterPriorityEmployees(employees, order)
-        : employees;
+        ? filterPriorityEmployees(visibleEmployees, order)
+        : visibleEmployees;
     if (!targetList.some((e) => String(e.id) === String(current))) {
       setSelectedEmployee((prev) => ({
         ...prev,
@@ -195,13 +211,17 @@ export const OrdersManagement = () => {
         <div className="grid gap-4">
           {orders.map((order) => {
             const warehouseId = getOrderWarehouseId(order);
-            const priorityEmployees = filterPriorityEmployees(employees, order);
+            const priorityEmployees = filterPriorityEmployees(
+              visibleEmployees,
+              order,
+            );
             // По умолчанию показываем приоритетных по складу (как в боте),
             // если склад заказа известен
             const mode: ListMode =
               listMode[order.posting_number] ??
               (warehouseId ? "priority" : "all");
-            const list = mode === "priority" ? priorityEmployees : employees;
+            const list =
+              mode === "priority" ? priorityEmployees : visibleEmployees;
             return (
               <Card key={order.posting_number}>
                 <CardHeader>
@@ -288,7 +308,7 @@ export const OrdersManagement = () => {
                           variant={mode === "all" ? "default" : "outline"}
                           onClick={() => changeListMode(order, "all")}
                         >
-                          👥 Все ({employees.length})
+                          👥 Все ({visibleEmployees.length})
                         </Button>
                         <span className="text-xs text-muted-foreground">
                           🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴 нет),
@@ -312,9 +332,9 @@ export const OrdersManagement = () => {
                             >
                               {(val) => {
                                 if (!val) return "Выберите сотрудника";
-                                // Ищем по всем сотрудникам, чтобы выбранное
+                                // Ищем по видимым сотрудникам, чтобы выбранное
                                 // значение отображалось и после смены списка
-                                const emp = employees.find(
+                                const emp = visibleEmployees.find(
                                   (e) => String(e.id) === String(val),
                                 );
                                 return emp
