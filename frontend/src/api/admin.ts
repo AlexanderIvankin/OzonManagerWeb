@@ -31,6 +31,24 @@ export interface User {
   active_count?: number;
 }
 
+export interface StaffStatsRow {
+  id: number;
+  name: string;
+  username: string;
+  role: User["role"];
+  is_fired: boolean;
+  /** Всего заказов (user_stats.total_orders) */
+  total_orders: number;
+  /** Отменённые заказы (user_stats.canceled_orders) */
+  canceled_orders: number;
+  /** Суммарная сумма всех заказов (user_stats.total_amount) */
+  total_amount: number;
+  /** Заработок за всё время (SUM(earnings_history.amount)) */
+  earnings_total: number;
+  /** true — строка Создателя с 🎃 фейковыми данными (не из БД) */
+  fake: boolean;
+}
+
 export interface Warehouse {
   warehouse_id: string;
   name: string;
@@ -90,12 +108,42 @@ export const adminApi = {
   deleteUser: (id: number) =>
     api.delete(`/admin/users/${id}`).then((res) => res.data),
 
+  // === Статистика команды (вкладка «Статистика», только персонал) ===
+  getStaffStats: (includeFired = false) =>
+    api
+      .get<StaffStatsRow[]>("/admin/stats", { params: { includeFired } })
+      .then((res) => res.data),
+
+  // 🎃 Пасхалка: редактирование фейковой статистики Создателя (только god).
+  // Значения живут в памяти бэкенда до перезапуска сервера.
+  updateGodFakeStats: (data: {
+    total_orders?: number;
+    canceled_orders?: number;
+    total_amount?: number;
+    earnings_total?: number;
+  }) =>
+    api
+      .put<{ message: string; stats: StaffStatsRow }>("/admin/stats/god", data)
+      .then((res) => res.data),
+
   // === Склады ===
   getWarehouses: () =>
     api.get<Warehouse[]>("/admin/warehouses").then((res) => res.data),
 
   syncWarehouses: () =>
     api.post("/admin/warehouses/sync").then((res) => res.data),
+
+  // Синхронизация из серверного файла team-info.xlsx (кнопка «Обновить»
+  // на странице «Пользователи»): выдаёт роль 👻 Создателю по GOD_EMAIL/GOD_ID
+  syncFromServerFile: () =>
+    api
+      .post<{
+        message: string;
+        updated: number;
+        created: number;
+        skipped: number;
+      }>("/admin/sync/server-file")
+      .then((res) => res.data),
 
   // === Заказы (админ) ===
   getAwaitingOrders: (warehouseId?: string) =>

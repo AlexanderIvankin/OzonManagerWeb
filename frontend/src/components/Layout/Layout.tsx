@@ -151,6 +151,12 @@ export const Layout = () => {
               >
                 💰 Заработок
               </Link>
+              <Link
+                to="/admin/stats"
+                className="block px-3 py-2 rounded-md hover:bg-accent"
+              >
+                📊 Статистика
+              </Link>
             </>
           )}
         </nav>

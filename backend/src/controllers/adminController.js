@@ -207,6 +207,101 @@ exports.createUserByAdmin = async (req, res, next) => {
 };
 
 /**
+ * 🎃 Пасхалка Создателя.
+ * Фейковая статистика хранится в ОБЫЧНЫХ ПЕРЕМЕННЫХ на бэкенде (в памяти
+ * процесса) — никакая реальная БД не используется, это просто шутка.
+ * Значения сбрасываются при перезапуске сервера.
+ */
+let godFakeStats = {
+  total_orders: 666,
+  canceled_orders: 13,
+  total_amount: 6666666,
+  earnings_total: 1337133.7,
+};
+
+/**
+ * Статистика команды для вкладки «Статистика» (только персонал).
+ * Агрегируется на лету из двух таблиц:
+ *   • user_stats      — total_orders, canceled_orders, total_amount
+ *   • earnings_history — SUM(amount) = заработок сотрудника за всё время
+ * Для строки Создателя (role = 'god') вместо реальных данных подставляются
+ * фейковые значения из переменной godFakeStats (fake: true).
+ */
+exports.getStaffStats = async (req, res, next) => {
+  try {
+    const includeFired = req.query.includeFired === 'true';
+    const db = getDB();
+    const rows = await db.all(
+      `
+      SELECT u.id, u.name, u.username, u.role, u.is_fired,
+             COALESCE(us.total_orders, 0)   AS total_orders,
+             COALESCE(us.canceled_orders, 0) AS canceled_orders,
+             COALESCE(us.total_amount, 0)   AS total_amount,
+             COALESCE(SUM(eh.amount), 0)    AS earnings_total
+      FROM users u
+      LEFT JOIN user_stats us ON us.user_id = u.id
+      LEFT JOIN earnings_history eh ON eh.user_id = u.id
+      ${includeFired ? '' : 'WHERE u.is_fired = 0'}
+      GROUP BY u.id
+      ORDER BY u.id
+      `
+    );
+    const stats = rows.map((r) =>
+      r.role === 'god' ? { ...r, ...godFakeStats, fake: true } : { ...r, fake: false },
+    );
+    res.json(stats);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 🎃 Редактирование фейковой статистики Создателя — доступно только роли god
+ * (маршрут дополнительно защищён authorize('god')). Значения живут в памяти
+ * до перезапуска сервера.
+ */
+exports.updateGodFakeStats = async (req, res, next) => {
+  try {
+    const { total_orders, canceled_orders, total_amount, earnings_total } = req.body;
+    const errors = [];
+    const updates = {};
+
+    if (total_orders !== undefined) {
+      const n = Number(total_orders);
+      if (!Number.isInteger(n) || n < 0) errors.push('total_orders: целое число ≥ 0');
+      else updates.total_orders = n;
+    }
+    if (canceled_orders !== undefined) {
+      const n = Number(canceled_orders);
+      if (!Number.isInteger(n) || n < 0) errors.push('canceled_orders: целое число ≥ 0');
+      else updates.canceled_orders = n;
+    }
+    if (total_amount !== undefined) {
+      const n = Number(total_amount);
+      if (!Number.isFinite(n) || n < 0) errors.push('total_amount: число ≥ 0');
+      else updates.total_amount = n;
+    }
+    if (earnings_total !== undefined) {
+      const n = Number(earnings_total);
+      if (!Number.isFinite(n) || n < 0) errors.push('earnings_total: число ≥ 0');
+      else updates.earnings_total = n;
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors.join('. '), errors });
+    }
+
+    godFakeStats = { ...godFakeStats, ...updates };
+    res.json({
+      message: 'Статистика Создателя обновлена 🎃 (живёт в памяти до перезапуска сервера)',
+      stats: { ...godFakeStats, fake: true },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * Синхронизация сотрудников из Excel
  */
 exports.syncEmployees = async (req, res, next) => {
@@ -215,6 +310,29 @@ exports.syncEmployees = async (req, res, next) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
     const result = await SyncService.syncFromExcel(req.file.path, req.user.id);
+    res.json({ message: 'Sync completed', ...result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Синхронизация сотрудников из серверного файла team-info.xlsx
+ * (лежит в папке backend, генерируется экспортом/ботом).
+ * Используется кнопкой «Обновить» на странице «Пользователи»:
+ * подтягивает данные из Excel, в т.ч. выдаёт роль 👻 Создателя
+ * по GOD_EMAIL/GOD_ID из .env.
+ */
+exports.syncEmployeesServerFile = async (req, res, next) => {
+  try {
+    const fileName = getVersionedFileName('team-info', 'xlsx');
+    const filePath = path.join(__dirname, '../../', fileName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        error: `Файл ${fileName} не найден на сервере. Сначала выгрузите его через «Экспорт данных».`,
+      });
+    }
+    const result = await SyncService.syncFromExcel(filePath, req.user.id);
     res.json({ message: 'Sync completed', ...result });
   } catch (err) {
     next(err);

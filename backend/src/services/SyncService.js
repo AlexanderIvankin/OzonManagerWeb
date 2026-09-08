@@ -1,5 +1,6 @@
 const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
+const fs = require('fs');
 const path = require('path');
 const { User, Warehouse } = require('../models');
 const { getDB } = require('../config/database');
@@ -7,6 +8,44 @@ const bcrypt = require('bcrypt');
 const OzonService = require('./OzonService');
 const { getVersionedFileName } = require('../utils');
 const config = require('../config');
+
+/**
+ * Идентификаторы Создателя читаются из .env НАПРЯМУЮ (с кэшем по mtime файла),
+ * а не из кэша config, загруженного при старте сервера. Так правки
+ * GOD_EMAIL/GOD_ID подхватываются при следующей синхронизации даже без
+ * перезапуска сервера.
+ * @returns {{ mtime: number|null, email: string, id: string }}
+ */
+let godEnvCache = { mtime: null, email: '', id: '' };
+function readGodEnv() {
+  try {
+    const envPath = path.resolve(__dirname, '../../.env');
+    const mtime = fs.existsSync(envPath) ? fs.statSync(envPath).mtimeMs : null;
+    if (godEnvCache.mtime === mtime && mtime !== null) return godEnvCache;
+    let email = '';
+    let id = '';
+    if (mtime !== null) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      for (const line of content.split(/\r?\n/)) {
+        const m = line.match(/^\s*(GOD_EMAIL|GOD_ID)\s*=\s*(.*)$/);
+        if (!m) continue;
+        // Снимаем возможные кавычки и хвостовые комментарии ("значение # коммент")
+        const raw = m[2].trim();
+        const val = raw.split('#')[0].trim().replace(/^["']|["']$/g, '');
+        if (m[1] === 'GOD_EMAIL') email = val.toLowerCase();
+        else id = val;
+      }
+    }
+    godEnvCache = { mtime, email, id };
+    console.log(
+      `[SyncService] Идентификаторы Создателя: GOD_EMAIL="${email}", GOD_ID="${id}"`
+    );
+    return godEnvCache;
+  } catch (err) {
+    console.warn('[SyncService] Не удалось прочитать .env (GOD_EMAIL/GOD_ID):', err.message);
+    return { mtime: null, email: '', id: '' };
+  }
+}
 
 /**
  * Сервис синхронизации пользователей из Excel.
@@ -21,10 +60,13 @@ class SyncService {
    * @returns {boolean}
    */
   static isGodIdentity(data) {
+    const godEnv = readGodEnv();
+    const godEmail = godEnv.email || config.godEmail;
+    const godId = godEnv.id || config.godId;
     const email = String(data.email || '').trim().toLowerCase();
     const tgUserId = String(data.tgUserId || '').trim();
-    if (config.godEmail && email === config.godEmail) return true;
-    if (config.godId && tgUserId === config.godId) return true;
+    if (godEmail && email === godEmail) return true;
+    if (godId && tgUserId === godId) return true;
     return false;
   }
 
@@ -107,6 +149,11 @@ class SyncService {
       let user = null;
       if (options.syncBy === 'email' && data.email) {
         user = await User.getByEmail(data.email);
+        // Фолбэк: если по email не нашли (например, у Создателя в Excel новый
+        // email, а в БД старый) — пробуем по tg_user_id
+        if (!user && data.tgUserId) {
+          user = await User.findByTgId(data.tgUserId);
+        }
       } else if (data.tgUserId) {
         // Ищем по tg_user_id (если email не найден или syncBy = 'tg')
         user = await User.findByTgId(data.tgUserId);
@@ -118,6 +165,28 @@ class SyncService {
         // Нет ни email, ни tg – пропускаем
         skipped++;
         continue;
+      }
+
+      // Расширенный поиск для Создателя: роль выдаётся по GOD_EMAIL/GOD_ID
+      // из .env, поэтому ищем дополнительно без учёта регистра email —
+      // даже если в Excel email новый, а в БД записан в другом регистре
+      if (!user && this.isGodIdentity(data)) {
+        const godEnv = readGodEnv();
+        const godEmail = godEnv.email || config.godEmail;
+        const godId = godEnv.id || config.godId;
+        if (godEmail || godId) {
+          user = await db.get(
+            `SELECT * FROM users
+             WHERE (LOWER(TRIM(email)) = LOWER(TRIM(?)) AND ? <> '')
+                OR (TRIM(COALESCE(tg_user_id, '')) = ? AND ? <> '')
+             LIMIT 1`,
+            godEmail || '\u0000', godEmail || '',
+            godId || '\u0000', godId || ''
+          );
+          if (user) {
+            console.log(`[SyncService] Создатель найден по идентификаторам из .env: #${user.id} (${user.email || 'без email'})`);
+          }
+        }
       }
 
       if (user) {
@@ -198,6 +267,14 @@ class SyncService {
         created++;
       } else {
         skipped++;
+        // Понятная диагностика, если строка Создателя не нашлась в БД
+        if (this.isGodIdentity(data)) {
+          console.warn(
+            '[SyncService] В Excel есть строка Создателя (GOD_EMAIL/GOD_ID), но пользователь в БД не найден ' +
+            'и createMissing выключен — роль не выдана. Создайте аккаунт с этим email через ' +
+            '«Создать аккаунт» на странице «Пользователи» и повторите синхронизацию.'
+          );
+        }
       }
     }
 

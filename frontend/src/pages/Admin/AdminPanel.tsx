@@ -7,6 +7,7 @@ import { Materials } from "./Materials";
 import { EarningsManagement } from "./EarningsManagement";
 import { ExportData } from "./ExportData";
 import { AdminDashboard } from "./AdminDashboard";
+import { StaffStats } from "./StaffStats";
 
 export const AdminPanel = () => {
   return (
@@ -19,6 +20,7 @@ export const AdminPanel = () => {
         <Route path="/active-orders" element={<ActiveOrders />} />
         <Route path="/materials" element={<Materials />} />
         <Route path="/earnings" element={<EarningsManagement />} />
+        <Route path="/stats" element={<StaffStats />} />
         <Route path="/export" element={<ExportData />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

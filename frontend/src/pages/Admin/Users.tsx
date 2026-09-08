@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { adminApi, User } from "../../api/admin";
 import { RootState } from "../../store";
+import { RoleBadge, ROLE_LABELS } from "@/components/RoleBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -36,16 +37,8 @@ import {
   PHONE_FORMAT_HINT,
 } from "@/lib/utils";
 
-// Подписи ролей по-русски
-const ROLE_LABELS: Record<string, string> = {
-  user: "Пользователь",
-  employee: "Сотрудник",
-  moderator: "Модератор",
-  admin: "Администратор",
-  god: "👻 Создатель",
-};
-
-// Роли, доступные при создании аккаунта (god выдаётся только синхронизацией)
+// Роли, доступные при создании аккаунта (god выдаётся только синхронизацией).
+// Подписи ролей берутся из RoleBadge/ROLE_LABELS — единый источник.
 const CREATE_ROLES = ["employee", "user", "moderator", "admin"] as const;
 type CreateRole = (typeof CREATE_ROLES)[number];
 
@@ -73,6 +66,9 @@ export const Users = () => {
   const [creating, setCreating] = useState(false);
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
 
+  // === Синхронизация из серверного team-info.xlsx (кнопка «Обновить») ===
+  const [syncing, setSyncing] = useState(false);
+
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -91,6 +87,26 @@ export const Users = () => {
   useEffect(() => {
     loadUsers();
   }, [showFired]);
+
+  // Кнопка «Обновить»: сначала синхронизация из серверного team-info.xlsx
+  // (подтягивает данные сотрудников из Excel и выдаёт роль 👻 Создателя по
+  // GOD_EMAIL/GOD_ID из .env), затем перезагрузка списка
+  const handleRefresh = async () => {
+    setSyncing(true);
+    try {
+      const result = await adminApi.syncFromServerFile();
+      toast.success(
+        `Синхронизация выполнена: обновлено ${result.updated}, создано ${result.created}, пропущено ${result.skipped}`,
+      );
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.error || err?.message || "Ошибка синхронизации",
+      );
+    } finally {
+      setSyncing(false);
+      loadUsers();
+    }
+  };
 
   const handleUpdateUser = async (user: User) => {
     // Валидация телефона: если указан — ровно 11 цифр
@@ -208,8 +224,8 @@ export const Users = () => {
             />
             Показывать уволенных
           </label>
-          <Button onClick={loadUsers} disabled={loading}>
-            🔄 Обновить
+          <Button onClick={handleRefresh} disabled={loading || syncing}>
+            {syncing ? "🔄 Синхронизация..." : "🔄 Обновить"}
           </Button>
         </div>
       </div>
@@ -260,16 +276,15 @@ export const Users = () => {
                     </TableCell>
                     <TableCell className="text-center">{user.email}</TableCell>
                     <TableCell className="text-center">
-                      <Badge
-                        variant="outline"
+                      {/* Стили ролей — единый RoleBadge; персоналу добавляем жирность */}
+                      <RoleBadge
+                        role={user.role}
                         className={`font-normal ${
                           ["admin", "moderator", "god"].includes(user.role)
                             ? "font-bold"
                             : ""
                         }`}
-                      >
-                        {ROLE_LABELS[user.role] ?? user.role}
-                      </Badge>
+                      />
                     </TableCell>
                     <TableCell className="text-center">
                       {user.capacity}
@@ -402,14 +417,7 @@ export const Users = () => {
                                     <SelectTrigger>
                                       <SelectValue>
                                         {(val) =>
-                                          (
-                                            ({
-                                              user: "Пользователь",
-                                              employee: "Сотрудник",
-                                              moderator: "Модератор",
-                                              admin: "Администратор",
-                                            }) as Record<string, string>
-                                          )[String(val)] ?? String(val)
+                                          ROLE_LABELS[String(val)] ?? String(val)
                                         }
                                       </SelectValue>
                                     </SelectTrigger>
