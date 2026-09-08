@@ -9,7 +9,11 @@ exports.register = async (req, res, next) => {
     }
     const validationErrors = AuthService.validateRegisterData({ username, email, password, capacity });
     if (validationErrors.length > 0) {
-      return res.status(400).json({ error: validationErrors.join('. ') });
+      // error — текст для показа в интерфейсе, errors — массив по полям (структурированно)
+      return res.status(400).json({
+        error: validationErrors.join('. '),
+        errors: validationErrors,
+      });
     }
     const user = await AuthService.register({
       username, email, password, name, phone, capacity, earningsFactor

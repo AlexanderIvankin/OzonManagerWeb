@@ -206,8 +206,9 @@ export const OrdersManagement = () => {
               <Card key={order.posting_number}>
                 <CardHeader>
                   <CardTitle>
-                    <span className="text-xl font-bold">
-                      Заказ <code>{order.posting_number}</code>
+                    Заказ{" "}
+                    <span className="font-bold">
+                      <code>{order.posting_number}</code>
                     </span>
                   </CardTitle>
                 </CardHeader>
@@ -229,13 +230,13 @@ export const OrdersManagement = () => {
                     </div>
                   </div>
                   <div>
-                    <div className="font-semibold text-xl mb-[10px]">
+                    <div className="font-semibold text-l mb-[5px]">
                       Состав:
                     </div>
                     <ul className="text-sm space-y-5">
                       {order.products?.map((p, idx) => (
                         <li key={idx}>
-                          <div>
+                          <div className="mb-[5px]">
                             <span className="font-bold">
                               {idx + 1}
                               {". "}

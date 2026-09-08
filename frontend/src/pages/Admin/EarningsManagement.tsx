@@ -209,7 +209,7 @@ export const EarningsManagement = () => {
                     <TableCell className="text-center">
                       <Badge
                         className={
-                          user.role === "admin" || user.role === "moderator"
+                          ["admin", "moderator", "god"].includes(user.role)
                             ? "font-bold"
                             : ""
                         }

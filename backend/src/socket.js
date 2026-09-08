@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
 const { User } = require('./models');
+const { STAFF_ROLES } = require('./middlewares/auth');
 
 let io;
 
@@ -41,8 +42,15 @@ function initSocket(server) {
     // Личная комната — всегда (админы/модераторы тоже получают персональные оповещения)
     socket.join(`user_${socket.userId}`);
 
-    // Комната персонала: журнал действий сотрудников и ошибки сервера
-    if (socket.role === 'admin' || socket.role === 'moderator') {
+    // Комната персонала: архив журнала действий сотрудников и ошибки сервера
+    // доступны админам, модераторам и Создателю
+    if (STAFF_ROLES.includes(socket.role)) {
+      socket.join('staff');
+    }
+
+    // Live-оповещения о действиях сотрудников приходят ТОЛЬКО модераторам.
+    // Остальной персонал (admin, god) читает эти события в архиве журнала.
+    if (socket.role === 'moderator') {
       socket.join('moderators');
     }
 
@@ -60,9 +68,17 @@ function getIO() {
 }
 
 // Функции для отправки уведомлений
+// Live-оповещения о действиях сотрудников: только модераторам
+// (комната 'moderators', см. подключение выше)
 function notifyModerators(event, data) {
   if (!io) return;
   io.to('moderators').emit(event, data);
+}
+
+// События всему персоналу (admin/moderator/god): например, ошибки сервера
+function notifyStaffLive(event, data) {
+  if (!io) return;
+  io.to('staff').emit(event, data);
 }
 
 function notifyUser(userId, event, data) {
@@ -70,4 +86,4 @@ function notifyUser(userId, event, data) {
   io.to(`user_${userId}`).emit(event, data);
 }
 
-module.exports = { initSocket, getIO, notifyModerators, notifyUser };
+module.exports = { initSocket, getIO, notifyModerators, notifyStaffLive, notifyUser };

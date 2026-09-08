@@ -210,7 +210,7 @@ export const Materials = () => {
           <div>
             <h3 className="font-semibold">
               Минимальный заработок за единицу:{" "}
-              <Badge variant="outline">{data.minEarnings} руб.</Badge>
+              <Badge variant="destructive">{data.minEarnings} руб.</Badge>
             </h3>
           </div>
           <div>

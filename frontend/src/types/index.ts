@@ -6,7 +6,7 @@ export interface User {
   phone?: string;
   capacity: number;
   earnings_factor: number;
-  role: 'guest' | 'user' | 'employee' | 'moderator' | 'admin';
+  role: 'guest' | 'user' | 'employee' | 'moderator' | 'admin' | 'god';
   is_fired: boolean;
   taking_orders: boolean;
   /** 0/1 из SQLite; подтверждение email после регистрации по коду */

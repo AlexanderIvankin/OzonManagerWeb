@@ -203,7 +203,10 @@ export const ActiveOrders = () => {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span>
-                    Заказ <code>{order.orderId}</code>
+                    Заказ{" "}
+                    <span className="font-bold">
+                      <code>{order.orderId}</code>
+                    </span>
                   </span>
                   <Badge
                     variant={
@@ -255,16 +258,24 @@ export const ActiveOrders = () => {
                 )}
                 {order.products.length > 0 && (
                   <div className="mt-2">
-                    <div className="font-semibold">Состав:</div>
+                    <div className="font-semibold text-l mb-[5px]">Состав:</div>
                     <ul className="text-sm space-y-3">
                       {order.products.map((p, idx) => (
                         <li key={idx}>
-                          <div>
+                          <div className="mb-[5px]">
+                            <span className="font-bold">
+                              {idx + 1}
+                              {". "}
+                            </span>
                             {p.name} — {p.quantity} шт.
                             {p.offer_id && (
-                              <span className="text-xs text-muted-foreground">
+                              <span className="text-l text-muted-foreground">
                                 {" "}
-                                (offer_id: <code>{p.offer_id}</code>)
+                                <br></br>(offer_id:{" "}
+                                <span className="font-bold">
+                                  <code>{p.offer_id}</code>
+                                </span>
+                                )
                               </span>
                             )}
                           </div>
@@ -280,7 +291,7 @@ export const ActiveOrders = () => {
                   </div>
                 )}
               </CardContent>
-              <CardFooter>
+              <CardFooter className="justify-center">
                 <Button
                   variant="destructive"
                   onClick={() => handleUnassign(order)}

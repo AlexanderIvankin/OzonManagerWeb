@@ -243,6 +243,10 @@ class OrderService {
       employee = await User.getById(userId);
       if (!employee) throw new Error(`Сотрудник с ID ${userId} не найден.`);
       if (employee.is_fired) throw new Error(`Сотрудник ${employee.name} уволен.`);
+      // Создателю ('god') заказы не назначаются — он вне списков сотрудников
+      if (employee.role === 'god') {
+        throw new Error(`Заказ нельзя назначить Создателю.`);
+      }
 
       // Получение деталей заказа
       orderDetails = await OzonService.getOrderDetails(orderId);

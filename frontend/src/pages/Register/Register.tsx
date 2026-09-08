@@ -68,7 +68,12 @@ export const Register = () => {
         password: data.password,
         name: data.name,
         phone: data.phone || '',
-        capacity: parseInt(data.capacity || '1'),
+        // zod-схема гарантирует: пусто или целое 1..99. Number вместо parseInt,
+        // чтобы дробные значения не обрезались молча
+        capacity:
+          data.capacity && data.capacity.trim() !== ''
+            ? Number(data.capacity)
+            : 1,
       })).unwrap();
       // После регистрации — на страницу ввода кода из письма
       navigate(`/verify-email?email=${encodeURIComponent(data.email)}`);
@@ -124,9 +129,16 @@ export const Register = () => {
                 <p className="text-sm text-red-500">{errors.phone.message}</p>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 mb-[20px]">
               <Label htmlFor="capacity">Количество принтеров (опционально)</Label>
-              <Input className="mb-[20px]" id="capacity" type="number" placeholder="1" {...registerField('capacity')} />
+              <Input id="capacity" type="number" placeholder="1" {...registerField('capacity')} />
+              {errors.capacity ? (
+                <p className="text-sm text-red-500">{errors.capacity.message}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Целое число от 1 до 99. По умолчанию — 1.
+                </p>
+              )}
             </div>
             {error && <p className="text-sm text-red-500">{error}</p>}
           </CardContent>

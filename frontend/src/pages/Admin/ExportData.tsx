@@ -18,7 +18,8 @@ const downloadBlob = (blob: Blob, fileName: string) => {
 
 export const ExportData = () => {
   const user = useSelector((state: RootState) => state.auth.user);
-  const isAdmin = user?.role === "admin";
+  // Модератор = Администратор: экспорт/бэкап БД доступен и модератору, и Создателю
+  const isAdmin = ["admin", "moderator", "god"].includes(user?.role || "");
 
   const [loadingStats, setLoadingStats] = useState(false);
   const [loadingDb, setLoadingDb] = useState(false);
@@ -144,13 +145,13 @@ export const ExportData = () => {
         </CardContent>
       </Card>
 
-      {/* База данных — только для админа */}
+      {/* База данных — для персонала (admin/moderator/god) */}
       {isAdmin && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               🗄️ Файл базы данных
-              <Badge variant="destructive">только админ</Badge>
+              <Badge variant="destructive">Backup</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import { adminApi, User } from "../../api/admin";
+import { RootState } from "../../store";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -34,7 +36,18 @@ import {
   PHONE_FORMAT_HINT,
 } from "@/lib/utils";
 
+// Подписи ролей по-русски
+const ROLE_LABELS: Record<string, string> = {
+  user: "Пользователь",
+  employee: "Сотрудник",
+  moderator: "Модератор",
+  admin: "Администратор",
+  god: "👻 Создатель",
+};
+
 export const Users = () => {
+  // Текущий пользователь: определяет, может ли он редактировать Создателя
+  const viewer = useSelector((state: RootState) => state.auth.user);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -68,7 +81,11 @@ export const Users = () => {
       return;
     }
     try {
-      await adminApi.updateUser(user.id, user);
+      // Роль Создателя управляется только синхронизацией из Excel —
+      // не отправляем её на сервер при редактировании
+      const payload = { ...user };
+      if (payload.role === "god") delete (payload as Partial<User>).role;
+      await adminApi.updateUser(user.id, payload);
       toast.success(`Пользователь ${user.name} обновлён`);
       loadUsers();
       setEditingUser(null);
@@ -170,9 +187,13 @@ export const Users = () => {
                     <TableCell className="text-center">
                       <Badge
                         variant="outline"
-                        className={`font-normal ${user.role === "admin" || user.role === "moderator" ? "font-bold" : ""}`}
+                        className={`font-normal ${
+                          ["admin", "moderator", "god"].includes(user.role)
+                            ? "font-bold"
+                            : ""
+                        }`}
                       >
-                        {user.role}
+                        {ROLE_LABELS[user.role] ?? user.role}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
@@ -191,6 +212,10 @@ export const Users = () => {
                       )}
                     </TableCell>
                     <TableCell className="text-center space-x-1">
+                      {/* Создателя может редактировать только Создатель:
+                          остальным ролям кнопки не показываются */}
+                      {user.role !== "god" || viewer?.role === "god" ? (
+                        <>
                       <Dialog
                         open={editingUser?.id === user.id}
                         onOpenChange={(open) => {
@@ -282,6 +307,14 @@ export const Users = () => {
                               <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                   <Label>Роль</Label>
+                                  {/* Роль Создателя нельзя изменить вручную —
+                                      только синхронизацией из Excel */}
+                                  {editingUser.role === "god" ? (
+                                    <Input
+                                      value="👻 Создатель (изменение недоступно)"
+                                      disabled
+                                    />
+                                  ) : (
                                   <Select
                                     value={editingUser.role}
                                     onValueChange={(val) =>
@@ -320,6 +353,7 @@ export const Users = () => {
                                       </SelectItem>
                                     </SelectContent>
                                   </Select>
+                                  )}
                                 </div>
                                 <div className="space-y-2">
                                   <Label>Приём заказов</Label>
@@ -389,6 +423,12 @@ export const Users = () => {
                         >
                           🗑️
                         </Button>
+                      )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          👻 Только Создатель
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>

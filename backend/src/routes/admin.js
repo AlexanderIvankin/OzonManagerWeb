@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate, authorize } = require('../middlewares/auth');
+const { authenticate, authorize, STAFF_ROLES } = require('../middlewares/auth');
 const adminController = require('../controllers/adminController');
 const multer = require('multer');
 const path = require('path');
@@ -8,9 +8,10 @@ const path = require('path');
 // Настройка multer для загрузки файлов (временное хранилище)
 const upload = multer({ dest: 'uploads/' });
 
-// Все маршруты требуют аутентификации и роли admin или moderator
+// Все маршруты требуют аутентификации и роли персонала (admin/moderator/god).
+// Модератор = Администратор по правам.
 router.use(authenticate);
-router.use(authorize('admin', 'moderator'));
+router.use(authorize(...STAFF_ROLES));
 
 // --- Управление пользователями ---
 router.get('/users', adminController.getUsers);
@@ -23,8 +24,8 @@ router.post('/sync/employees', upload.single('file'), adminController.syncEmploy
 // --- Экспорт данных ---
 router.get('/export/team-info', adminController.exportTeamInfo);
 router.get('/export/product-stats', adminController.exportProductStats);
-router.get('/export/database', authorize('admin'), adminController.downloadDatabase); // только админ
-router.post('/backup', authorize('admin'), adminController.createBackup); // ручной бэкап, только админ
+router.get('/export/database', authorize(...STAFF_ROLES), adminController.downloadDatabase); // персонал (admin/moderator/god)
+router.post('/backup', authorize(...STAFF_ROLES), adminController.createBackup); // ручной бэкап, персонал
 
 // --- Конфигурация materials-prices.json ---
 router.get('/materials', adminController.getMaterials);
@@ -49,11 +50,11 @@ router.get('/earnings/monthly', adminController.exportMonthlyEarnings);
 router.get('/earnings/active', adminController.getActiveEarningsAll);
 router.post('/earnings/adjust', adminController.addEarningsAdjustment);
 router.post('/earnings/settle/:id', adminController.settleEarnings);
-router.post('/earnings/reset', authorize('admin'), adminController.resetAllEarnings); // только админ
+router.post('/earnings/reset', authorize(...STAFF_ROLES), adminController.resetAllEarnings); // персонал (admin/moderator/god)
 
 // --- Административные команды ---
-router.post('/assignments/clear', authorize('admin'), adminController.clearAssignments);
-router.post('/orders/reload-queue', authorize('admin'), adminController.reloadQueue);
+router.post('/assignments/clear', authorize(...STAFF_ROLES), adminController.clearAssignments);
+router.post('/orders/reload-queue', authorize(...STAFF_ROLES), adminController.reloadQueue);
 
 // --- Команды Модератора ---
 // Получить текущий заказ для модерации

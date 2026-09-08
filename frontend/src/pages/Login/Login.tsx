@@ -48,7 +48,8 @@ export const Login = () => {
     try {
       const result = await dispatch(login(data)).unwrap();
       // result содержит { user, accessToken, refreshToken }
-      if (result.user.role === "admin" || result.user.role === "moderator") {
+      // Модератор = Администратор, Создатель тоже попадает в админку
+      if (["admin", "moderator", "god"].includes(result.user.role)) {
         navigate("/admin");
       } else if (result.user.role === "employee") {
         navigate("/orders");
