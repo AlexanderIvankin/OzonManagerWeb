@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+// import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RoleBadge } from "@/components/RoleBadge";
@@ -269,15 +269,15 @@ export const StaffStats = () => {
                     </TableCell>
                     <TableCell className="text-center">
                       <b>{row.name}</b>
-                      {row.fake && (
+                      {/* {row.fake && (
                         <Badge
                           variant="secondary"
                           className="ml-1 select-none"
                           title="Пасхалка Создателя: значения фейковые 🎃"
                         >
-                          🎃 fake
+                          🎃
                         </Badge>
-                      )}
+                      )} */}
                     </TableCell>
                     <TableCell className="text-center">
                       {row.username}

@@ -32,10 +32,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  formatPhoneInput,
   isValidPhone,
   PHONE_FORMAT_HINT,
 } from "@/lib/utils";
+import { PhoneInput } from "@/components/PhoneInput";
 
 // Роли, доступные при создании аккаунта (god выдаётся только синхронизацией).
 // Подписи ролей берутся из RoleBadge/ROLE_LABELS — единый источник.
@@ -52,12 +52,76 @@ const emptyCreateForm = {
   role: "employee" as CreateRole,
 };
 
+// === Коэффициент заработка: поддерживаем оба разделителя "1.5" и "1,5" ===
+// Приводим запятую к точке — Number() понимает только точку
+const normalizeFactorSeparator = (value: string): string => value.replace(",", ".");
+
+// Живая маска при вводе: цифры, один разделитель, максимум 2 знака после него.
+// Разрешает промежуточные состояния вида "123." / "123," — чтобы точка не
+// «съедалась», как было с type="number" + parseFloat.
+const FACTOR_LIVE_RE = /^\d+(\.\d{0,2})?$/;
+
+// Строгая проверка на момент сохранения: положительное число > 0,
+// до 2 знаков после запятой, пусто не принимается.
+const parseFactorValue = (
+  raw: string,
+): { ok: true; value: number } | { ok: false; error: string } => {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return { ok: false, error: "Укажите коэффициент" };
+  }
+  const normalized = normalizeFactorSeparator(trimmed);
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
+    return {
+      ok: false,
+      error:
+        "Положительное число, максимум 2 знака после запятой: 1.5 или 1,5",
+    };
+  }
+  const n = Number(normalized);
+  if (!(n > 0)) {
+    return { ok: false, error: "Коэффициент должен быть больше 0" };
+  }
+  return { ok: true, value: n };
+};
+
+// === Количество принтеров: целое положительное число ===
+// Живая маска при вводе: только цифры
+const CAPACITY_LIVE_RE = /^\d+$/;
+
+// Строгая проверка на момент сохранения: целое положительное, пусто не принимается
+const parseCapacityValue = (
+  raw: string,
+): { ok: true; value: number } | { ok: false; error: string } => {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return { ok: false, error: "Укажите количество принтеров" };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { ok: false, error: "Целое положительное число принтеров" };
+  }
+  const n = Number(trimmed);
+  if (n < 1) {
+    return { ok: false, error: "Количество принтеров должно быть ≥ 1" };
+  }
+  return { ok: true, value: n };
+};
+
 export const Users = () => {
   // Текущий пользователь: определяет, может ли он редактировать Создателя
   const viewer = useSelector((state: RootState) => state.auth.user);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  // Текстовое состояние коэффициента: инпут переведён на type="text" и
+  // управляется строкой, чтобы ввод вида "123." / "123," не «затирался»,
+  // как было с type="number" + parseFloat
+  const [factorInput, setFactorInput] = useState("");
+  const [factorError, setFactorError] = useState("");
+  // Текстовое состояние количества принтеров (type="text") — чтобы ввод не
+  // «затирался», как с type="number" + parseInt
+  const [capacityInput, setCapacityInput] = useState("");
+  const [capacityError, setCapacityError] = useState("");
   const [showFired, setShowFired] = useState(false);
 
   // === Создание аккаунта администратором (без email-подтверждения) ===
@@ -108,7 +172,71 @@ export const Users = () => {
     }
   };
 
+  // Коэффициент: живая обработка ввода. Оставляем только цифры и разделители,
+  // по мере набора показываем ошибку, если структура невалидна
+  const handleFactorChange = (raw: string) => {
+    // Очистка: убираем всё, кроме цифр, точки и запятой
+    const sanitized = raw.replace(/[^\d.,]/g, "");
+    setFactorInput(sanitized);
+
+    if (sanitized === "") {
+      setFactorError("");
+      return;
+    }
+    if (FACTOR_LIVE_RE.test(normalizeFactorSeparator(sanitized))) {
+      setFactorError("");
+      const parsed = Number(normalizeFactorSeparator(sanitized));
+      if (Number.isFinite(parsed)) {
+        // Поддерживаем editingUser в актуальном состоянии при валидном вводе
+        setEditingUser((prev) =>
+          prev ? { ...prev, earnings_factor: parsed } : prev,
+        );
+      }
+    } else {
+      setFactorError(
+        "Положительное число, максимум 2 знака после запятой: 1.5 или 1,5",
+      );
+    }
+  };
+
+  // Принтеры: живая обработка ввода. Только цифры, по мере набора проверяем валидность
+  const handleCapacityChange = (raw: string) => {
+    const sanitized = raw.replace(/\D/g, "");
+    setCapacityInput(sanitized);
+
+    if (sanitized === "") {
+      setCapacityError("");
+      return;
+    }
+    if (CAPACITY_LIVE_RE.test(sanitized)) {
+      setCapacityError("");
+      const parsed = Number(sanitized);
+      if (Number.isInteger(parsed)) {
+        setEditingUser((prev) =>
+          prev ? { ...prev, capacity: parsed } : prev,
+        );
+      }
+    } else {
+      setCapacityError("Целое положительное число принтеров");
+    }
+  };
+
   const handleUpdateUser = async (user: User) => {
+    // Валидация количества принтеров: целое положительное
+    const capacity = parseCapacityValue(capacityInput);
+    if (!capacity.ok) {
+      setCapacityError(capacity.error);
+      toast.error(capacity.error);
+      return;
+    }
+    // Валидация коэффициента: формат "1.5" / "1,5", положительное,
+    // максимум 2 знака после запятой
+    const factor = parseFactorValue(factorInput);
+    if (!factor.ok) {
+      setFactorError(factor.error);
+      toast.error(factor.error);
+      return;
+    }
     // Валидация телефона: если указан — ровно 11 цифр
     if (user.phone && user.phone.trim() !== "" && !isValidPhone(user.phone)) {
       toast.error(
@@ -119,7 +247,11 @@ export const Users = () => {
     try {
       // Роль Создателя управляется только синхронизацией из Excel —
       // не отправляем её на сервер при редактировании
-      const payload = { ...user };
+      const payload = {
+        ...user,
+        capacity: capacity.value,
+        earnings_factor: factor.value, // берём из текстового ввода (был провалидирован выше)
+      };
       if (payload.role === "god") delete (payload as Partial<User>).role;
       await adminApi.updateUser(user.id, payload);
       toast.success(`Пользователь ${user.name} обновлён`);
@@ -309,7 +441,11 @@ export const Users = () => {
                       <Dialog
                         open={editingUser?.id === user.id}
                         onOpenChange={(open) => {
-                          if (!open) setEditingUser(null);
+                          if (!open) {
+                            setFactorError("");
+                            setCapacityError("");
+                            setEditingUser(null);
+                          }
                         }}
                       >
                         <DialogTrigger
@@ -317,7 +453,17 @@ export const Users = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => setEditingUser(user)}
+                              onClick={() => {
+                                setFactorInput(String(user.earnings_factor));
+                                setFactorError("");
+                                setCapacityInput(
+                                  user.capacity == null
+                                    ? ""
+                                    : String(user.capacity),
+                                );
+                                setCapacityError("");
+                                setEditingUser(user);
+                              }}
                             />
                           }
                         >
@@ -346,15 +492,13 @@ export const Users = () => {
                                 </div>
                                 <div className="space-y-2">
                                   <Label>Телефон</Label>
-                                  <Input
+                                  <PhoneInput
                                     placeholder="+7 (999) 999-99-99"
-                                    value={formatPhoneInput(
-                                      editingUser.phone || "",
-                                    )}
-                                    onChange={(e) =>
+                                    value={editingUser.phone || ""}
+                                    onValueChange={(formatted) =>
                                       setEditingUser({
                                         ...editingUser,
-                                        phone: formatPhoneInput(e.target.value),
+                                        phone: formatted,
                                       })
                                     }
                                   />
@@ -367,31 +511,45 @@ export const Users = () => {
                                 <div className="space-y-2">
                                   <Label>Принтеры</Label>
                                   <Input
-                                    type="number"
-                                    value={editingUser.capacity}
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="Например: 2"
+                                    value={capacityInput}
                                     onChange={(e) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        capacity: parseInt(e.target.value),
-                                      })
+                                      handleCapacityChange(e.target.value)
                                     }
                                   />
+                                  {capacityError ? (
+                                    <p className="text-sm text-red-500">
+                                      {capacityError}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">
+                                      Целое положительное число принтеров
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="space-y-2">
                                   <Label>Коэффициент</Label>
                                   <Input
-                                    type="number"
-                                    step="0.1"
-                                    value={editingUser.earnings_factor}
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="Например: 1.5 или 1,5"
+                                    value={factorInput}
                                     onChange={(e) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        earnings_factor: parseFloat(
-                                          e.target.value,
-                                        ),
-                                      })
+                                      handleFactorChange(e.target.value)
                                     }
                                   />
+                                  {factorError ? (
+                                    <p className="text-sm text-red-500">
+                                      {factorError}
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground">
+                                      Положительное число, до 2 знаков после
+                                      запятой: 1.5 или 1,5
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-4">
@@ -595,14 +753,18 @@ export const Users = () => {
             </div>
             <div className="space-y-1">
               <Label htmlFor="create-phone">Телефон</Label>
-              <Input
+              <PhoneInput
                 id="create-phone"
                 inputMode="tel"
+                placeholder="+7 (999) 999-99-99"
                 value={createForm.phone}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, phone: e.target.value })
+                onValueChange={(formatted) =>
+                  setCreateForm({ ...createForm, phone: formatted })
                 }
               />
+              <p className="text-xs text-muted-foreground">
+                {PHONE_FORMAT_HINT}
+              </p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="create-capacity">Количество принтеров</Label>

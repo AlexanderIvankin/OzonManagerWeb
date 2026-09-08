@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PhoneInput } from '@/components/PhoneInput';
 import { register } from '../../store/authSlice';
 import { AppDispatch } from '../../store';
 import {
-  formatPhoneInput,
   isValidPhone,
   PHONE_FORMAT_HINT,
 } from '../../lib/utils';
@@ -50,8 +50,8 @@ export const Register = () => {
 
   const {
     register: registerField,
+    control,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -115,15 +115,18 @@ export const Register = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Телефон (опционально)</Label>
-              <Input
-                id="phone"
-                placeholder="+7 (999) 999-99-99"
-                inputMode="tel"
-                {...registerField('phone')}
-                onChange={(e) => {
-                  const formatted = formatPhoneInput(e.target.value);
-                  setValue('phone', formatted, { shouldValidate: true });
-                }}
+              <Controller
+                name="phone"
+                control={control}
+                render={({ field }) => (
+                  <PhoneInput
+                    id="phone"
+                    placeholder="+7 (999) 999-99-99"
+                    inputMode="tel"
+                    value={field.value ?? ''}
+                    onValueChange={(formatted) => field.onChange(formatted)}
+                  />
+                )}
               />
               {errors.phone && (
                 <p className="text-sm text-red-500">{errors.phone.message}</p>

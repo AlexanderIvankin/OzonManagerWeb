@@ -243,9 +243,14 @@ class OrderService {
       employee = await User.getById(userId);
       if (!employee) throw new Error(`Сотрудник с ID ${userId} не найден.`);
       if (employee.is_fired) throw new Error(`Сотрудник ${employee.name} уволен.`);
-      // Создателю ('god') заказы не назначаются — он вне списков сотрудников
+      // Создателю ('god') заказы не назначаются — он вне списков сотрудников.
+      // Исключение: Создатель может назначить заказ самому себе (для тестов),
+      // т.е. разрешено только когда назначающий (adminId) и получатель (userId)
+      // — один и тот же пользователь.
       if (employee.role === 'god') {
-        throw new Error(`Заказ нельзя назначить Создателю.`);
+        if (!adminId || adminId !== userId) {
+          throw new Error(`Заказ нельзя назначить Создателю.`);
+        }
       }
 
       // Получение деталей заказа
