@@ -8,6 +8,7 @@ const EarningsService = require('../services/EarningsService');
 const MaterialsService = require('../services/MaterialsService');
 const BackupService = require('../services/BackupService');
 const ProductStatsService = require('../services/ProductStatsService');
+const AuthService = require('../services/AuthService');
 const { getDB, getDBPath } = require('../config/database')
 const { getLocalTimestamp, getDbBaseName, getVersionedFileName } = require('../utils');
 
@@ -163,6 +164,44 @@ exports.fireUser = async (req, res, next) => {
     await refreshServerExports();
     res.json({ message: 'User fired successfully' });
   } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Создать аккаунт администратором — в обход подтверждения email.
+ * Аккаунт создаётся сразу подтверждённым (email_verified = 1) и активным
+ * с выбранной ролью (по умолчанию 'employee'). Правила мягче обычной
+ * регистрации: логин/пароль от 1 символа, capacity — любое положительное
+ * целое, email — только формат. Уникальность username/email обязательна.
+ */
+exports.createUserByAdmin = async (req, res, next) => {
+  try {
+    const { username, email, password, name, phone, capacity, earningsFactor, role } = req.body;
+    const validationErrors = AuthService.validateAdminRegisterData({
+      username, email, password, capacity, role,
+    });
+    if (validationErrors.length > 0) {
+      // error — текст для показа, errors — массив по полям (структурированно)
+      return res.status(400).json({
+        error: validationErrors.join('. '),
+        errors: validationErrors,
+      });
+    }
+    const user = await AuthService.adminRegister({
+      username, email, password, name, phone, capacity, earningsFactor, role,
+    });
+    // Перегенерируем Excel-файлы сотрудников на сервере
+    await refreshServerExports();
+    res.status(201).json({
+      user,
+      message: `Аккаунт ${user.username} создан и подтверждён (роль: ${user.role})`,
+    });
+  } catch (err) {
+    if (err.message.includes('already taken')) {
+      const what = err.message.startsWith('username') ? 'Логин' : 'Email';
+      return res.status(409).json({ error: `${what} уже занят` });
+    }
     next(err);
   }
 };

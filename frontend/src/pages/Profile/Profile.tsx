@@ -101,7 +101,7 @@ export const Profile = () => {
   }, [user?.taking_orders]);
 
   return (
-    <div className="container mx-auto py-10 max-w-4xl">
+    <div className="container mx-auto py-10 max-w-5xl">
       <Card>
         <CardHeader>
           <div className="flex flex-col items-center justify-center mb-[15px]">
