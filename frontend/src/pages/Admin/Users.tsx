@@ -45,6 +45,20 @@ const ROLE_LABELS: Record<string, string> = {
   god: "👻 Создатель",
 };
 
+// Роли, доступные при создании аккаунта (god выдаётся только синхронизацией)
+const CREATE_ROLES = ["employee", "user", "moderator", "admin"] as const;
+type CreateRole = (typeof CREATE_ROLES)[number];
+
+const emptyCreateForm = {
+  username: "",
+  email: "",
+  password: "",
+  name: "",
+  phone: "",
+  capacity: "",
+  role: "employee" as CreateRole,
+};
+
 export const Users = () => {
   // Текущий пользователь: определяет, может ли он редактировать Создателя
   const viewer = useSelector((state: RootState) => state.auth.user);
@@ -52,6 +66,12 @@ export const Users = () => {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showFired, setShowFired] = useState(false);
+
+  // === Создание аккаунта администратором (без email-подтверждения) ===
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [creating, setCreating] = useState(false);
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
 
   const loadUsers = async () => {
     setLoading(true);
@@ -120,11 +140,66 @@ export const Users = () => {
     }
   };
 
+  const handleCreateUser = async () => {
+    // Клиентская валидация (мягкие правила админ-регистрации):
+    // логин/пароль от 1 символа, email — формат, capacity — целое >= 1
+    const errors: Record<string, string> = {};
+    if (!createForm.username.trim()) errors.username = "Укажите логин";
+    if (!/^\S+@\S+\.\S+$/.test(createForm.email.trim()))
+      errors.email = "Некорректный email";
+    if (!createForm.password) errors.password = "Укажите пароль";
+    if (createForm.capacity.trim() !== "") {
+      const n = Number(createForm.capacity);
+      if (!Number.isInteger(n) || n < 1)
+        errors.capacity = "Целое положительное число (пусто — 1)";
+    }
+    setCreateErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
+    setCreating(true);
+    try {
+      const result = await adminApi.createUser({
+        username: createForm.username.trim(),
+        email: createForm.email.trim(),
+        password: createForm.password,
+        name: createForm.name.trim() || undefined,
+        phone: createForm.phone.trim() || undefined,
+        capacity:
+          createForm.capacity.trim() !== ""
+            ? Number(createForm.capacity)
+            : undefined,
+        role: createForm.role,
+      });
+      toast.success(result.message || `Аккаунт ${createForm.username} создан`);
+      loadUsers();
+      setShowCreate(false);
+      setCreateForm({ ...emptyCreateForm });
+      setCreateErrors({});
+    } catch (err: any) {
+      // Ошибки бэкенда: 400 (валидация) / 409 (занят логин или email)
+      setCreateErrors({
+        _server:
+          err?.response?.data?.error || err?.message || "Ошибка создания аккаунта",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Пользователи</h1>
         <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => {
+              setCreateErrors({});
+              setShowCreate(true);
+            }}
+          >
+            ➕ Создать аккаунт
+          </Button>
           <label className="flex items-center gap-1 text-sm">
             <input
               type="checkbox"
@@ -438,6 +513,150 @@ export const Users = () => {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Создание аккаунта администратором (в обход email-подтверждения) */}
+      <Dialog
+        open={showCreate}
+        onOpenChange={(open) => {
+          if (!open) setShowCreate(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Создать аккаунт</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Аккаунт создаётся сразу подтверждённым — без письма с кодом
+              подтверждения. Логин и email должны быть уникальными.
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="create-username">Логин *</Label>
+              <Input
+                id="create-username"
+                placeholder="Минимум 1 символ"
+                value={createForm.username}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, username: e.target.value })
+                }
+              />
+              {createErrors.username && (
+                <p className="text-sm text-red-500">{createErrors.username}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="create-email">Email *</Label>
+              <Input
+                id="create-email"
+                type="email"
+                placeholder="user@example.com"
+                value={createForm.email}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, email: e.target.value })
+                }
+              />
+              {createErrors.email && (
+                <p className="text-sm text-red-500">{createErrors.email}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="create-password">Пароль *</Label>
+              <Input
+                id="create-password"
+                type="password"
+                placeholder="Минимум 1 символ"
+                value={createForm.password}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, password: e.target.value })
+                }
+              />
+              {createErrors.password && (
+                <p className="text-sm text-red-500">{createErrors.password}</p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="create-name">Имя</Label>
+              <Input
+                id="create-name"
+                placeholder="Если не указать — будет использован логин"
+                value={createForm.name}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, name: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="create-phone">Телефон</Label>
+              <Input
+                id="create-phone"
+                inputMode="tel"
+                value={createForm.phone}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, phone: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="create-capacity">Количество принтеров</Label>
+              <Input
+                id="create-capacity"
+                type="number"
+                placeholder="1"
+                value={createForm.capacity}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, capacity: e.target.value })
+                }
+              />
+              {createErrors.capacity ? (
+                <p className="text-sm text-red-500">{createErrors.capacity}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Целое положительное число, без ограничения сверху. По
+                  умолчанию — 1.
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>Роль</Label>
+              <Select
+                value={createForm.role}
+                onValueChange={(val) =>
+                  setCreateForm({ ...createForm, role: val as CreateRole })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CREATE_ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {ROLE_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Роль 👻 Создатель выдаётся только синхронизацией из Excel.
+              </p>
+            </div>
+            {createErrors._server && (
+              <p className="text-sm text-red-500">{createErrors._server}</p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowCreate(false)}
+                disabled={creating}
+              >
+                Отмена
+              </Button>
+              <Button onClick={handleCreateUser} disabled={creating}>
+                {creating ? "Создание..." : "Создать"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -16,6 +16,8 @@ router.use(authorize(...STAFF_ROLES));
 // --- Управление пользователями ---
 router.get('/users', adminController.getUsers);
 router.get('/users/:id', adminController.getUserById);
+// Создание аккаунта администратором (в обход подтверждения email)
+router.post('/users', adminController.createUserByAdmin);
 router.put('/users/:id', adminController.updateUser);
 router.delete('/users/:id', adminController.fireUser);
 

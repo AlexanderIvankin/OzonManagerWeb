@@ -14,7 +14,7 @@ class User {
 
     // Проверяем уникальность username и email
     const existing = await db.get(
-      'SELECT id FROM users WHERE username = ? OR email = ?',
+      'SELECT id, username, email FROM users WHERE username = ? OR email = ?',
       username, email
     );
     if (existing) {

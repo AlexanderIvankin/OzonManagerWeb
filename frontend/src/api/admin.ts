@@ -69,6 +69,21 @@ export const adminApi = {
   getUserById: (id: number) =>
     api.get<User>(`/admin/users/${id}`).then((res) => res.data),
 
+  // Создание аккаунта администратором (в обход подтверждения email):
+  // аккаунт создаётся сразу подтверждённым и активным
+  createUser: (data: {
+    username: string;
+    email: string;
+    password: string;
+    name?: string;
+    phone?: string;
+    capacity?: number;
+    role?: "user" | "employee" | "moderator" | "admin";
+  }) =>
+    api
+      .post<{ user: User; message: string }>("/admin/users", data)
+      .then((res) => res.data),
+
   updateUser: (id: number, data: Partial<User>) =>
     api.put<User>(`/admin/users/${id}`, data).then((res) => res.data),
 
