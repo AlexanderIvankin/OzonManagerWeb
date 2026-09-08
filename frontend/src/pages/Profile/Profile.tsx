@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { RoleBadge } from "@/components/RoleBadge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -109,32 +109,7 @@ export const Profile = () => {
               {user?.name}
             </CardTitle>
             <CardDescription>
-              <Badge
-                variant={
-                  user?.role === "employee"
-                    ? "outline"
-                    : user?.role === "moderator"
-                      ? "secondary"
-                      : user?.role === "user"
-                        ? "destructive"
-                        : "default" // admin и god
-                }
-                className={
-                  user?.role === "god"
-                    ? "bg-purple-600 text-white hover:bg-purple-600"
-                    : undefined
-                }
-              >
-                {user?.role === "god"
-                  ? "👻 Создатель"
-                  : user?.role === "admin"
-                    ? "🧑‍💻 Администратор"
-                    : user?.role === "moderator"
-                      ? "🕵️ Модератор"
-                      : user?.role === "employee"
-                        ? "👷 Сотрудник"
-                        : "👤 Пользователь"}
-              </Badge>
+              <RoleBadge role={user?.role ?? ""} />
             </CardDescription>
           </div>
         </CardHeader>

@@ -21,8 +21,15 @@ router.post('/users', adminController.createUserByAdmin);
 router.put('/users/:id', adminController.updateUser);
 router.delete('/users/:id', adminController.fireUser);
 
+// --- Статистика персонала (вкладка «Статистика», только персонал) ---
+router.get('/stats', adminController.getStaffStats);
+// 🎃 Пасхалка: редактирование фейковой статистики Создателя — только god
+router.put('/stats/god', authorize('god'), adminController.updateGodFakeStats);
+
 // --- Синхронизация из Excel ---
 router.post('/sync/employees', upload.single('file'), adminController.syncEmployees);
+// Синхронизация из серверного файла team-info.xlsx (кнопка «Обновить»)
+router.post('/sync/server-file', adminController.syncEmployeesServerFile);
 // --- Экспорт данных ---
 router.get('/export/team-info', adminController.exportTeamInfo);
 router.get('/export/product-stats', adminController.exportProductStats);

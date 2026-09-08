@@ -1,5 +1,5 @@
 {
-  "watch": ["server.js", "src"],
+  "watch": ["server.js", "src", ".env"],
   "ignore": ["bot_web.db", "bot_web-*.db", "bot_web.db-*", "bot_web-*.db-*", "node_modules"],
   "ext": "js,json",
   "delay": 1000,

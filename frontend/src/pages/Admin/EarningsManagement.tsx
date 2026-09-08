@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { RoleBadge } from "@/components/RoleBadge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -207,16 +207,15 @@ export const EarningsManagement = () => {
                       <b>{user.name}</b>
                     </TableCell>
                     <TableCell className="text-center">
-                      <Badge
+                      {/* Стили ролей — единый RoleBadge; персоналу добавляем жирность */}
+                      <RoleBadge
+                        role={user.role}
                         className={
                           ["admin", "moderator", "god"].includes(user.role)
                             ? "font-bold"
                             : ""
                         }
-                        variant="outline"
-                      >
-                        {user.role}
-                      </Badge>
+                      />
                     </TableCell>
                     <TableCell className="text-center">
                       {user.activeEarningsBase.toFixed(2)}
