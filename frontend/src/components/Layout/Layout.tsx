@@ -9,6 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Toaster, toast } from "sonner";
 import { notificationsApi } from "../../api/notifications";
 import {
+  getStoredTheme,
+  toggleTheme,
+  Theme,
+} from "../../lib/theme";
+import {
   disconnectSocket,
   onNotificationNew,
   onNotificationsChanged,
@@ -21,6 +26,15 @@ export const Layout = () => {
 
   // Непрочитанные личные оповещения для бейджа в сайдбаре
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Тема: значение уже применено к <html> (inline-скрипт в index.html)
+  const [theme, setTheme] = useState<Theme>(
+    () => getStoredTheme() ?? "light",
+  );
+
+  const handleToggleTheme = () => {
+    setTheme(toggleTheme(theme));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -172,7 +186,15 @@ export const Layout = () => {
             </>
           )}
         </nav>
-        <div className="border-t pt-4">
+        <div className="border-t pt-4 space-y-2">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleToggleTheme}
+            title="Переключить тему"
+          >
+            {theme === "dark" ? "☀️ Светлая тема" : "🌙 Тёмная тема"}
+          </Button>
           <Button
             variant="destructive"
             className="w-full"
@@ -188,8 +210,8 @@ export const Layout = () => {
         <Outlet />
       </main>
 
-      {/* Toaster для уведомлений */}
-      <Toaster position="top-right" />
+      {/* Toaster для уведомлений (стиль подстраивается под тему) */}
+      <Toaster position="top-right" theme={theme} />
     </div>
   );
 };
