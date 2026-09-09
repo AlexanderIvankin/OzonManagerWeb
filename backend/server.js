@@ -1,4 +1,24 @@
+const { getLocalTimestamp } = require('./src/utils');
 require('dotenv').config();
+
+// ============================================================
+//  ДОБАВЛЕНИЕ ВРЕМЕННЫХ МЕТОК КО ВСЕМ ЛОГАМ
+// ============================================================
+const originalLog = console.log;
+const originalError = console.error;
+const originalWarn = console.warn;
+
+function withTimestamp(originalFn) {
+  return function (...args) {
+    const timestamp = getLocalTimestamp();
+    originalFn(`[${timestamp}]`, ...args);
+  };
+}
+
+console.log = withTimestamp(originalLog);
+console.error = withTimestamp(originalError);
+console.warn = withTimestamp(originalWarn);
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');

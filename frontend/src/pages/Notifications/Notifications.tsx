@@ -69,11 +69,11 @@ const PayloadDetails = ({
   payload: Record<string, unknown> | null;
 }) => {
   if (!payload) return null;
-  const details = payload.details as
-    | { products?: ProductDetail[] }
-    | undefined;
+  const details = payload.details as { products?: ProductDetail[] } | undefined;
   const missingStats = payload.missingStats as string[] | undefined;
-  const earningsDetails = payload.earningsDetails as EarningsDetail[] | undefined;
+  const earningsDetails = payload.earningsDetails as
+    | EarningsDetail[]
+    | undefined;
 
   const products = details?.products ?? [];
   const hasProducts = products.length > 0;
@@ -114,8 +114,8 @@ const PayloadDetails = ({
           <p className="font-medium text-foreground">Заработок по товарам:</p>
           {earningsDetails!.map((item, i) => (
             <p key={i}>
-              • {item.productName ?? item.offerId} (
-              <code>{item.offerId}</code>) —{" "}
+              • {item.productName ?? item.offerId} (<code>{item.offerId}</code>)
+              —{" "}
               {item.isSpecial
                 ? "спецпредложение"
                 : `${item.material ?? "—"}, ${item.weight ?? 0} г`}{" "}
@@ -273,10 +273,11 @@ export const Notifications = () => {
   }, [tab]);
 
   // --- Живые обновления через WebSocket ---
+  // NOTE: Live-тост показывается глобально в Layout.tsx (на любой странице),
+  // здесь — только обновление открытого списка и счётчиков (без дубля тоста).
   useEffect(() => {
     const offNew = onNotificationNew((n) => {
       if (n.audience === "staff" && !isStaff) return;
-      toast(n.title, { description: n.message || undefined });
 
       // Обновляем открытую вкладку, если событие для неё
       const forCurrentTab = (n.audience === "staff") === (tab === "staff");
@@ -299,7 +300,15 @@ export const Notifications = () => {
       offNew();
       offErr();
     };
-  }, [tab, isStaff, itemsLimit, errorsLimit, loadItems, loadErrors, loadCounters]);
+  }, [
+    tab,
+    isStaff,
+    itemsLimit,
+    errorsLimit,
+    loadItems,
+    loadErrors,
+    loadCounters,
+  ]);
 
   // =========================================================================
   // Действия с оповещениями (личные / журнал действий)
@@ -559,7 +568,9 @@ export const Notifications = () => {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge
-                      variant={e.level === "error" ? "destructive" : "secondary"}
+                      variant={
+                        e.level === "error" ? "destructive" : "secondary"
+                      }
                     >
                       {e.level === "error" ? "ERROR" : "WARN"}
                     </Badge>
@@ -754,7 +765,7 @@ export const Notifications = () => {
                     </span>
                   </div>
                   {n.message && (
-                    <p className="mt-0.5 break-words text-sm text-muted-foreground">
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">
                       {n.message}
                     </p>
                   )}
@@ -794,4 +805,4 @@ export const Notifications = () => {
       )}
     </div>
   );
-}
+};

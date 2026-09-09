@@ -2,7 +2,7 @@ const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const NotificationService = require('./NotificationService');
-const { Earnings } = require('../models');
+const { Earnings, User } = require('../models');
 const ProductStat = require('../models/ProductStat');
 const MaterialsService = require('./MaterialsService');
 const { getLocalDate, getVersionedDatedFileName } = require('../utils');
@@ -177,17 +177,22 @@ class EarningsService {
 
   /**
    * Добавляет корректировку и уведомляет сотрудника
-   * (notifications.db + WebSocket)
+   * (notifications.db + WebSocket) и создаёт запись в журнале
+   * действий персонала.
    */
   static async addAdjustment(userId, amount, reason = '', adminName = null) {
     await Earnings.addAdjustment(userId, amount, reason);
     await Earnings.addActiveAdjustment(userId, amount, reason);
+
+    // Имя сотрудника нужно и в личном оповещении, и в записи журнала персонала
+    const user = await User.getById(userId).catch(() => null);
+    const userName = user?.name || null;
+    const payload = { amount, reason, adminName, userName };
+
     // Оповещение сотруднику: сохраняем в notifications.db + отправляем через WebSocket
-    NotificationService.notifyUser(userId, 'earnings_adjusted', {
-      amount,
-      reason,
-      adminName,
-    });
+    NotificationService.notifyUser(userId, 'earnings_adjusted', payload);
+    // Запись в журнал действий персонала (админы/модераторы)
+    NotificationService.notifyStaff('earnings_adjusted', payload);
   }
 
   /**
@@ -211,24 +216,28 @@ class EarningsService {
     await Earnings.clearActive(userId);
     await Earnings.clearActiveAdjustments(userId);
 
+    const user = await User.getById(userId).catch(() => null);
+    const userName = user?.name || null;
+
     if (totalActive > 0) {
+      const payload = { amount: totalActive, adminName, userName };
       // Обычное оповещение: сохраняется в истории «Оповещений» + WebSocket
-      NotificationService.notifyUser(userId, 'earnings_settled', {
-        amount: totalActive,
-        adminName,
-      });
+      NotificationService.notifyUser(userId, 'earnings_settled', payload);
+      // Запись в журнал действий персонала (админы/модераторы)
+      NotificationService.notifyStaff('earnings_settled', payload);
     } else {
       // Заработок уже 0: только мгновенное уведомление через WebSocket,
-      // в историю «Оповещений» НЕ пишем (нечего рассчитывать)
+      // в историю «Оповещений» НЕ пишем (нечего рассчитывать).
+      // В журнал персонала тоже не дублируем (по шаблону staff: null).
       NotificationService.notifyUser(
         userId,
         'earnings_settled_zero',
-        { adminName },
+        { adminName, userName },
         { persist: false },
       );
     }
 
-    return { clearedAmount: totalActive };
+    return { clearedAmount: totalActive, userName };
   }
 }
 

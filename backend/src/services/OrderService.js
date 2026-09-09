@@ -193,14 +193,20 @@ class OrderService {
       pendingNewOrders = newOrders;
       console.log(`[CHECK] Очередь обновлена, заказов: ${pendingNewOrders.length}`);
 
-      // Оповещаем персонал о новых заказах (БД оповещений + WebSocket)
-      NotificationService.notifyStaff('new_orders_available', {
-        count: pendingNewOrders.length,
-        orders: pendingNewOrders.map(o => ({
-          posting_number: o.posting_number,
-          products_count: o.products?.length || 0,
-        })),
-      });
+      // Оповещаем персонал о новых заказах (БД оповещений + WebSocket).
+      // ТОЛЬКО модераторам; новое оповещение заменяет старое непрочитанное
+      // (в журнале подобное оповещение всегда ОДНО).
+      NotificationService.notifyStaff(
+        'new_orders_available',
+        {
+          count: pendingNewOrders.length,
+          orders: pendingNewOrders.map(o => ({
+            posting_number: o.posting_number,
+            products_count: o.products?.length || 0,
+          })),
+        },
+        { roles: ['moderator'], replaceUnreadType: 'new_orders_available' },
+      );
 
       // Если нет активного заказа и есть заказы – берём первый
       if (!currentOrderProcessing && pendingNewOrders.length) {
