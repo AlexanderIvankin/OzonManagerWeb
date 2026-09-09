@@ -6,7 +6,7 @@ import { logout } from "../../store/authSlice";
 import { AppDispatch } from "../../store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { notificationsApi } from "../../api/notifications";
 import {
   disconnectSocket,
@@ -36,7 +36,18 @@ export const Layout = () => {
     load();
 
     // Живое обновление бейджа: новое оповещение или изменение (прочитано/удалено)
-    const offNew = onNotificationNew(load);
+    const offNew = onNotificationNew((n) => {
+      // Live-тост о новом оповещении ГЛОБАЛЬНО (на любой странице,
+      // не только во вкладке «Оповещения»). События журнала персонала
+      // сервер шлёт только модераторам, но дополнительно проверяем роль.
+      const isStaff = ["moderator", "admin", "god"].includes(
+        user?.role || "",
+      );
+      if (n.audience === "staff" && !isStaff) return;
+      toast(n.title, { description: n.message || undefined });
+
+      load();
+    });
     const offChanged = onNotificationsChanged(load);
 
     return () => {
@@ -44,7 +55,8 @@ export const Layout = () => {
       offNew();
       offChanged();
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role]);
 
   const handleLogout = async () => {
     disconnectSocket();

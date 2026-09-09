@@ -30,17 +30,17 @@ const TEMPLATES = {
     const productsCount = p.details?.products?.length || 0;
     const missing =
       Array.isArray(p.missingStats) && p.missingStats.length
-        ? ` Требуется заполнить статистику: ${p.missingStats.join(', ')}.`
+        ? `Требуется заполнить статистику: ${p.missingStats.join(', ')}.`
         : '';
-    const assignedBy = p.adminName ? ` Назначил: ${p.adminName}.` : '';
+    const assignedBy = p.adminName ? `Назначил: ${p.adminName}.` : '';
     return {
       user: {
         title: `📦 Заказ ${p.orderId} назначен вам`,
-        message: `Вам назначен заказ ${p.orderId}. Товаров: ${productsCount}.${missing}`,
+        message: `Вам назначен заказ ${p.orderId}.\nТоваров: ${productsCount}.\n${missing}`,
       },
       staff: {
         title: `📦 ${p.userName}: назначен заказ ${p.orderId}`,
-        message: `Заказ ${p.orderId} назначен сотруднику ${p.userName}. Товаров: ${productsCount}.${assignedBy}${missing}`,
+        message: `Заказ ${p.orderId} назначен сотруднику ${p.userName}.\nТоваров: ${productsCount}.\n${missing}\n${assignedBy}`,
       },
     };
   },
@@ -48,18 +48,18 @@ const TEMPLATES = {
   order_finished: (p) => {
     const earningsStr =
       p.earnings !== null && p.earnings !== undefined
-        ? ` Заработок: ${p.earnings} руб.`
+        ? `Заработок: ${p.earnings} руб.`
         : '';
     return {
       user: {
         title: `✅ Заказ ${p.orderId} завершён`,
         message: p.labelAvailable
-          ? `Заказ ${p.orderId} завершён. Этикетка доступна для скачивания.${earningsStr}`
-          : `Заказ ${p.orderId} завершён.${earningsStr}`,
+          ? `Заказ ${p.orderId} завершён. Этикетка доступна для скачивания.\n${earningsStr}`
+          : `Заказ ${p.orderId} завершён.\n${earningsStr}`,
       },
       staff: {
         title: `✅ ${p.userName}: завершил заказ ${p.orderId}`,
-        message: `Сотрудник ${p.userName} завершил заказ ${p.orderId}.${earningsStr}`,
+        message: `Сотрудник ${p.userName} завершил заказ ${p.orderId}.\n${earningsStr}`,
       },
     };
   },
@@ -80,11 +80,11 @@ const TEMPLATES = {
       return {
         user: {
           title: `↩️ Заказ ${p.orderId} снят автоматически`,
-          message: `Заказ ${p.orderId} снят с вас автоматически. Причина: ${p.reason || 'не указана'}.`,
+          message: `Заказ ${p.orderId} снят с вас автоматически.\nПричина: ${p.reason || 'не указана'}.`,
         },
         staff: {
           title: `↩️ ${p.userName}: заказ ${p.orderId} снят автоматически`,
-          message: `Заказ ${p.orderId} автоматически снят с ${p.userName}. Причина: ${p.reason || 'не указана'}.`,
+          message: `Заказ ${p.orderId} автоматически снят с ${p.userName}.\nПричина: ${p.reason || 'не указана'}.`,
         },
       };
     }
@@ -95,7 +95,7 @@ const TEMPLATES = {
       },
       staff: {
         title: `↩️ ${p.userName}: снят заказ ${p.orderId}`,
-        message: `Заказ ${p.orderId} снят с сотрудника ${p.userName}. Причина: ${p.reason || 'не указана'}.`,
+        message: `Заказ ${p.orderId} снят с сотрудника ${p.userName}.\nПричина: ${p.reason || 'не указана'}.${p.adminName ? `\nАдминистратор: ${p.adminName}.` : ''}`,
       },
     };
   },
@@ -103,19 +103,25 @@ const TEMPLATES = {
   earnings_adjusted: (p) => ({
     user: {
       title: `💰 Корректировка заработка: ${p.amount > 0 ? '+' : ''}${p.amount} руб.`,
-      message: `Ваш заработок скорректирован на ${p.amount > 0 ? '+' : ''}${p.amount} руб.${p.adminName ? ` Администратор: ${p.adminName}.` : ''}${p.reason ? ` Причина: ${p.reason}` : ''}`,
+      message: `Ваш заработок скорректирован на ${p.amount > 0 ? '+' : ''}${p.amount} руб.${p.adminName ? `\nАдминистратор: ${p.adminName}.` : ''}${p.reason ? `\nПричина: ${p.reason}` : ''}`,
     },
     // В журнал действий для персонала не дублируем (сотрудник получит своё)
-    staff: null,
+    staff: {
+      title: `💰 Корректировка заработка: ${p.amount > 0 ? '+' : ''}${p.amount} руб.`,
+      message: `Заработок сотрудника ${p.userName} скорректирован на ${p.amount > 0 ? '+' : ''}${p.amount} руб.${p.reason ? `\nПричина: ${p.reason}` : ''}${p.adminName ? `\nАдминистратор: ${p.adminName}.` : ''}`,
+    },
   }),
 
   earnings_settled: (p) => ({
     user: {
       title: `🏦 Произведён расчёт заработка`,
-      message: `Активный заработок обнулён. Выплачено: ${Number(p.amount || 0).toFixed(2)} руб.${p.adminName ? ` Расчёт произвёл: ${p.adminName}.` : ''}`,
+      message: `Активный заработок обнулён.\nВыплачено: ${Number(p.amount || 0).toFixed(2)} руб.${p.adminName ? `\nРасчёт произвёл: ${p.adminName}.` : ''}`,
     },
     // В журнал действий для персонала не дублируем
-    staff: null,
+    staff: {
+      title: `🏦 Произведён расчёт заработка`,
+      message: `Активный заработок сотрудника ${p.userName} обнулён.\nВыплачено: ${Number(p.amount || 0).toFixed(2)} руб.${p.adminName ? `\nРасчёт произвёл: ${p.adminName}.` : ''}`,
+    },
   }),
 
   // Заработок уже 0: отправляется только через WebSocket (persist: false),
@@ -123,7 +129,7 @@ const TEMPLATES = {
   earnings_settled_zero: (p) => ({
     user: {
       title: `🏦 Расчёт заработка`,
-      message: `Активный заработок пуст (0 руб.) — рассчитывать нечего.${p.adminName ? ` Запросил: ${p.adminName}.` : ''}`,
+      message: `Активный заработок пуст (0 руб.) — рассчитывать нечего.${p.adminName ? `\nЗапросил: ${p.adminName}.` : ''}`,
     },
     staff: null,
   }),
@@ -132,7 +138,7 @@ const TEMPLATES = {
     user: null,
     staff: {
       title: `📝 ${p.userName}: заполнил статистику ${p.offerId}`,
-      message: `Сотрудник ${p.userName} заполнил статистику для ${p.offerId}: материал — ${p.material}, цвет — ${p.color}, вес — ${p.weight} г.`,
+      message: `Сотрудник ${p.userName} заполнил статистику для ${p.offerId}: \nМатериал — ${p.material}\nЦвет — ${p.color}\nВес — ${p.weight} г.`,
     },
   }),
 
@@ -259,21 +265,37 @@ class NotificationService {
   }
 
   /**
-   * Оповещение всему персоналу (админы + модераторы): каждому своя строка в БД.
+   * Оповещение персоналу: каждому получателю своя строка в БД.
    * Никогда не бросает исключений.
+   *
+   * @param {string} type
+   * @param {object} payload
+   * @param {object} opts
+   *   roles            — массив ролей-получателей (по умолчанию все STAFF_ROLES);
+   *                      например ['moderator'] для информационных оповещений,
+   *                      интересных только модераторам.
+   *   replaceUnreadType— если задан тип, перед вставкой нового оповещения
+   *                      удаляются все НЕПРОЧИТАННЫЕ оповещения этого типа
+   *                      (дедупликация: подобное оповещение всегда ОДНО).
    */
-  static async notifyStaff(type, payload = {}) {
+  static async notifyStaff(type, payload = {}, { roles = null, replaceUnreadType = null } = {}) {
     try {
       const tpl = TEMPLATES[type] ? TEMPLATES[type](payload) : null;
       const text = tpl && tpl.staff;
       if (!text) return;
 
+      const notifyRoles = Array.isArray(roles) && roles.length ? roles : STAFF_ROLES;
       const db = getDB();
       const recipients = await db.all(
-        `SELECT id FROM users WHERE role IN (${STAFF_ROLES.map(() => '?').join(',')}) AND is_fired = 0`,
-        ...STAFF_ROLES
+        `SELECT id FROM users WHERE role IN (${notifyRoles.map(() => '?').join(',')}) AND is_fired = 0`,
+        ...notifyRoles
       );
       if (!recipients.length) return;
+
+      // Дедупликация: старое непрочитанное оповещение того же типа удаляем
+      if (replaceUnreadType) {
+        await Notification.deleteUnreadByType(replaceUnreadType, 'staff');
+      }
 
       const createdAt = Date.now();
       const search = extractSearchFields(payload);
@@ -290,7 +312,9 @@ class NotificationService {
         }))
       );
 
-      // Мгновенная доставка тем, кто онлайн
+      // recipients ограничен ролями (см. opts.roles) — live-доставка через
+      // комнату 'moderators' соответствует получателям по умолчанию, а при
+      // сужении круга (например, только модераторы) она им и предназначена.
       notifyModerators('notification_new', {
         audience: 'staff',
         type,

@@ -66,8 +66,15 @@ export const EarningsManagement = () => {
   const handleSettle = async (userId: number) => {
     if (!confirm("Обнулить активный заработок сотрудника?")) return;
     try {
-      await adminApi.settleEarnings(userId);
-      toast.success("Активный заработок обнулён");
+      const result = await adminApi.settleEarnings(userId);
+      // Адекватный feedback действия: сумма расчёта из ответа API
+      // (сотрудник при этом получает Live-оповещение с деталями)
+      const paid = Number(result?.clearedAmount || 0).toFixed(2);
+      toast.success(
+        paid !== "0.00"
+          ? `Расчёт произведён. Выплачено: ${paid} руб. Сотрудник уведомлён.`
+          : "Расчёт произведён. Активный заработок был пуст (0 руб.).",
+      );
       loadData();
     } catch (err: any) {
       toast.error(err.message || "Ошибка");
@@ -82,7 +89,9 @@ export const EarningsManagement = () => {
     }
     try {
       await adminApi.addEarningsAdjustment(userId, amount, adjustReason);
-      toast.success("Корректировка добавлена");
+      toast.success(
+        `Корректировка на ${amount > 0 ? "+" : ""}${amount} руб. добавлена${adjustReason ? ` (причина: ${adjustReason})` : ""}. Сотрудник уведомлён.`,
+      );
       setAdjustAmount("");
       setAdjustReason("");
       setSelectedUser(null);
@@ -256,7 +265,9 @@ export const EarningsManagement = () => {
                             </DialogHeader>
                             <div className="space-y-4 py-4">
                               <div>
-                                <Label>Сумма (отрицательная — штраф)</Label>
+                                <Label className="mb-[10px]">
+                                  Сумма (отрицательная — штраф)
+                                </Label>
                                 <Input
                                   type="number"
                                   placeholder="200"
@@ -267,7 +278,7 @@ export const EarningsManagement = () => {
                                 />
                               </div>
                               <div>
-                                <Label>Причина</Label>
+                                <Label className="mb-[10px]">Причина</Label>
                                 <Input
                                   placeholder="Премия за перевыполнение"
                                   value={adjustReason}
@@ -276,13 +287,16 @@ export const EarningsManagement = () => {
                                   }
                                 />
                               </div>
-                              <Button
-                                onClick={() =>
-                                  handleAddAdjustment(selectedUser.id)
-                                }
-                              >
-                                Добавить корректировку
-                              </Button>
+                              <div className="flex justify-center">
+                                {" "}
+                                <Button
+                                  onClick={() =>
+                                    handleAddAdjustment(selectedUser.id)
+                                  }
+                                >
+                                  Добавить корректировку
+                                </Button>
+                              </div>
                             </div>
                           </DialogContent>
                         )}

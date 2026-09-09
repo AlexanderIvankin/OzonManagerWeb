@@ -111,6 +111,22 @@ class Notification {
   }
 
   /**
+   * Удалить ВСЕ непрочитанные оповещения данного типа (для дедупликации:
+   * например, «новые заказы в очереди» должно существовать в единственном
+   * экземпляре — новое отправляется вместо старого). Прочитанные записи
+   * остаются в архиве. Возвращает число удалённых строк.
+   */
+  static async deleteUnreadByType(type, audience = 'staff') {
+    const db = getNotificationsDB();
+    const result = await db.run(
+      `DELETE FROM notifications WHERE type = ? AND audience = ? AND is_read = 0`,
+      type,
+      audience
+    );
+    return result.changes;
+  }
+
+  /**
    * Список оповещений получателя с пагинацией.
    * @param {number} recipientId
    * @param {object} opts - audience: 'user'|'staff'|null, unreadOnly, limit, offset
