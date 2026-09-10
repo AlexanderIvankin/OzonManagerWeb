@@ -105,7 +105,7 @@ export const ActiveOrders = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          Активные заказы
+          📋 Активные заказы
           <br></br>
           <span className="flex text-muted-foreground justify-center">
             Показано:{" "}

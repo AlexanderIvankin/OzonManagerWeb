@@ -50,4 +50,12 @@ export const ordersApi = {
     api
       .get("/user/orders/labels/all", { responseType: "blob" })
       .then((res) => res.data),
+
+  // Скачать этикетку, отправленную администратором (оповещение label_sent)
+  getSentLabel: (orderId: string) =>
+    api
+      .get(`/user/labels/${encodeURIComponent(orderId)}/sent`, {
+        responseType: "blob",
+      })
+      .then((res) => res.data),
 };

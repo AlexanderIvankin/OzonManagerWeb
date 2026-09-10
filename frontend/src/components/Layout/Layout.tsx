@@ -80,7 +80,7 @@ export const Layout = () => {
           <p className="text-xs text-muted-foreground">
             Роль:{" "}
             <span
-              className={`font-bold ${user?.role === "god" ? "text-halloween-text" : (user?.role === "admin") || (user?.role === "moderator") ? "text-blue-600"  : ""}`}
+              className={`font-bold ${user?.role === "god" ? "text-halloween-text" : user?.role === "admin" || user?.role === "moderator" ? "text-blue-600" : ""}`}
             >
               {user?.role}
             </span>
@@ -133,7 +133,7 @@ export const Layout = () => {
                 to="/admin/users"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >
-                <span className="inline-block align-middle -translate-y-[2px]">
+                <span className="inline-block align-middle -translate-y-[3px]">
                   👥
                 </span>{" "}
                 Пользователи
@@ -148,7 +148,7 @@ export const Layout = () => {
                 to="/admin/orders"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >
-                📦 Очередь заказов
+                ⏳ Очередь заказов
               </Link>
               <Link
                 to="/admin/active-orders"
@@ -172,7 +172,7 @@ export const Layout = () => {
                 to="/admin/earnings"
                 className="block px-3 py-2 rounded-md hover:bg-accent"
               >
-                💰 Заработок
+                🏦 Заработок
               </Link>
               <Link
                 to="/admin/stats"

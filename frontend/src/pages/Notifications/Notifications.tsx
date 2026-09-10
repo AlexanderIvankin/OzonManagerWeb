@@ -13,6 +13,8 @@ import {
   ServerErrorItem,
 } from "../../api/notifications";
 import { onNotificationNew, onServerErrorNew } from "../../lib/socket";
+import { ordersApi } from "../../api/orders";
+import { getBlobErrorMessage } from "../../api/admin";
 
 const PAGE_SIZE = 30;
 
@@ -30,6 +32,8 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   new_orders_available: { icon: "🆕", label: "Новые заказы в очереди" },
   order_assign_error: { icon: "⚠️", label: "Ошибка назначения" },
   order_assign_failed: { icon: "🚨", label: "Ошибка назначения" },
+  // Этикетка, отправленная администратором (аналог /admin_send_label)
+  label_sent: { icon: "🏷️", label: "Этикетка отправлена" },
 };
 
 const formatDateTime = (ts: number) =>
@@ -388,6 +392,25 @@ export const Notifications = () => {
       loadCounters();
     } catch (err: any) {
       toast.error(err.response?.data?.error || "Не удалось удалить");
+    }
+  };
+
+  // Скачать PDF-этикетку, отправленную администратором (label_sent).
+  // Файл лежит на сервере и доступен только получателю оповещения.
+  const handleDownloadSentLabel = async (orderId: string) => {
+    try {
+      const blob = await ordersApi.getSentLabel(orderId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `label_${orderId}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Этикетка заказа ${orderId} скачана`);
+    } catch (err: any) {
+      toast.error(
+        await getBlobErrorMessage(err, "Не удалось скачать этикетку"),
+      );
     }
   };
 
@@ -775,6 +798,21 @@ export const Notifications = () => {
                     {TYPE_META[n.type]?.label ?? n.type}
                   </p>
                 </div>
+                {/* Этикетка, отправленная администратором: кнопка скачивания PDF */}
+                {n.type === "label_sent" &&
+                  typeof n.payload?.orderId === "string" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      title="Скачать этикетку (PDF)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadSentLabel(n.payload!.orderId as string);
+                      }}
+                    >
+                      ⬇️ PDF
+                    </Button>
+                  )}
                 <Button
                   size="sm"
                   variant="ghost"

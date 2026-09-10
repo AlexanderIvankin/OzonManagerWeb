@@ -39,6 +39,26 @@ class Notification {
   // =========================================================================
 
   /**
+   * Найти последнее оповещение пользователя данного типа по номеру заказа.
+   * Используется для проверки доступа к скачиванию отправленной этикетки
+   * (type = 'label_sent'): скачать PDF может только тот сотрудник,
+   * которому администратор отправлял этикетку этого заказа.
+   */
+  static async findLatestByTypeAndOrder(recipientId, type, orderId) {
+    const db = getNotificationsDB();
+    const row = await db.get(
+      `SELECT * FROM notifications
+       WHERE recipient_id = ? AND type = ? AND order_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      recipientId,
+      type,
+      orderId
+    );
+    return parseNotificationRow(row);
+  }
+
+  /**
    * Создать одно оповещение. Возвращает id созданной записи.
    */
   static async create({

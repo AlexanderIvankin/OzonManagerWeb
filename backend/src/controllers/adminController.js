@@ -9,6 +9,8 @@ const MaterialsService = require('../services/MaterialsService');
 const BackupService = require('../services/BackupService');
 const ProductStatsService = require('../services/ProductStatsService');
 const AuthService = require('../services/AuthService');
+const NotificationService = require('../services/NotificationService');
+const scheduler = require('../scheduler');
 const { getDB, getDBPath } = require('../config/database')
 const { getLocalTimestamp, getDbBaseName, getVersionedFileName } = require('../utils');
 
@@ -630,6 +632,66 @@ exports.createBackup = async (req, res, next) => {
   }
 };
 
+// ============================================================================
+// --- АДМИНСКИЕ ИНСТРУМЕНТЫ (аналоги команд бота) ---
+// ============================================================================
+
+/**
+ * Статус планировщика авто-проверки очереди заказов
+ */
+exports.getSchedulerStatus = async (req, res) => {
+  res.json({ paused: scheduler.isCheckerPaused() });
+};
+
+/**
+ * Приостановить авто-проверку очереди заказов (аналог /pause из бота)
+ */
+exports.pauseScheduler = async (req, res) => {
+  const wasPaused = scheduler.isCheckerPaused();
+  scheduler.pauseChecker();
+  console.log(`[ADMIN] ${req.user?.name || req.user?.id} приостановил авто-проверку очереди (/pause)`);
+  res.json({
+    paused: true,
+    message: wasPaused
+      ? 'Авто-проверка уже была приостановлена'
+      : 'Автоматическая проверка заказов приостановлена',
+  });
+};
+
+/**
+ * Возобновить авто-проверку очереди заказов (аналог /resume из бота)
+ */
+exports.resumeScheduler = async (req, res) => {
+  const wasPaused = scheduler.isCheckerPaused();
+  scheduler.resumeChecker();
+  console.log(`[ADMIN] ${req.user?.name || req.user?.id} возобновил авто-проверку очереди (/resume)`);
+  res.json({
+    paused: false,
+    message: wasPaused
+      ? 'Автоматическая проверка заказов возобновлена'
+      : 'Авто-проверка уже работает',
+  });
+};
+
+/**
+ * Удалить статистику товара (аналог /clear_product_stats <offer_id> из бота)
+ */
+exports.deleteProductStats = async (req, res, next) => {
+  try {
+    const { offerId } = req.params;
+    const existing = await ProductStat.get(offerId);
+    if (!existing) {
+      return res.status(404).json({ error: `Статистика для ${offerId} не найдена` });
+    }
+    await ProductStat.delete(offerId);
+    console.log(`[ADMIN] ${req.user?.name || req.user?.id} удалил статистику товара ${offerId} (/clear_product_stats)`);
+    res.json({ message: `Статистика для ${offerId} удалена` });
+  } catch (err) {
+    console.error('[deleteProductStats] Ошибка:', err);
+    next(err);
+  }
+};
+
 /**
  * Скачать текущий materials-prices.json
  */
@@ -731,13 +793,27 @@ exports.resetAllEarnings = async (req, res, next) => {
 };
 
 /**
- * Сбросить все активные назначения
+ * Сбросить все активные назначения (аналог /clear_assignments из бота).
+ * Удаляем все записи со статусом "assigned" и чистим in-memory состояния
+ * заказов (формы статистики, подтверждения завершения, флаги завершения) —
+ * как это делает confirm_clear_all в bot-версии.
  */
 exports.clearAssignments = async (req, res, next) => {
   try {
     const db = require('../config/database').getDB();
     await db.run('DELETE FROM assignments WHERE status = "assigned"');
-    // Также нужно очистить состояния заказов в памяти (позже добавим)
+
+    // Чистим in-memory состояния (аналог clearOrderState из бота) для всех
+    // заказов, у которых были активные формы/подтверждения.
+    const {
+      pendingForms,
+      pendingFinishConfirmations,
+      finishingOrders,
+    } = require('../state');
+    pendingForms.clear();
+    pendingFinishConfirmations.clear();
+    finishingOrders.clear();
+
     res.json({ message: 'All assignments cleared' });
   } catch (err) {
     next(err);
@@ -818,6 +894,108 @@ exports.getMaterials = async (req, res, next) => {
     res.json(data);
   } catch (err) {
     console.error('[getMaterials] Ошибка:', err);
+    next(err);
+  }
+};
+
+/**
+ * Проверить, что заказ в статусе awaiting_deliver (этикетка доступна).
+ * Паритет с ботом (/admin_send_label). Возвращает детали или кидает ошибку
+ * со свойством statusCode — готовым HTTP-кодом для клиента.
+ */
+async function ensureLabelAvailable(orderId) {
+  const details = await OzonService.getOrderDetails(orderId);
+  if (!details) {
+    const err = new Error(`Не удалось получить заказ ${orderId}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  if (details.status !== 'awaiting_deliver') {
+    const err = new Error(
+      `Заказ ${orderId} не в статусе "awaiting_deliver" (текущий: ${details.status}). Этикетка недоступна.`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+  return details;
+}
+
+/**
+ * Скачать этикетку заказа себе (аналог /admin_send_label <номер> без сотрудника).
+ * PDF отдаётся в браузер администратора.
+ */
+exports.downloadOrderLabel = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    await ensureLabelAvailable(orderId);
+    const labelBuffer = await OzonService.getPackageLabel(orderId);
+    if (!labelBuffer) {
+      return res.status(404).json({ error: `Не удалось получить этикетку для заказа ${orderId}` });
+    }
+    console.log(`[ADMIN] ${req.user?.name || req.user?.id} скачал этикетку заказа ${orderId} себе (/admin_send_label)`);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
+    res.send(labelBuffer);
+  } catch (err) {
+    console.error('[downloadOrderLabel] Ошибка:', err);
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * Отправить PDF-этикетку заказа сотруднику (аналог /admin_send_label <номер> <id>).
+ * Сотрудник выбирается по имени на клиенте -> userId. Этикетка сохраняется
+ * на сервере (outputs/labels/<orderId>.pdf), сотруднику уходит оповещение
+ * с кнопкой скачивания (GET /user/labels/:orderId/sent).
+ */
+exports.sendOrderLabelToEmployee = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'Выберите сотрудника' });
+    }
+    const employee = await User.getById(parseInt(userId, 10));
+    if (!employee) {
+      return res.status(404).json({ error: 'Сотрудник не найден' });
+    }
+    if (employee.is_fired) {
+      return res.status(400).json({ error: `Сотрудник ${employee.name} уволен` });
+    }
+
+    await ensureLabelAvailable(orderId);
+    const labelBuffer = await OzonService.getPackageLabel(orderId);
+    if (!labelBuffer) {
+      return res.status(404).json({ error: `Не удалось получить этикетку для заказа ${orderId}` });
+    }
+
+    // Сохраняем PDF на сервере — сотрудник скачает его через /user/labels/:orderId/sent.
+    // Имя файла строго из номера заказа (защита от path traversal).
+    const safeOrderId = String(orderId).replace(/[^\w.-]/g, '_');
+    const labelsDir = path.join(__dirname, '../../outputs', 'labels');
+    fs.mkdirSync(labelsDir, { recursive: true });
+    fs.writeFileSync(path.join(labelsDir, `${safeOrderId}.pdf`), labelBuffer);
+
+    await NotificationService.notifyUser(employee.id, 'label_sent', {
+      orderId,
+      adminName: req.user?.name || 'Администратор',
+      userName: employee.name,
+    });
+
+    console.log(
+      `[ADMIN] ${req.user?.name || req.user?.id} отправил этикетку заказа ${orderId} сотруднику ${employee.name} (/admin_send_label)`
+    );
+    res.json({
+      message: `Этикетка заказа ${orderId} отправлена сотруднику ${employee.name}`,
+    });
+  } catch (err) {
+    console.error('[sendOrderLabelToEmployee] Ошибка:', err);
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
     next(err);
   }
 };

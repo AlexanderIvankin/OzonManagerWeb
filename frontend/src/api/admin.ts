@@ -165,6 +165,20 @@ export const adminApi = {
   unassignOrder: (orderId: string) =>
     api.post(`/admin/orders/${orderId}/unassign`).then((res) => res.data),
 
+  // Активные заказы сотрудника (аналог /employee_orders)
+  getUserOrders: (userId: number) =>
+    api
+      .get<Array<{ order_id: string; assigned_at: number }>>(
+        `/admin/users/${userId}/orders`,
+      )
+      .then((res) => res.data),
+
+  // Сброс ВСЕХ активных назначений (аналог /clear_assignments)
+  clearAssignments: () =>
+    api
+      .post<{ message: string }>("/admin/assignments/clear")
+      .then((res) => res.data),
+
   // === Заработок ===
   // Blob-методы возвращают полный ответ axios, чтобы страница могла
   // взять версионированное имя файла из Content-Disposition.
@@ -222,6 +236,41 @@ export const adminApi = {
   // === Скачивание текущих настроек materials-prices.json ===
   downloadMaterials: (): Promise<AxiosResponse<Blob>> =>
     api.get("/admin/materials/download", { responseType: "blob" }),
+
+  // === Планировщик: пауза/возобновление авто-проверки очереди (аналог /pause, /resume) ===
+  getSchedulerStatus: () =>
+    api
+      .get<{ paused: boolean }>("/admin/scheduler/status")
+      .then((res) => res.data),
+
+  pauseScheduler: () =>
+    api
+      .post<{ paused: boolean; message: string }>("/admin/scheduler/pause")
+      .then((res) => res.data),
+
+  resumeScheduler: () =>
+    api
+      .post<{ paused: boolean; message: string }>("/admin/scheduler/resume")
+      .then((res) => res.data),
+
+  // === Статистика товара: удаление (аналог /clear_product_stats) ===
+  deleteProductStats: (offerId: string) =>
+    api
+      .delete(`/admin/product-stats/${encodeURIComponent(offerId)}`)
+      .then((res) => res.data),
+
+  // === Этикетка заказа (аналог /admin_send_label) ===
+  // Без сотрудника — скачать PDF себе (в браузер)
+  downloadOrderLabel: (orderId: string): Promise<AxiosResponse<Blob>> =>
+    api.get(`/admin/orders/${encodeURIComponent(orderId)}/label`, {
+      responseType: "blob",
+    }),
+
+  // С сотрудником — отправить ему этикетку (оповещение + скачивание)
+  sendOrderLabelToEmployee: (orderId: string, userId: number) =>
+    api
+      .post(`/admin/orders/${encodeURIComponent(orderId)}/label/send`, { userId })
+      .then((res) => res.data),
 };
 
 /**

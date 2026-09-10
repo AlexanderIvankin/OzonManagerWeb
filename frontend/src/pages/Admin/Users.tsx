@@ -31,10 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  isValidPhone,
-  PHONE_FORMAT_HINT,
-} from "@/lib/utils";
+import { isValidPhone, PHONE_FORMAT_HINT } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
 
 // Роли, доступные при создании аккаунта (god выдаётся только синхронизацией).
@@ -54,7 +51,8 @@ const emptyCreateForm = {
 
 // === Коэффициент заработка: поддерживаем оба разделителя "1.5" и "1,5" ===
 // Приводим запятую к точке — Number() понимает только точку
-const normalizeFactorSeparator = (value: string): string => value.replace(",", ".");
+const normalizeFactorSeparator = (value: string): string =>
+  value.replace(",", ".");
 
 // Живая маска при вводе: цифры, один разделитель, максимум 2 знака после него.
 // Разрешает промежуточные состояния вида "123." / "123," — чтобы точка не
@@ -74,8 +72,7 @@ const parseFactorValue = (
   if (!/^\d+(\.\d{1,2})?$/.test(normalized)) {
     return {
       ok: false,
-      error:
-        "Положительное число, максимум 2 знака после запятой: 1.5 или 1,5",
+      error: "Положительное число, максимум 2 знака после запятой: 1.5 или 1,5",
     };
   }
   const n = Number(normalized);
@@ -212,9 +209,7 @@ export const Users = () => {
       setCapacityError("");
       const parsed = Number(sanitized);
       if (Number.isInteger(parsed)) {
-        setEditingUser((prev) =>
-          prev ? { ...prev, capacity: parsed } : prev,
-        );
+        setEditingUser((prev) => (prev ? { ...prev, capacity: parsed } : prev));
       }
     } else {
       setCapacityError("Целое положительное число принтеров");
@@ -327,7 +322,9 @@ export const Users = () => {
       // Ошибки бэкенда: 400 (валидация) / 409 (занят логин или email)
       setCreateErrors({
         _server:
-          err?.response?.data?.error || err?.message || "Ошибка создания аккаунта",
+          err?.response?.data?.error ||
+          err?.message ||
+          "Ошибка создания аккаунта",
       });
     } finally {
       setCreating(false);
@@ -337,7 +334,13 @@ export const Users = () => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Пользователи</h1>
+        <h1 className="text-2xl font-bold">
+          {" "}
+          <span className="inline-block align-middle -translate-y-[5px]">
+            👥
+          </span>{" "}
+          Пользователи
+        </h1>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -438,236 +441,241 @@ export const Users = () => {
                           остальным ролям кнопки не показываются */}
                       {user.role !== "god" || viewer?.role === "god" ? (
                         <>
-                      <Dialog
-                        open={editingUser?.id === user.id}
-                        onOpenChange={(open) => {
-                          if (!open) {
-                            setFactorError("");
-                            setCapacityError("");
-                            setEditingUser(null);
-                          }
-                        }}
-                      >
-                        <DialogTrigger
-                          render={
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setFactorInput(String(user.earnings_factor));
+                          <Dialog
+                            open={editingUser?.id === user.id}
+                            onOpenChange={(open) => {
+                              if (!open) {
                                 setFactorError("");
-                                setCapacityInput(
-                                  user.capacity == null
-                                    ? ""
-                                    : String(user.capacity),
-                                );
                                 setCapacityError("");
-                                setEditingUser(user);
-                              }}
-                            />
-                          }
-                        >
-                          ✏️
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>
-                              Редактировать пользователя
-                            </DialogTitle>
-                          </DialogHeader>
-                          {editingUser && (
-                            <div className="space-y-4 py-4">
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label>Имя</Label>
-                                  <Input
-                                    value={editingUser.name}
-                                    onChange={(e) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        name: e.target.value,
-                                      })
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Телефон</Label>
-                                  <PhoneInput
-                                    placeholder="+7 (999) 999-99-99"
-                                    value={editingUser.phone || ""}
-                                    onValueChange={(formatted) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        phone: formatted,
-                                      })
-                                    }
-                                  />
-                                  <p className="text-xs text-muted-foreground">
-                                    {PHONE_FORMAT_HINT}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label>Принтеры</Label>
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    placeholder="Например: 2"
-                                    value={capacityInput}
-                                    onChange={(e) =>
-                                      handleCapacityChange(e.target.value)
-                                    }
-                                  />
-                                  {capacityError ? (
-                                    <p className="text-sm text-red-500">
-                                      {capacityError}
-                                    </p>
-                                  ) : (
-                                    <p className="text-xs text-muted-foreground">
-                                      Целое положительное число принтеров
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Коэффициент</Label>
-                                  <Input
-                                    type="text"
-                                    inputMode="decimal"
-                                    placeholder="Например: 1.5 или 1,5"
-                                    value={factorInput}
-                                    onChange={(e) =>
-                                      handleFactorChange(e.target.value)
-                                    }
-                                  />
-                                  {factorError ? (
-                                    <p className="text-sm text-red-500">
-                                      {factorError}
-                                    </p>
-                                  ) : (
-                                    <p className="text-xs text-muted-foreground">
-                                      Положительное число, до 2 знаков после
-                                      запятой: 1.5 или 1,5
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                  <Label>Роль</Label>
-                                  {/* Роль Создателя нельзя изменить вручную —
-                                      только синхронизацией из Excel */}
-                                  {editingUser.role === "god" ? (
-                                    <Input
-                                      value="👻 Создатель (изменение недоступно)"
-                                      disabled
-                                    />
-                                  ) : (
-                                  <Select
-                                    value={editingUser.role}
-                                    onValueChange={(val) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        role: val as any,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue>
-                                        {(val) =>
-                                          ROLE_LABELS[String(val)] ?? String(val)
-                                        }
-                                      </SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="user">
-                                        Пользователь
-                                      </SelectItem>
-                                      <SelectItem value="employee">
-                                        Сотрудник
-                                      </SelectItem>
-                                      <SelectItem value="moderator">
-                                        Модератор
-                                      </SelectItem>
-                                      <SelectItem value="admin">
-                                        Администратор
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <Label>Приём заказов</Label>
-                                  <Select
-                                    value={
-                                      editingUser.taking_orders
-                                        ? "true"
-                                        : "false"
-                                    }
-                                    onValueChange={(val) =>
-                                      setEditingUser({
-                                        ...editingUser,
-                                        taking_orders: val === "true",
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue>
-                                        {(val) =>
-                                          String(val) === "true"
-                                            ? "Принимает"
-                                            : "Не принимает"
-                                        }
-                                      </SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="true">
-                                        Принимает
-                                      </SelectItem>
-                                      <SelectItem value="false">
-                                        Не принимает
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-                              <div className="flex justify-end gap-2 pt-4">
+                                setEditingUser(null);
+                              }
+                            }}
+                          >
+                            <DialogTrigger
+                              render={
                                 <Button
                                   variant="outline"
-                                  onClick={() => setEditingUser(null)}
-                                >
-                                  Отмена
-                                </Button>
-                                <Button
-                                  onClick={() => handleUpdateUser(editingUser)}
-                                >
-                                  Сохранить
-                                </Button>
-                              </div>
-                            </div>
+                                  size="sm"
+                                  onClick={() => {
+                                    setFactorInput(
+                                      String(user.earnings_factor),
+                                    );
+                                    setFactorError("");
+                                    setCapacityInput(
+                                      user.capacity == null
+                                        ? ""
+                                        : String(user.capacity),
+                                    );
+                                    setCapacityError("");
+                                    setEditingUser(user);
+                                  }}
+                                />
+                              }
+                            >
+                              ✏️
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>
+                                  Редактировать пользователя
+                                </DialogTitle>
+                              </DialogHeader>
+                              {editingUser && (
+                                <div className="space-y-4 py-4">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <Label>Имя</Label>
+                                      <Input
+                                        value={editingUser.name}
+                                        onChange={(e) =>
+                                          setEditingUser({
+                                            ...editingUser,
+                                            name: e.target.value,
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Телефон</Label>
+                                      <PhoneInput
+                                        placeholder="+7 (999) 999-99-99"
+                                        value={editingUser.phone || ""}
+                                        onValueChange={(formatted) =>
+                                          setEditingUser({
+                                            ...editingUser,
+                                            phone: formatted,
+                                          })
+                                        }
+                                      />
+                                      <p className="text-xs text-muted-foreground">
+                                        {PHONE_FORMAT_HINT}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <Label>Принтеры</Label>
+                                      <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="Например: 2"
+                                        value={capacityInput}
+                                        onChange={(e) =>
+                                          handleCapacityChange(e.target.value)
+                                        }
+                                      />
+                                      {capacityError ? (
+                                        <p className="text-sm text-red-500">
+                                          {capacityError}
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground">
+                                          Целое положительное число принтеров
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Коэффициент</Label>
+                                      <Input
+                                        type="text"
+                                        inputMode="decimal"
+                                        placeholder="Например: 1.5 или 1,5"
+                                        value={factorInput}
+                                        onChange={(e) =>
+                                          handleFactorChange(e.target.value)
+                                        }
+                                      />
+                                      {factorError ? (
+                                        <p className="text-sm text-red-500">
+                                          {factorError}
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground">
+                                          Положительное число, до 2 знаков после
+                                          запятой: 1.5 или 1,5
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <Label>Роль</Label>
+                                      {/* Роль Создателя нельзя изменить вручную —
+                                      только синхронизацией из Excel */}
+                                      {editingUser.role === "god" ? (
+                                        <Input
+                                          value="👻 Создатель (изменение недоступно)"
+                                          disabled
+                                        />
+                                      ) : (
+                                        <Select
+                                          value={editingUser.role}
+                                          onValueChange={(val) =>
+                                            setEditingUser({
+                                              ...editingUser,
+                                              role: val as any,
+                                            })
+                                          }
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue>
+                                              {(val) =>
+                                                ROLE_LABELS[String(val)] ??
+                                                String(val)
+                                              }
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="user">
+                                              Пользователь
+                                            </SelectItem>
+                                            <SelectItem value="employee">
+                                              Сотрудник
+                                            </SelectItem>
+                                            <SelectItem value="moderator">
+                                              Модератор
+                                            </SelectItem>
+                                            <SelectItem value="admin">
+                                              Администратор
+                                            </SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Приём заказов</Label>
+                                      <Select
+                                        value={
+                                          editingUser.taking_orders
+                                            ? "true"
+                                            : "false"
+                                        }
+                                        onValueChange={(val) =>
+                                          setEditingUser({
+                                            ...editingUser,
+                                            taking_orders: val === "true",
+                                          })
+                                        }
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue>
+                                            {(val) =>
+                                              String(val) === "true"
+                                                ? "Принимает"
+                                                : "Не принимает"
+                                            }
+                                          </SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="true">
+                                            Принимает
+                                          </SelectItem>
+                                          <SelectItem value="false">
+                                            Не принимает
+                                          </SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-end gap-2 pt-4">
+                                    <Button
+                                      variant="outline"
+                                      onClick={() => setEditingUser(null)}
+                                    >
+                                      Отмена
+                                    </Button>
+                                    <Button
+                                      onClick={() =>
+                                        handleUpdateUser(editingUser)
+                                      }
+                                    >
+                                      Сохранить
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </DialogContent>
+                          </Dialog>
+                          {user.is_fired ? (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => handleRestoreUser(user)}
+                            >
+                              🔄 Восстановить
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleFireUser(user.id)}
+                            >
+                              🗑️
+                            </Button>
                           )}
-                        </DialogContent>
-                      </Dialog>
-                      {user.is_fired ? (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleRestoreUser(user)}
-                        >
-                          🔄 Восстановить
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleFireUser(user.id)}
-                        >
-                          🗑️
-                        </Button>
-                      )}
                         </>
                       ) : (
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-halloween-text">
                           👻 Только Создатель
                         </span>
                       )}

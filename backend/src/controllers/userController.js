@@ -1,8 +1,11 @@
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
+const Notification = require('../models/Notification');
 const OrderService = require('../services/OrderService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
 const { getLocalDate } = require('../utils');
+const fs = require('fs');
+const path = require('path');
 
 // Строгое ограничение веса пластика в граммах (10 кг) — как в бот-версии
 const MAX_WEIGHT_GRAMS = 10000;
@@ -135,6 +138,43 @@ exports.getAllLabels = async (req, res, next) => {
   } catch (err) {
     console.error('[getAllLabels] Ошибка:', err);
     res.status(400).json({ error: err.message });
+  }
+};
+
+/**
+ * Скачать этикетку, отправленную сотруднику администратором
+ * (аналог получения PDF из /admin_send_label в боте).
+ * Доступ: только если сотруднику отправляли оповещение label_sent
+ * с этим номером заказа. Файл лежит в outputs/labels/<orderId>.pdf.
+ */
+exports.getSentLabel = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { orderId } = req.params;
+    // Строгая проверка номера заказа — защита от path traversal
+    if (!/^[\w-]+$/.test(orderId)) {
+      return res.status(400).json({ error: 'Некорректный номер заказа' });
+    }
+    const notification = await Notification.findLatestByTypeAndOrder(
+      userId,
+      'label_sent',
+      orderId
+    );
+    if (!notification) {
+      return res.status(403).json({ error: 'Этикетка этого заказа не отправлялась вам' });
+    }
+    const filePath = path.join(__dirname, '../../outputs', 'labels', `${orderId}.pdf`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        error: 'Файл этикетки не найден на сервере. Попросите администратора отправить её заново.',
+      });
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
+    res.send(fs.readFileSync(filePath));
+  } catch (err) {
+    console.error('[getSentLabel] Ошибка:', err);
+    res.status(500).json({ error: err.message });
   }
 };
 
