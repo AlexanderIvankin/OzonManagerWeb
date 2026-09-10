@@ -8,11 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Toaster, toast } from "sonner";
 import { notificationsApi } from "../../api/notifications";
-import {
-  getStoredTheme,
-  toggleTheme,
-  Theme,
-} from "../../lib/theme";
+import { getStoredTheme, toggleTheme, Theme } from "../../lib/theme";
 import {
   disconnectSocket,
   onNotificationNew,
@@ -28,9 +24,7 @@ export const Layout = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Тема: значение уже применено к <html> (inline-скрипт в index.html)
-  const [theme, setTheme] = useState<Theme>(
-    () => getStoredTheme() ?? "light",
-  );
+  const [theme, setTheme] = useState<Theme>(() => getStoredTheme() ?? "light");
 
   const handleToggleTheme = () => {
     setTheme(toggleTheme(theme));
@@ -54,9 +48,7 @@ export const Layout = () => {
       // Live-тост о новом оповещении ГЛОБАЛЬНО (на любой странице,
       // не только во вкладке «Оповещения»). События журнала персонала
       // сервер шлёт только модераторам, но дополнительно проверяем роль.
-      const isStaff = ["moderator", "admin", "god"].includes(
-        user?.role || "",
-      );
+      const isStaff = ["moderator", "admin", "god"].includes(user?.role || "");
       if (n.audience === "staff" && !isStaff) return;
       toast(n.title, { description: n.message || undefined });
 
@@ -86,7 +78,12 @@ export const Layout = () => {
           <h1 className="text-xl font-bold">Ozon Manager</h1>
           <p className="text-sm text-muted-foreground mb-[5px]">{user?.name}</p>
           <p className="text-xs text-muted-foreground">
-            Роль: <span className="font-bold">{user?.role}</span>
+            Роль:{" "}
+            <span
+              className={`font-bold ${user?.role === "god" ? "text-halloween-text" : (user?.role === "admin") || (user?.role === "moderator") ? "text-blue-600"  : ""}`}
+            >
+              {user?.role}
+            </span>
           </p>
         </div>
         <nav className="flex-1 space-y-1">

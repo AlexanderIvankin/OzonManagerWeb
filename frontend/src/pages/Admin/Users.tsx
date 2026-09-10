@@ -696,7 +696,7 @@ export const Users = () => {
               Аккаунт создаётся сразу подтверждённым — без письма с кодом
               подтверждения. Логин и email должны быть уникальными.
             </p>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-username">Логин *</Label>
               <Input
                 id="create-username"
@@ -710,7 +710,7 @@ export const Users = () => {
                 <p className="text-sm text-red-500">{createErrors.username}</p>
               )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-email">Email *</Label>
               <Input
                 id="create-email"
@@ -725,7 +725,7 @@ export const Users = () => {
                 <p className="text-sm text-red-500">{createErrors.email}</p>
               )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-password">Пароль *</Label>
               <Input
                 id="create-password"
@@ -740,7 +740,7 @@ export const Users = () => {
                 <p className="text-sm text-red-500">{createErrors.password}</p>
               )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-name">Имя</Label>
               <Input
                 id="create-name"
@@ -751,7 +751,7 @@ export const Users = () => {
                 }
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-phone">Телефон</Label>
               <PhoneInput
                 id="create-phone"
@@ -766,7 +766,7 @@ export const Users = () => {
                 {PHONE_FORMAT_HINT}
               </p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <Label htmlFor="create-capacity">Количество принтеров</Label>
               <Input
                 id="create-capacity"
@@ -786,7 +786,7 @@ export const Users = () => {
                 </p>
               )}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-3">
               <Label>Роль</Label>
               <Select
                 value={createForm.role}
@@ -806,7 +806,7 @@ export const Users = () => {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Роль 👻 Создатель выдаётся только синхронизацией из Excel.
+                Роль 👻 Создатель выдаётся только синхронизацией.
               </p>
             </div>
             {createErrors._server && (
