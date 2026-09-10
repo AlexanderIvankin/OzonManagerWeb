@@ -51,6 +51,10 @@ router.get('/orders/active', adminController.getActiveOrdersAll);
 router.get('/orders/:orderId/details', adminController.getOrderDetails);
 router.post('/orders/:orderId/assign', adminController.assignOrder);
 router.post('/orders/:orderId/unassign', adminController.unassignOrder);
+// Этикетка заказа (аналог /admin_send_label): без сотрудника — скачать себе,
+// с сотрудником — отправить ему оповещение с кнопкой скачивания
+router.get('/orders/:orderId/label', adminController.downloadOrderLabel);
+router.post('/orders/:orderId/label/send', adminController.sendOrderLabelToEmployee);
 router.get('/users/:id/orders', adminController.getUserOrders);
 router.get('/users/:id/stats', adminController.getUserStats);
 
@@ -64,6 +68,14 @@ router.post('/earnings/reset', authorize(...STAFF_ROLES), adminController.resetA
 // --- Административные команды ---
 router.post('/assignments/clear', authorize(...STAFF_ROLES), adminController.clearAssignments);
 router.post('/orders/reload-queue', authorize(...STAFF_ROLES), adminController.reloadQueue);
+
+// --- Статистика товара: удаление (аналог /clear_product_stats) ---
+router.delete('/product-stats/:offerId', adminController.deleteProductStats);
+
+// --- Планировщик: пауза/возобновление авто-проверки очереди (аналог /pause, /resume) ---
+router.get('/scheduler/status', adminController.getSchedulerStatus);
+router.post('/scheduler/pause', adminController.pauseScheduler);
+router.post('/scheduler/resume', adminController.resumeScheduler);
 
 // --- Команды Модератора ---
 // Получить текущий заказ для модерации

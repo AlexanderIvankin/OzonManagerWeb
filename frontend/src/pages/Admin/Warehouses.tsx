@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { adminApi, Warehouse } from "../../api/admin";
+import { adminApi, User, Warehouse } from "../../api/admin";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -11,12 +11,24 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 export const Warehouses = () => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  // === Фильтр по имени сотрудника (аналог /employee_warehouses) ===
+  const [employees, setEmployees] = useState<User[]>([]);
+  // "all" — все склады, иначе ID сотрудника (показываем его склады)
+  const [employeeFilter, setEmployeeFilter] = useState("all");
 
   const loadWarehouses = async () => {
     setLoading(true);
@@ -27,6 +39,20 @@ export const Warehouses = () => {
       toast.error(err.message || "Не удалось загрузить склады");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Сотрудники с их складами (приоритетами) — для фильтра по имени
+  const loadEmployees = async () => {
+    try {
+      const users = await adminApi.getUsers({
+        includeAll: true,
+        includeFired: false,
+        withWarehouses: true,
+      });
+      setEmployees(users.filter((u) => u.role !== "user"));
+    } catch {
+      // Некритично: фильтр просто останется пустым
     }
   };
 
@@ -45,13 +71,68 @@ export const Warehouses = () => {
 
   useEffect(() => {
     loadWarehouses();
+    loadEmployees();
   }, []);
+
+  // Склады для отображения: все или только склады выбранного сотрудника
+  const selectedEmployee =
+    employeeFilter === "all"
+      ? null
+      : employees.find((e) => String(e.id) === employeeFilter);
+  const displayedWarehouses: Warehouse[] = selectedEmployee
+    ? (selectedEmployee.warehouses || []).map((w) => ({
+        warehouse_id: w.warehouse_id,
+        name: w.name,
+        address: w.address ?? null,
+        is_rfbs: w.is_rfbs,
+      }))
+    : warehouses;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Склады</h1>
-        <div className="flex gap-2">
+        <h1 className="text-2xl font-bold">
+          🏭 Склады
+          {selectedEmployee && (
+            <span className="block text-base font-normal text-muted-foreground">
+              Склады сотрудника <b>{selectedEmployee.name}</b> (ID:{" "}
+              {selectedEmployee.id})
+            </span>
+          )}
+        </h1>
+        <div className="flex items-end gap-2">
+          {/* Фильтр по имени сотрудника (аналог /employee_warehouses) */}
+          <div className="flex flex-col">
+            <Label className="mb-[8px]">Сотрудник</Label>
+            <Select
+              value={employeeFilter}
+              onValueChange={(v) => setEmployeeFilter(v ?? "all")}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Все склады">
+                  {(val) =>
+                    !val || val === "all"
+                      ? "🌐 Все склады"
+                      : employees.find((e) => String(e.id) === String(val))
+                          ?.name || String(val)
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">🌐 Все склады</SelectItem>
+                {employees.map((e) => (
+                  <SelectItem key={e.id} value={String(e.id)}>
+                    {e.name} (ID: {e.id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedEmployee && (
+            <Button variant="ghost" onClick={() => setEmployeeFilter("all")}>
+              ✕ Сбросить
+            </Button>
+          )}
           <Button onClick={handleSync} disabled={syncing || loading}>
             {syncing ? "Синхронизация..." : "🔄 Синхронизировать"}
           </Button>
@@ -79,14 +160,16 @@ export const Warehouses = () => {
                     Загрузка...
                   </TableCell>
                 </TableRow>
-              ) : warehouses.length === 0 ? (
+              ) : displayedWarehouses.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center">
-                    Нет складов
+                    {selectedEmployee
+                      ? `Сотрудник ${selectedEmployee.name} не числится ни на одном складе`
+                      : "Нет складов"}
                   </TableCell>
                 </TableRow>
               ) : (
-                warehouses.map((wh) => (
+                displayedWarehouses.map((wh) => (
                   <TableRow key={wh.warehouse_id}>
                     <TableCell className="text-center font-mono text-sm">
                       <span className="text-sm">

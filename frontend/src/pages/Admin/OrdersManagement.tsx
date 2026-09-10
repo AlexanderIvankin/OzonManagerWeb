@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "../../store";
-import { adminApi } from "../../api/admin";
+import { adminApi, Warehouse } from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -94,16 +95,23 @@ export const OrdersManagement = () => {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState<{ [key: string]: boolean }>({});
-  const [selectedEmployee, setSelectedEmployee] = useState<{
-    [key: string]: string | null;
-  }>({});
-  // Какой список сотрудников показывать: приоритетные по складу или все
-  const [listMode, setListMode] = useState<{ [key: string]: ListMode }>({});
+  // === Фильтр по складу (аналог /orders [warehouse_id]) ===
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  // "all" — без фильтра, иначе ID склада из warehouses
+  const [warehouseFilter, setWarehouseFilter] = useState("all");
 
-  const loadOrders = async () => {
+  const loadOrders = async (warehouseId?: string) => {
     setLoading(true);
     try {
-      const data = await adminApi.getAwaitingOrders();
+      // Явно переданный ID имеет приоритет (при смене фильтра state ещё
+      // не обновился); иначе берём текущий фильтр из state
+      const effectiveId =
+        warehouseId !== undefined
+          ? warehouseId
+          : warehouseFilter !== "all"
+            ? warehouseFilter
+            : undefined;
+      const data = await adminApi.getAwaitingOrders(effectiveId);
       setOrders(data);
     } catch (err: any) {
       toast.error(err.message || "Не удалось загрузить заказы");
@@ -111,6 +119,28 @@ export const OrdersManagement = () => {
       setLoading(false);
     }
   };
+
+  // Список складов для фильтра
+  const loadWarehouses = async () => {
+    try {
+      const data = await adminApi.getWarehouses();
+      setWarehouses(data);
+    } catch {
+      // Некритично: фильтр просто останется пустым
+    }
+  };
+
+  // Смена фильтра по складу — перезагружаем очередь с новым складом
+  const handleWarehouseFilterChange = (value: string | null) => {
+    const next = value ?? "all";
+    setWarehouseFilter(next);
+    loadOrders(next === "all" ? undefined : next);
+  };
+  const [selectedEmployee, setSelectedEmployee] = useState<{
+    [key: string]: string | null;
+  }>({});
+  // Какой список сотрудников показывать: приоритетные по складу или все
+  const [listMode, setListMode] = useState<{ [key: string]: ListMode }>({});
 
   const loadEmployees = async () => {
     try {
@@ -165,6 +195,7 @@ export const OrdersManagement = () => {
   useEffect(() => {
     loadOrders();
     loadEmployees();
+    loadWarehouses();
   }, []);
 
   const handleAssign = async (orderId: string, employeeId: string) => {
@@ -188,15 +219,48 @@ export const OrdersManagement = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          Очередь заказов (awaiting_packaging)<br></br>
+          ⏳ Очередь заказов (awaiting_packaging)<br></br>
           <span className="flex text-muted-foreground justify-center">
             Число заказов в очереди:{" "}
             <span className="text-blue-600">&nbsp;{orders.length}</span>
           </span>
         </h1>
-        <Button onClick={loadOrders} disabled={loading}>
-          🔄 Обновить
-        </Button>
+        <div className="flex items-end gap-2">
+          {/* Фильтр по складу (аналог /orders [warehouse_id]) */}
+          <div className="flex flex-col">
+            <Label className="mb-[8px]">Склад</Label>
+            <Select
+              value={warehouseFilter}
+              onValueChange={handleWarehouseFilterChange}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Все склады">
+                  {(val) =>
+                    !val || val === "all"
+                      ? "🌐 Все склады"
+                      : warehouses.find(
+                          (w) => String(w.warehouse_id) === String(val),
+                        )?.name || String(val)
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">🌐 Все склады</SelectItem>
+                {warehouses.map((wh) => (
+                  <SelectItem
+                    key={wh.warehouse_id}
+                    value={String(wh.warehouse_id)}
+                  >
+                    {wh.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => loadOrders()} disabled={loading}>
+            🔄 Обновить
+          </Button>
+        </div>
       </div>
 
       {loading ? (

@@ -173,6 +173,20 @@ const TEMPLATES = {
       message: `После ${p.attempts || 3} попыток заказ ${p.orderId} не назначен: ${p.error || 'неизвестная ошибка'}.`,
     },
   }),
+
+  // Этикетка, отправленная сотруднику администратором (аналог /admin_send_label).
+  // PDF сохраняется на сервере (outputs/labels/<orderId>.pdf) и скачивается
+  // сотрудником по кнопке в оповещении (GET /user/labels/:orderId/sent).
+  label_sent: (p) => ({
+    user: {
+      title: `🏷️ Этикетка заказа ${p.orderId}`,
+      message: `${p.adminName || 'Администратор'} отправил вам этикетку заказа ${p.orderId}.\nНажмите «Скачать этикетку», чтобы сохранить PDF.`,
+    },
+    staff: {
+      title: `🏷️ ${p.adminName || 'Администратор'}: отправил этикетку ${p.orderId}`,
+      message: `${p.adminName || 'Администратор'} отправил этикетку заказа ${p.orderId} сотруднику ${p.userName || '—'}.`,
+    },
+  }),
 };
 
 /**

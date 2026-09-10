@@ -99,7 +99,7 @@ export const ExportData = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Экспорт данных</h1>
+      <h1 className="text-2xl font-bold">📤 Экспорт данных</h1>
 
       {/* Статистика товаров */}
       <Card>

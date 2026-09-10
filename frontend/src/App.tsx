@@ -10,6 +10,14 @@ import { Profile } from "./pages/Profile/Profile";
 import { Orders } from "./pages/Orders/Orders";
 import { Notifications } from "./pages/Notifications/Notifications";
 import { AdminPanel } from "./pages/Admin/AdminPanel";
+import { Users } from "./pages/Admin/Users";
+import { Warehouses } from "./pages/Admin/Warehouses";
+import { OrdersManagement } from "./pages/Admin/OrdersManagement";
+import { ActiveOrders } from "./pages/Admin/ActiveOrders";
+import { Materials } from "./pages/Admin/Materials";
+import { EarningsManagement } from "./pages/Admin/EarningsManagement";
+import { StaffStats } from "./pages/Admin/StaffStats";
+import { ExportData } from "./pages/Admin/ExportData";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { Layout } from "./components/Layout/Layout";
 
@@ -44,14 +52,21 @@ function App() {
             {/* Оповещения доступны всем ролям (личные); журнал действий и
                 ошибки сервера отображаются внутри страницы только персоналу */}
             <Route path="/notifications" element={<Notifications />} />
-            <Route
-              path="/admin/*"
-              element={
-                <ProtectedRoute allowedRoles={["admin", "moderator", "god"]}>
-                  <AdminPanel />
-                </ProtectedRoute>
-              }
-            />
+
+            {/* Админка: каждая вкладка — самостоятельный маршрут.
+                Навигация выполняется через Layout, вложенный роутер-хаб
+                с дублирующими вкладками не используется */}
+            <Route element={<ProtectedRoute allowedRoles={["admin", "moderator", "god"]} />}>
+              <Route path="/admin" element={<AdminPanel />} />
+              <Route path="/admin/users" element={<Users />} />
+              <Route path="/admin/warehouses" element={<Warehouses />} />
+              <Route path="/admin/orders" element={<OrdersManagement />} />
+              <Route path="/admin/active-orders" element={<ActiveOrders />} />
+              <Route path="/admin/materials" element={<Materials />} />
+              <Route path="/admin/earnings" element={<EarningsManagement />} />
+              <Route path="/admin/stats" element={<StaffStats />} />
+              <Route path="/admin/export" element={<ExportData />} />
+            </Route>
           </Route>
         </Route>
 

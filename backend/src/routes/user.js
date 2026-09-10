@@ -27,6 +27,9 @@ router.get('/orders/:orderId/label', userController.getLabel);
 // Получить склейку всех этикеток
 router.get('/orders/labels/all', userController.getAllLabels);
 
+// Скачать этикетку, отправленную администратором (label_sent)
+router.get('/labels/:orderId/sent', userController.getSentLabel);
+
 // Переключить приём заказов
 router.post('/toggle-orders', userController.toggleOrders);
 
