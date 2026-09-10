@@ -31,7 +31,8 @@ import { FillStatsDialog } from "../../components/FillStatsDialog";
 
 // ======================================================================
 // Админская панель — инструменты (аналоги команд бота):
-//   /order_details, /employee_orders (по имени), /admin_send_label (по имени),
+//   /order_details, последние завершённые заказы (по имени),
+//   /admin_send_label (по имени),
 //   /admin_fill_stats, /clear_product_stats, /clear_assignments,
 //   /pause и /resume.
 // Навигация по вкладкам админки выполняется через Layout (сайдбар),
@@ -70,9 +71,14 @@ interface OzonOrderDetails {
   in_process_at?: string;
 }
 
-interface EmployeeOrder {
+interface CompletedOrder {
   order_id: string;
-  assigned_at: number;
+  completed_at: number;
+  /** Заработок за заказ (из earnings_history); 0, если не рассчитан */
+  amount: number;
+  /** Кто завершил заказ (заполняется при просмотре всех сотрудников) */
+  user_id?: number;
+  user_name?: string;
 }
 
 const formatDateTime = (ts: number | string) =>
@@ -110,11 +116,16 @@ export const AdminPanel = () => {
   const [details, setDetails] = useState<OzonOrderDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
-  // === Активные заказы сотрудника (/employee_orders) ===
-  const [ordersUserId, setOrdersUserId] = useState("");
-  const [employeeOrders, setEmployeeOrders] = useState<EmployeeOrder[]>([]);
-  const [ordersLoadedName, setOrdersLoadedName] = useState("");
-  const [ordersLoading, setOrdersLoading] = useState(false);
+  // === Последние завершённые заказы ===
+  // "all" — все сотрудники, иначе ID сотрудника (фильтр опционален)
+  const [complUserId, setComplUserId] = useState("all");
+  // Период: week | month | all
+  const [complPeriod, setComplPeriod] = useState("month");
+  // Количество отображаемых заказов (строковое значение Select)
+  const [complLimit, setComplLimit] = useState("25");
+  const [completedOrders, setCompletedOrders] = useState<CompletedOrder[]>([]);
+  const [complLoadedName, setComplLoadedName] = useState("");
+  const [complLoading, setComplLoading] = useState(false);
 
   // === Этикетка заказа (/admin_send_label) ===
   const [labelOrderId, setLabelOrderId] = useState("");
@@ -195,22 +206,31 @@ export const AdminPanel = () => {
     }
   };
 
-  // === /employee_orders <имя_сотрудника> ===
-  const handleLoadEmployeeOrders = async () => {
-    if (!ordersUserId) return;
-    setOrdersLoading(true);
+  // === Последние завершённые заказы ===
+  const handleLoadCompletedOrders = async () => {
+    setComplLoading(true);
     try {
-      const data = await adminApi.getUserOrders(parseInt(ordersUserId, 10));
-      setEmployeeOrders(data || []);
-      setOrdersLoadedName(employeeName(employees, ordersUserId));
+      const days =
+        complPeriod === "week" ? 7 : complPeriod === "month" ? 30 : null;
+      const userId = complUserId === "all" ? null : parseInt(complUserId, 10);
+      const data = await adminApi.getCompletedOrders(userId, {
+        days,
+        limit: parseInt(complLimit, 10),
+      });
+      setCompletedOrders(data || []);
+      setComplLoadedName(
+        complUserId === "all"
+          ? "всех сотрудников"
+          : employeeName(employees, complUserId),
+      );
     } catch (err: any) {
       toast.error(
         err.response?.data?.error ||
           err.message ||
-          "Не удалось загрузить заказы сотрудника",
+          "Не удалось загрузить заказы",
       );
     } finally {
-      setOrdersLoading(false);
+      setComplLoading(false);
     }
   };
 
@@ -445,68 +465,119 @@ export const AdminPanel = () => {
           </CardContent>
         </Card>
 
-        {/* === /employee_orders <имя_сотрудника> === */}
+        {/* === Последние завершённые заказы сотрудника === */}
         <Card>
           <CardHeader>
-            <CardTitle>📋 Активные заказы сотрудника</CardTitle>
+            <CardTitle>📜 Последние завершённые заказы</CardTitle>
             <CardDescription>
-              Аналог /employee_orders: выберите сотрудника по имени
+              Завершённые заказы (по умолчанию — все сотрудники): фильтры по
+              сотруднику, периоду и количеству
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-end gap-2">
-              <div className="w-64 space-y-2">
-                <Label>Сотрудник</Label>
-                <div className="flex gap-2">
-                  {" "}
-                  <Select
-                    value={ordersUserId}
-                    onValueChange={(v) => setOrdersUserId(v ?? "")}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите сотрудника">
-                        {(val) =>
-                          !val
-                            ? "Выберите сотрудника"
-                            : employeeName(employees, String(val))
-                        }
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employees.map((e) => (
-                        <SelectItem key={e.id} value={String(e.id)}>
-                          {e.name} (ID: {e.id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    onClick={handleLoadEmployeeOrders}
-                    disabled={ordersLoading || !ordersUserId}
-                  >
-                    {ordersLoading ? "Загрузка..." : "Показать"}
-                  </Button>
-                </div>
+              <div>
+                <Label className="mb-[5px]">Сотрудник</Label>
+                <Select
+                  value={complUserId}
+                  onValueChange={(v) => setComplUserId(v ?? "all")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Все сотрудники">
+                      {(val) =>
+                        !val || val === "all"
+                          ? "👥 Все сотрудники"
+                          : employeeName(employees, String(val))
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">👥 Все сотрудники</SelectItem>
+                    {employees.map((e) => (
+                      <SelectItem key={e.id} value={String(e.id)}>
+                        {e.name} (ID: {e.id})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+              <div>
+                <Label className="mb-[5px]">Период</Label>
+                <Select
+                  value={complPeriod}
+                  onValueChange={(v) => setComplPeriod(v ?? "month")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Период">
+                      {(val) =>
+                        val === "week"
+                          ? "За неделю"
+                          : val === "month"
+                            ? "За месяц"
+                            : "Всё время"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="week">За неделю</SelectItem>
+                    <SelectItem value="month">За месяц</SelectItem>
+                    <SelectItem value="all">Всё время</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="mb-[5px]">Кол-во</Label>
+                <Select
+                  value={complLimit}
+                  onValueChange={(v) => setComplLimit(v ?? "25")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Кол-во" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleLoadCompletedOrders}
+                disabled={complLoading}
+              >
+                {complLoading ? "Загрузка..." : "Показать"}
+              </Button>
             </div>
 
-            {ordersLoadedName && (
-              <div className="rounded-md bg-muted/50 p-3 text-sm">
+            {complLoadedName && (
+              <div className="rounded-md bg-muted/50 p-3 text-sm max-h-96 overflow-auto">
                 <p className="mb-2">
-                  Активные заказы <b>{ordersLoadedName}</b>:{" "}
-                  {employeeOrders.length === 0 ? "нет" : employeeOrders.length}
+                  Завершённых заказов <b>{complLoadedName}</b>:{" "}
+                  {completedOrders.length}
                 </p>
-                {employeeOrders.length > 0 && (
+                {completedOrders.length > 0 ? (
                   <ul className="space-y-1">
-                    {employeeOrders.map((o) => (
+                    {completedOrders.map((o) => (
                       <li key={o.order_id}>
                         • <code>{o.order_id}</code>{" "}
                         <span className="text-muted-foreground">
-                          (назначен {formatDateTime(o.assigned_at)})
+                          {/* При фильтре «Все сотрудники» показываем, кто
+                              завершил заказ */}
+                          {complUserId === "all" && o.user_name
+                            ? `👤 ${o.user_name} · `
+                            : ""}
+                          (завершён {formatDateTime(o.completed_at)}
+                          {o.amount > 0 ? ` · 💰 ${o.amount.toFixed(2)} ₽` : ""}
+                          )
                         </span>
                       </li>
                     ))}
                   </ul>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Нет завершённых заказов за выбранный период
+                  </p>
                 )}
               </div>
             )}

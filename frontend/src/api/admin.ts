@@ -173,6 +173,27 @@ export const adminApi = {
       )
       .then((res) => res.data),
 
+  // Последние завершённые заказы (аналог /employee_orders, но по завершённым).
+  // userId — опционально: null = все сотрудники.
+  // Фильтры: days — период в днях, limit — максимум записей.
+  getCompletedOrders: (
+    userId: number | null,
+    params?: { days?: number | null; limit?: number },
+  ) =>
+    api
+      .get<
+        Array<{
+          order_id: string;
+          completed_at: number;
+          amount: number;
+          user_id: number;
+          user_name: string;
+        }>
+      >("/admin/orders/completed", {
+        params: { ...(userId ? { userId } : {}), ...params },
+      })
+      .then((res) => res.data),
+
   // Сброс ВСЕХ активных назначений (аналог /clear_assignments)
   clearAssignments: () =>
     api
