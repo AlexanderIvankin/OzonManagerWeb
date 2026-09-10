@@ -150,7 +150,7 @@ export const Materials = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="file-upload">
+            <Label className="mb-[10px]" htmlFor="file-upload">
               Файл настроек (ожидается{" "}
               {expectedFileName || "materials-prices.json"})
             </Label>
