@@ -56,6 +56,9 @@ router.post('/orders/:orderId/unassign', adminController.unassignOrder);
 router.get('/orders/:orderId/label', adminController.downloadOrderLabel);
 router.post('/orders/:orderId/label/send', adminController.sendOrderLabelToEmployee);
 router.get('/users/:id/orders', adminController.getUserOrders);
+// Последние завершённые заказы: query userId (опционально — все сотрудники),
+// days (период), limit (максимум записей)
+router.get('/orders/completed', adminController.getCompletedOrders);
 router.get('/users/:id/stats', adminController.getUserStats);
 
 // --- Заработок ---

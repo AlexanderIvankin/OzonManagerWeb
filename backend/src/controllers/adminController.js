@@ -536,6 +536,23 @@ exports.getUserOrders = async (req, res, next) => {
 };
 
 /**
+ * Последние завершённые заказы (для админки).
+ * Параметры: userId — опционально (без него показываются заказы ВСЕХ
+ * сотрудников), days — период в днях (week=7, month=30), limit — максимум записей.
+ */
+exports.getCompletedOrders = async (req, res, next) => {
+  try {
+    const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
+    const days = req.query.days ? parseInt(req.query.days, 10) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
+    const orders = await Assignment.getRecentCompletedOrders(userId, { days, limit });
+    res.json(orders);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
  * Получить статистику сотрудника
  */
 exports.getUserStats = async (req, res, next) => {
