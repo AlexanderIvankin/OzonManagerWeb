@@ -20,8 +20,10 @@ backend/notifications*.db-wal
 backend/notifications*.db-shm
 
 backend/team-info.xlsx
+backend/materials-prices.json
 backend/employees-db.xlsx
 backend/team-info*.xlsx
+backend/materials-prices*.json
 backend/employees-db*.xlsx
 *.xlsx~
 *.xls~
