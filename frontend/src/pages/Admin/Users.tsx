@@ -333,7 +333,7 @@ export const Users = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
           {" "}
           <span className="inline-block align-middle -translate-y-[5px]">
@@ -341,7 +341,7 @@ export const Users = () => {
           </span>{" "}
           Пользователи
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
             onClick={() => {
@@ -370,10 +370,16 @@ export const Users = () => {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-center">ID</TableHead>
+                <TableHead className="text-center hidden md:table-cell">
+                  ID
+                </TableHead>
                 <TableHead className="text-center">Имя</TableHead>
-                <TableHead className="text-center">Логин</TableHead>
-                <TableHead className="text-center">Email</TableHead>
+                <TableHead className="text-center hidden md:table-cell">
+                  Логин
+                </TableHead>
+                <TableHead className="text-center hidden md:table-cell">
+                  Email
+                </TableHead>
                 <TableHead className="text-center">Роль</TableHead>
                 <TableHead className="text-center">Принтеры</TableHead>
                 <TableHead className="text-center">Коэф.</TableHead>
@@ -400,16 +406,18 @@ export const Users = () => {
                     key={user.id}
                     className={user.is_fired ? "opacity-50" : ""}
                   >
-                    <TableCell className="text-center">
+                    <TableCell className="text-center hidden md:table-cell">
                       <code>{user.id}</code>
                     </TableCell>
                     <TableCell className="text-center">
                       <b>{user.name}</b>
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center hidden md:table-cell">
                       {user.username}
                     </TableCell>
-                    <TableCell className="text-center">{user.email}</TableCell>
+                    <TableCell className="text-center hidden md:table-cell">
+                      {user.email}
+                    </TableCell>
                     <TableCell className="text-center">
                       {/* Стили ролей — единый RoleBadge; персоналу добавляем жирность */}
                       <RoleBadge
@@ -482,7 +490,7 @@ export const Users = () => {
                               </DialogHeader>
                               {editingUser && (
                                 <div className="space-y-4 py-4">
-                                  <div className="grid grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                       <Label>Имя</Label>
                                       <Input
@@ -512,7 +520,7 @@ export const Users = () => {
                                       </p>
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                       <Label>Принтеры</Label>
                                       <Input
@@ -557,7 +565,7 @@ export const Users = () => {
                                       )}
                                     </div>
                                   </div>
-                                  <div className="grid grid-cols-2 gap-4">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                       <Label>Роль</Label>
                                       {/* Роль Создателя нельзя изменить вручную —
@@ -820,7 +828,7 @@ export const Users = () => {
             {createErrors._server && (
               <p className="text-sm text-red-500">{createErrors._server}</p>
             )}
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse justify-end gap-2 pt-2 sm:flex-row">
               <Button
                 variant="outline"
                 onClick={() => setShowCreate(false)}

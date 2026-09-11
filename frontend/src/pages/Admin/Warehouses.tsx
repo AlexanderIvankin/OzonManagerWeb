@@ -90,7 +90,7 @@ export const Warehouses = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
           🏭 Склады
           {selectedEmployee && (
@@ -100,7 +100,7 @@ export const Warehouses = () => {
             </span>
           )}
         </h1>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           {/* Фильтр по имени сотрудника (аналог /employee_warehouses) */}
           <div className="flex flex-col">
             <Label className="mb-[8px]">Сотрудник</Label>
@@ -108,7 +108,7 @@ export const Warehouses = () => {
               value={employeeFilter}
               onValueChange={(v) => setEmployeeFilter(v ?? "all")}
             >
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-full sm:w-64">
                 <SelectValue placeholder="Все склады">
                   {(val) =>
                     !val || val === "all"

@@ -365,7 +365,7 @@ export const AdminPanel = () => {
                 <Input
                   id="details-order"
                   placeholder="12345678-0001-1"
-                  className="w-64"
+                  className="w-full sm:w-64"
                   value={detailsOrderId}
                   onChange={(e) => setDetailsOrderId(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleLoadDetails()}
@@ -485,14 +485,27 @@ export const AdminPanel = () => {
                   <SelectTrigger>
                     <SelectValue placeholder="Все сотрудники">
                       {(val) =>
-                        !val || val === "all"
-                          ? "👥 Все сотрудники"
-                          : employeeName(employees, String(val))
+                        !val || val === "all" ? (
+                          <>
+                            <span className="inline-block align-middle -translate-y-[1px]">
+                              👥
+                            </span>{" "}
+                            Все сотрудники
+                          </>
+                        ) : (
+                          employeeName(employees, String(val))
+                        )
                       }
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">👥 Все сотрудники</SelectItem>
+                    <SelectItem value="all">
+                      {" "}
+                      <span className="inline-block align-middle -translate-y-[1px]">
+                        👥
+                      </span>{" "}
+                      Все сотрудники
+                    </SelectItem>
                     {employees.map((e) => (
                       <SelectItem key={e.id} value={String(e.id)}>
                         {e.name} (ID: {e.id})
@@ -743,7 +756,7 @@ export const AdminPanel = () => {
                 <Badge>▶️ Работает</Badge>
               )}
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 onClick={handlePause}

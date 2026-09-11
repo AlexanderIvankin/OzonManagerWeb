@@ -71,13 +71,30 @@ export const Layout = () => {
   };
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-64 border-r bg-card p-4 flex flex-col">
-        <div className="mb-20 flex flex-col text-center">
-          <h1 className="text-xl font-bold">Ozon Manager</h1>
-          <p className="text-sm text-muted-foreground mb-[5px]">{user?.name}</p>
-          <p className="text-xs text-muted-foreground">
+    <div className="flex h-dvh overflow-hidden">
+      {/* Sidebar: на мобилке — узкая колонка со значками, с md — полный сайдбар */}
+      <aside className="w-14 md:w-64 shrink-0 border-r bg-card p-2 md:p-4 flex flex-col">
+        <div className="mb-6 md:mb-20 flex flex-col items-center md:items-stretch text-center">
+          {/* На мобилке логотип = значок, подписи скрыты */}
+          <span
+            className="md:hidden size-9 grid place-items-center rounded-lg bg-primary/10 text-lg"
+            title="Ozon Manager"
+          >
+            {user?.role === "god"
+              ? "👻"
+              : user?.role === "moderator"
+                ? "🕵️"
+                : user?.role === "admin"
+                  ? "🧑‍💻"
+                  : user?.role === "employee"
+                    ? "👷"
+                    : "👤"}
+          </span>
+          <h1 className="hidden md:block text-xl font-bold">Ozon Manager</h1>
+          <p className="hidden md:block text-sm text-muted-foreground mb-[5px]">
+            {user?.name}
+          </p>
+          <p className="hidden md:block text-xs text-muted-foreground">
             Роль:{" "}
             <span
               className={`font-bold ${user?.role === "god" ? "text-halloween-text" : user?.role === "admin" || user?.role === "moderator" ? "text-blue-600" : ""}`}
@@ -89,28 +106,32 @@ export const Layout = () => {
         <nav className="flex-1 space-y-1">
           <Link
             to="/profile"
-            className="block px-3 py-2 rounded-md hover:bg-accent"
+            className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
           >
             <span className="inline-block align-middle -translate-y-[3px]">
               🪪
-            </span>{" "}
-            Профиль
+            </span>
+            <span className="hidden md:inline md:ml-2">Профиль</span>
           </Link>
           {["employee", "moderator", "admin", "god"].includes(
             user?.role || "",
           ) && (
             <Link
               to="/orders"
-              className="block px-3 py-2 rounded-md hover:bg-accent"
+              className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
             >
-              📦 Заказы
+              📦
+              <span className="hidden md:inline md:ml-2">Заказы</span>
             </Link>
           )}
           <Link
             to="/notifications"
-            className="flex items-center justify-between px-3 py-2 rounded-md hover:bg-accent"
+            className="flex items-center justify-center md:justify-between px-2 md:px-3 py-2 rounded-md hover:bg-accent"
           >
-            <span>🔔 Оповещения</span>
+            <span className="flex items-center">
+              🔔
+              <span className="hidden md:inline md:ml-2">Оповещения</span>
+            </span>
             {unreadCount > 0 && (
               <Badge className="ml-2">
                 {unreadCount > 99 ? "99+" : unreadCount}
@@ -122,88 +143,105 @@ export const Layout = () => {
           {["moderator", "admin", "god"].includes(user?.role || "") && (
             <Link
               to="/admin"
-              className="block px-3 py-2 rounded-md hover:bg-accent"
+              className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
             >
-              ⚙️ Админка
+              ⚙️
+              <span className="hidden md:inline md:ml-2">Админка</span>
             </Link>
           )}
           {["moderator", "admin", "god"].includes(user?.role || "") && (
             <>
               <Link
                 to="/admin/users"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                <span className="inline-block align-middle -translate-y-[3px]">
+                <span className="inline-block align-middle -translate-y-[2px]">
                   👥
-                </span>{" "}
-                Пользователи
+                </span>
+                <span className="hidden md:inline md:ml-2">Пользователи</span>
               </Link>
               <Link
                 to="/admin/warehouses"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                🏭 Склады
+                🏭
+                <span className="hidden md:inline md:ml-2">Склады</span>
               </Link>
               <Link
                 to="/admin/orders"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                ⏳ Очередь заказов
+                ⏳
+                <span className="hidden md:inline md:ml-2">
+                  Очередь заказов
+                </span>
               </Link>
               <Link
                 to="/admin/active-orders"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                📋 Активные заказы
+                📋
+                <span className="hidden md:inline md:ml-2">
+                  Активные заказы
+                </span>
               </Link>
               <Link
                 to="/admin/materials"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                📁 Материалы
+                📁
+                <span className="hidden md:inline md:ml-2">Материалы</span>
               </Link>
               <Link
                 to="/admin/export"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                📤 Экспорт данных
+                📤
+                <span className="hidden md:inline md:ml-2">Экспорт данных</span>
               </Link>
               <Link
                 to="/admin/earnings"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                🏦 Заработок
+                🏦
+                <span className="hidden md:inline md:ml-2">Заработок</span>
               </Link>
               <Link
                 to="/admin/stats"
-                className="block px-3 py-2 rounded-md hover:bg-accent"
+                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
               >
-                📊 Статистика
+                📊
+                <span className="hidden md:inline md:ml-2">Статистика</span>
               </Link>
             </>
           )}
         </nav>
-        <div className="border-t pt-4 space-y-2">
+        <div className="border-t pt-2 md:pt-4 space-y-2">
           <Button
             variant="outline"
             className="w-full"
             onClick={handleToggleTheme}
             title="Переключить тему"
           >
-            {theme === "dark" ? "☀️ Светлая тема" : "🌙 Тёмная тема"}
+            {theme === "dark" ? "☀️" : "🌙"}
+            <span className="hidden md:inline">
+              {theme === "dark" ? "Светлая тема" : "Тёмная тема"}
+            </span>
           </Button>
           <Button
             variant="destructive"
             className="w-full"
             onClick={handleLogout}
+            title="Выйти"
           >
-            Выйти
+            ➜]
+            <span className="hidden md:inline">Выйти</span>
           </Button>
         </div>
       </aside>
 
       {/* Main content – здесь рендерятся вложенные маршруты */}
-      <main className="flex-1 overflow-auto p-6">
+      <main className="flex-1 min-w-0 overflow-auto p-3 md:p-6">
         <Outlet />
       </main>
 
