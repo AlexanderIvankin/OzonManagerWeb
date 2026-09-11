@@ -73,18 +73,24 @@ const filterPriorityEmployees = (
 
 // Подпись сотрудника в стиле бота:
 // 🔴 Имя (ID: 123) | 📦: активные заказы | 🖨️: принтеры | 🗃️: модели
+// На узких экранах (max-md) статистика переносится на вторую строку,
+// чтобы не вылезать за пределы Select.
 const renderEmployeeLabel = (emp: EmployeeOption) => (
-  <span className="flex flex-wrap items-center gap-x-1">
-    <span aria-hidden>{MODEL_INDICATOR}</span>
-    <b>{emp.name}</b>
-    <span>
-      (ID: <code>{emp.id}</code>)
-    </span>
-    <span className="text-muted-foreground">
-      | 📦: {emp.active_count ?? 0} | 🖨️: {emp.capacity ?? "—"} | 🗃️:{" "}
+  <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-1 text-center lg:text-left">
+    <div>
+      {" "}
+      <span aria-hidden>{MODEL_INDICATOR}</span>
+      {" "}<b>{emp.name}</b>{" "}
+      <span>
+        (ID: <code>{emp.id}</code>)
+      </span>
+    </div>
+    <span className="text-muted-foreground max-lg:w-full max-lg:whitespace-normal">
+      <span className="hidden lg:inline">| </span>
+      📦: {emp.active_count ?? 0} | 🖨️: {emp.capacity ?? "—"} | 🗃️:{" "}
       {MODEL_LABEL}
     </span>
-  </span>
+  </div>
 );
 
 export const OrdersManagement = () => {
@@ -395,7 +401,7 @@ export const OrdersManagement = () => {
                             }))
                           }
                         >
-                          <SelectTrigger className="w-full h-10 text-base">
+                          <SelectTrigger className="w-full h-10 text-base max-lg:h-auto! max-lg:min-h-10 max-lg:py-1.5 max-lg:text-sm">
                             <SelectValue
                               className="text-base font-medium"
                               placeholder="Выберите сотрудника"
@@ -413,7 +419,7 @@ export const OrdersManagement = () => {
                               }}
                             </SelectValue>
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="max-lg:w-auto max-lg:max-w-[calc(100vw-2rem)]">
                             {list.length === 0 ? (
                               <div className="px-2 py-3 text-sm text-muted-foreground">
                                 {mode === "priority"

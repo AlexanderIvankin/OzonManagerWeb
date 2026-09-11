@@ -527,11 +527,11 @@ export const Notifications = () => {
   );
 
   return (
-    <div className="mx-auto max-w-4xl items-center justify-center">
+    <div className="mx-auto max-w-4xl items-center text-center md:text-start">
       <h1 className="mb-4 text-2xl font-bold">🔔 Оповещения</h1>
 
       {/* Вкладки: личные — всем, журнал действий и ошибки — персоналу */}
-      <div className="mb-4 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+      <div className="mb-4 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {tabButton("mine", "Личные", mineUnread)}
         {isStaff && tabButton("staff", "Действия сотрудников", staffUnread)}
         {isStaff && tabButton("errors", "Ошибки сервера", errorsCount)}
@@ -540,8 +540,8 @@ export const Notifications = () => {
       {tab === "errors" ? (
         <>
           {/* Панель действий журнала ошибок */}
-          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            <label className="mr-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <label className="mr-2 flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
@@ -648,7 +648,7 @@ export const Notifications = () => {
       ) : (
         <>
           {/* Поиск: номер заказа и артикул (обе вкладки) + имя сотрудника (журнал действий) */}
-          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <Input
               placeholder="🔎 Номер заказа..."
               value={orderInput}
@@ -683,8 +683,8 @@ export const Notifications = () => {
           </div>
 
           {/* Панель действий оповещений */}
-          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            <label className="mr-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="mb-3 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <label className="mr-2 flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-primary"
@@ -723,7 +723,7 @@ export const Notifications = () => {
             <Button size="sm" variant="destructive" onClick={handleClearRead}>
               ⚠️ Удалить все прочитанные
             </Button>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground sm:ml-auto">
+            <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-muted-foreground sm:ml-auto">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-primary"

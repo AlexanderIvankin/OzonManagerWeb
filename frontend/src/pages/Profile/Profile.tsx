@@ -115,7 +115,7 @@ export const Profile = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Основная информация */}
-          <div className="grid grid-cols-2 gap-5 text-center">
+          <div className="grid grid-cols-2 gap-1 text-center break-words">
             <div>
               <p className="text-sm font-medium text-muted-foreground">Логин</p>
               <p>{user?.username}</p>

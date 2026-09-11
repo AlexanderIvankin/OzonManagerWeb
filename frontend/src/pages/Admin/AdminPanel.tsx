@@ -341,7 +341,7 @@ export const AdminPanel = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 text-center md:text-start">
       <div>
         <h1 className="text-2xl font-bold">⚙️ Админская панель</h1>
         <p className="text-sm text-muted-foreground">
@@ -358,18 +358,20 @@ export const AdminPanel = () => {
               Аналог /order_details: статус, склад, состав, получатель
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
-              <div className="space-y-1.5">
-                <Label htmlFor="details-order">Номер заказа</Label>
-                <Input
-                  id="details-order"
-                  placeholder="12345678-0001-1"
-                  className="w-full sm:w-64"
-                  value={detailsOrderId}
-                  onChange={(e) => setDetailsOrderId(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLoadDetails()}
-                />
+          <CardContent className="flex flex-col flex-wrap space-y-4 justify-center lg:justify-start">
+            <div className="flex flex-col space-y-2 items-center">
+              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:flex-wrap lg:flex-col lg:items-center xl:flex-row xl:flex-nowrap xl:items-end">
+                <div className="flex flex-col items-center gap-2">
+                  <Label htmlFor="details-order">Номер заказа</Label>
+                  <Input
+                    id="details-order"
+                    placeholder="12345678-0001-1"
+                    className="w-full sm:w-64"
+                    value={detailsOrderId}
+                    onChange={(e) => setDetailsOrderId(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLoadDetails()}
+                  />
+                </div>
               </div>
               <Button
                 onClick={handleLoadDetails}
@@ -474,86 +476,89 @@ export const AdminPanel = () => {
               сотруднику, периоду и количеству
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
-              <div>
-                <Label className="mb-[5px]">Сотрудник</Label>
-                <Select
-                  value={complUserId}
-                  onValueChange={(v) => setComplUserId(v ?? "all")}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Все сотрудники">
-                      {(val) =>
-                        !val || val === "all" ? (
-                          <>
-                            <span className="inline-block align-middle -translate-y-[1px]">
-                              👥
-                            </span>{" "}
-                            Все сотрудники
-                          </>
-                        ) : (
-                          employeeName(employees, String(val))
-                        )
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">
-                      {" "}
-                      <span className="inline-block align-middle -translate-y-[1px]">
-                        👥
-                      </span>{" "}
-                      Все сотрудники
-                    </SelectItem>
-                    {employees.map((e) => (
-                      <SelectItem key={e.id} value={String(e.id)}>
-                        {e.name} (ID: {e.id})
+          <CardContent className="flex flex-col flex-wrap space-y-4 justify-center lg:justify-start">
+            <div className="flex flex-col space-y-3 items-center">
+              <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap lg:flex-col lg:items-center xl:flex-row xl:flex-nowrap xl:items-end">
+                {" "}
+                <div className="flex flex-col items-center gap-2">
+                  <Label>Сотрудник</Label>
+                  <Select
+                    value={complUserId}
+                    onValueChange={(v) => setComplUserId(v ?? "all")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Все сотрудники">
+                        {(val) =>
+                          !val || val === "all" ? (
+                            <>
+                              <span className="inline-block align-middle -translate-y-[1px]">
+                                👥
+                              </span>{" "}
+                              Все сотрудники
+                            </>
+                          ) : (
+                            employeeName(employees, String(val))
+                          )
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {" "}
+                        <span className="inline-block align-middle -translate-y-[1px]">
+                          👥
+                        </span>{" "}
+                        Все сотрудники
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-[5px]">Период</Label>
-                <Select
-                  value={complPeriod}
-                  onValueChange={(v) => setComplPeriod(v ?? "month")}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Период">
-                      {(val) =>
-                        val === "week"
-                          ? "За неделю"
-                          : val === "month"
-                            ? "За месяц"
-                            : "Всё время"
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="week">За неделю</SelectItem>
-                    <SelectItem value="month">За месяц</SelectItem>
-                    <SelectItem value="all">Всё время</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-[5px]">Кол-во</Label>
-                <Select
-                  value={complLimit}
-                  onValueChange={(v) => setComplLimit(v ?? "25")}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Кол-во" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
+                      {employees.map((e) => (
+                        <SelectItem key={e.id} value={String(e.id)}>
+                          {e.name} (ID: {e.id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Label>Период</Label>
+                  <Select
+                    value={complPeriod}
+                    onValueChange={(v) => setComplPeriod(v ?? "month")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Период">
+                        {(val) =>
+                          val === "week"
+                            ? "За неделю"
+                            : val === "month"
+                              ? "За месяц"
+                              : "Всё время"
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="week">За неделю</SelectItem>
+                      <SelectItem value="month">За месяц</SelectItem>
+                      <SelectItem value="all">Всё время</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Label>Кол-во</Label>
+                  <Select
+                    value={complLimit}
+                    onValueChange={(v) => setComplLimit(v ?? "25")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Кол-во" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <Button
                 onClick={handleLoadCompletedOrders}
@@ -606,58 +611,64 @@ export const AdminPanel = () => {
               сотруднику (выбирается по имени)
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="label-order">Номер заказа</Label>
-              <Input
-                id="label-order"
-                placeholder="12345678-0001-1"
-                className="w-64"
-                value={labelOrderId}
-                onChange={(e) => setLabelOrderId(e.target.value)}
-              />
-            </div>
-            <div className="w-64 space-y-1.5">
-              <Label>Получатель</Label>
-              <Select
-                value={labelTarget}
-                onValueChange={(v) => setLabelTarget(v ?? "self")}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Себе (скачать PDF)">
-                    {(val) =>
-                      !val || val === "self"
-                        ? "📥 Себе (скачать PDF)"
-                        : employeeName(employees, String(val))
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="self">📥 Себе (скачать PDF)</SelectItem>
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={String(e.id)}>
-                      👤 {e.name} (ID: {e.id})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-              <Button
-                variant="outline"
-                onClick={handleDownloadLabel}
-                disabled={labelBusy || !labelOrderId.trim()}
-              >
-                {labelBusy ? "Обработка..." : "⬇️ Скачать себе"}
-              </Button>
-              <Button
-                onClick={handleSendLabel}
-                disabled={
-                  labelBusy || !labelOrderId.trim() || labelTarget === "self"
-                }
-              >
-                {labelBusy ? "Отправка..." : "📤 Отправить сотруднику"}
-              </Button>
+          <CardContent className="flex flex-col flex-wrap space-y-4 justify-center lg:justify-start">
+            <div className="flex flex-col space-y-3 items-center">
+              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:flex-wrap lg:flex-col lg:items-center xl:flex-row xl:flex-nowrap xl:items-end">
+                <div className="flex flex-col items-center gap-2">
+                  <Label htmlFor="label-order">Номер заказа</Label>
+                  <Input
+                    id="label-order"
+                    placeholder="12345678-0001-1"
+                    className="w-full sm:w-64"
+                    value={labelOrderId}
+                    onChange={(e) => setLabelOrderId(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col items-center gap-2">
+                  <Label>Получатель</Label>
+                  <Select
+                    value={labelTarget}
+                    onValueChange={(v) => setLabelTarget(v ?? "self")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Себе (скачать PDF)">
+                        {(val) =>
+                          !val || val === "self"
+                            ? "📥 Себе (скачать PDF)"
+                            : employeeName(employees, String(val))
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="self">
+                        📥 Себе (скачать PDF)
+                      </SelectItem>
+                      {employees.map((e) => (
+                        <SelectItem key={e.id} value={String(e.id)}>
+                          👤 {e.name} (ID: {e.id})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadLabel}
+                  disabled={labelBusy || !labelOrderId.trim()}
+                >
+                  {labelBusy ? "Обработка..." : "⬇️ Скачать себе"}
+                </Button>
+                <Button
+                  onClick={handleSendLabel}
+                  disabled={
+                    labelBusy || !labelOrderId.trim() || labelTarget === "self"
+                  }
+                >
+                  {labelBusy ? "Отправка..." : "📤 Отправить сотруднику"}
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               Этикетка доступна только для заказов в статусе «awaiting_deliver».
@@ -675,37 +686,44 @@ export const AdminPanel = () => {
               обновить (материал, цвет, вес) или удалить статистику по артикулу
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
-              <div className="space-y-1.5">
-                <Label htmlFor="stats-offer">Артикул (offer_id)</Label>
-                <Input
-                  id="stats-offer"
-                  placeholder="2001867564-N"
-                  className="w-64"
-                  value={statsOfferId}
-                  onChange={(e) => setStatsOfferId(e.target.value)}
-                />
+          <CardContent className="flex flex-col flex-wrap space-y-4 justify-center lg:justify-start">
+            <div className="flex flex-col space-y-3 items-center">
+              <div className="flex flex-col flex-wrap items-center justify-center gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="flex flex-col items-center gap-2">
+                  <Label htmlFor="stats-offer">Артикул (offer_id)</Label>
+                  <Input
+                    id="stats-offer"
+                    placeholder="2001867564-N"
+                    className="w-full sm:w-64"
+                    value={statsOfferId}
+                    onChange={(e) => setStatsOfferId(e.target.value)}
+                  />
+                </div>
+
+                {/* Заполнение/обновление статистики */}
+                {/* Убрали лишние обертки, кнопки теперь выстроятся ровно рядом с инпутом */}
+                <div className="flex flex-wrap justify-center gap-2">
+                  <FillStatsDialog
+                    offerId={statsOfferId.trim()}
+                    onSuccess={() =>
+                      toast.success(
+                        `Статистика ${statsOfferId.trim()} сохранена`,
+                      )
+                    }
+                  >
+                    <Button disabled={!statsOfferId.trim()}>
+                      📝 Заполнить / обновить
+                    </Button>
+                  </FillStatsDialog>
+                  <Button
+                    variant="destructive"
+                    disabled={!statsOfferId.trim()}
+                    onClick={() => setDeleteStatsOpen(true)}
+                  >
+                    🗑 Удалить статистику
+                  </Button>
+                </div>
               </div>
-              {/* Заполнение/обновление статистики: диалог с материалом,
-                  цветом и весом (тот же, что используют сотрудники) */}
-              <FillStatsDialog
-                offerId={statsOfferId.trim()}
-                onSuccess={() =>
-                  toast.success(`Статистика ${statsOfferId.trim()} сохранена`)
-                }
-              >
-                <Button disabled={!statsOfferId.trim()}>
-                  📝 Заполнить / обновить
-                </Button>
-              </FillStatsDialog>
-              <Button
-                variant="destructive"
-                disabled={!statsOfferId.trim()}
-                onClick={() => setDeleteStatsOpen(true)}
-              >
-                🗑 Удалить статистику
-              </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               Заполнение доступно и для существующей статистики — данные будут
@@ -745,8 +763,8 @@ export const AdminPanel = () => {
               автоматическую проверку новых заказов
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="flex items-center gap-2 text-sm">
+          <CardContent className="flex flex-col flex-wrap space-y-4 justify-center xl:justify-start">
+            <p className="flex flex-wrap items-center justify-center gap-2 text-sm xl:justify-start">
               Статус:{" "}
               {schedulerPaused === null ? (
                 <Badge variant="outline">неизвестен</Badge>
@@ -756,7 +774,7 @@ export const AdminPanel = () => {
                 <Badge>▶️ Работает</Badge>
               )}
             </p>
-            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-col items-center gap-2 sm:flex-row sm:flex-wrap sm:items-center justify-center xl:justify-start">
               <Button
                 variant="outline"
                 onClick={handlePause}
