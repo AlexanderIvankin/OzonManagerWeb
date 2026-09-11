@@ -359,7 +359,7 @@ export const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col flex-wrap space-y-4 justify-center lg:justify-start">
-            <div className="flex flex-col space-y-2 items-center">
+            <div className="flex flex-col space-y-3 items-center">
               <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:flex-wrap lg:flex-col lg:items-center xl:flex-row xl:flex-nowrap xl:items-end">
                 <div className="flex flex-col items-center gap-2">
                   <Label htmlFor="details-order">Номер заказа</Label>
