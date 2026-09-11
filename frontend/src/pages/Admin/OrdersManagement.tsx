@@ -217,17 +217,17 @@ export const OrdersManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">
-          ⏳ Очередь заказов (awaiting_packaging)<br></br>
-          <span className="flex text-muted-foreground justify-center">
+      <div className="flex flex-col items-center justify-center gap-3 text-center lg:flex-row lg:justify-between">
+        <h1 className="text-2xl font-bold text-center">
+          ⏳ Очередь заказов (awaiting_packaging)
+          <span className="block text-muted-foreground mt-1">
             Число заказов в очереди:{" "}
-            <span className="text-blue-600">&nbsp;{orders.length}</span>
+            <span className="text-blue-600">{orders.length}</span>
           </span>
         </h1>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col items-center gap-2 md:flex-row md:items-end">
           {/* Фильтр по складу (аналог /orders [warehouse_id]) */}
-          <div className="flex flex-col">
+          <div className="flex flex-col items-center md:items-start">
             <Label className="mb-[8px]">Склад</Label>
             <Select
               value={warehouseFilter}
@@ -348,39 +348,44 @@ export const OrdersManagement = () => {
                   <div className="flex items-center gap-4">
                     <div className="flex-1 space-y-2">
                       {/* Выбор списка: приоритетные по складу / все (как в боте) */}
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 justify-center lg:justify-start">
                         <span className="text-sm font-medium text-muted-foreground">
                           Список:
                         </span>
-                        <Button
-                          size="sm"
-                          variant={mode === "priority" ? "default" : "outline"}
-                          onClick={() => changeListMode(order, "priority")}
-                          disabled={!warehouseId}
-                          title={
-                            warehouseId
-                              ? "Сотрудники с приоритетом по складу заказа"
-                              : "Склад заказа не указан"
-                          }
-                        >
-                          👑 По складу ({priorityEmployees.length})
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={mode === "all" ? "default" : "outline"}
-                          onClick={() => changeListMode(order, "all")}
-                        >
-                          <span className="inline-block align-middle -translate-y-[1px]">
-                            👥
-                          </span>{" "}
-                          Все ({visibleEmployees.length})
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴 нет),
-                          выдача при назначении пока не реализована
-                        </span>
+                        <div className="flex flex-wrap justify-center items-center gap-2 lg:justify-start">
+                          {" "}
+                          <Button
+                            size="sm"
+                            variant={
+                              mode === "priority" ? "default" : "outline"
+                            }
+                            onClick={() => changeListMode(order, "priority")}
+                            disabled={!warehouseId}
+                            title={
+                              warehouseId
+                                ? "Сотрудники с приоритетом по складу заказа"
+                                : "Склад заказа не указан"
+                            }
+                          >
+                            👑 По складу ({priorityEmployees.length})
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={mode === "all" ? "default" : "outline"}
+                            onClick={() => changeListMode(order, "all")}
+                          >
+                            <span className="inline-block align-middle -translate-y-[1px]">
+                              👥
+                            </span>{" "}
+                            Все ({visibleEmployees.length})
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴
+                            нет), выдача при назначении пока не реализована
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-4">
+                      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-5">
                         <Select
                           value={selectedEmployee[order.posting_number] || ""}
                           onValueChange={(val) =>

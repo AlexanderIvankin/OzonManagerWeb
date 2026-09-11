@@ -103,17 +103,13 @@ export const ActiveOrders = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold">
+      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
+        <h1 className="text-2xl font-bold text-center">
           📋 Активные заказы
-          <br></br>
-          <span className="flex text-muted-foreground justify-center">
-            Показано:{" "}
-            <span className="text-blue-600">&nbsp;{filtered.length}</span>
+          <span className="block text-muted-foreground mt-1 font-bold">
+            Показано: <span className="text-blue-600">{filtered.length}</span>
             {!loading && filtered.length !== orders.length && (
-              <span className="text-muted-foreground">
-                &nbsp;из {orders.length}
-              </span>
+              <> из {orders.length}</>
             )}
           </span>
         </h1>

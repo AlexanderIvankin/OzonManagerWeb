@@ -90,7 +90,7 @@ export const Warehouses = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
         <h1 className="text-2xl font-bold">
           🏭 Склады
           {selectedEmployee && (
@@ -100,7 +100,7 @@ export const Warehouses = () => {
             </span>
           )}
         </h1>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end">
           {/* Фильтр по имени сотрудника (аналог /employee_warehouses) */}
           <div className="flex flex-col">
             <Label className="mb-[8px]">Сотрудник</Label>

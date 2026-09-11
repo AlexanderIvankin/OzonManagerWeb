@@ -126,14 +126,14 @@ export const Layout = () => {
           )}
           <Link
             to="/notifications"
-            className="flex items-center justify-center md:justify-between px-2 md:px-3 py-2 rounded-md hover:bg-accent"
+            className="relative flex items-center justify-center md:justify-between px-2 md:px-3 py-2 rounded-md hover:bg-accent"
           >
             <span className="flex items-center">
               🔔
               <span className="hidden md:inline md:ml-2">Оповещения</span>
             </span>
             {unreadCount > 0 && (
-              <Badge className="ml-2">
+              <Badge className="absolute top-0 right-0 h-4 min-w-4 px-1 text-[10px] leading-none md:static md:h-auto md:min-w-0 md:px-2 md:py-0.5 md:text-xs md:ml-2">
                 {unreadCount > 99 ? "99+" : unreadCount}
               </Badge>
             )}
