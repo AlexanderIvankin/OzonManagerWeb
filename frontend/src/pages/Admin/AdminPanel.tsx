@@ -359,7 +359,7 @@ export const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
               <div className="space-y-1.5">
                 <Label htmlFor="details-order">Номер заказа</Label>
                 <Input
@@ -475,7 +475,7 @@ export const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
               <div>
                 <Label className="mb-[5px]">Сотрудник</Label>
                 <Select
@@ -642,7 +642,7 @@ export const AdminPanel = () => {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
               <Button
                 variant="outline"
                 onClick={handleDownloadLabel}
@@ -676,7 +676,7 @@ export const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
               <div className="space-y-1.5">
                 <Label htmlFor="stats-offer">Артикул (offer_id)</Label>
                 <Input
@@ -756,7 +756,7 @@ export const AdminPanel = () => {
                 <Badge>▶️ Работает</Badge>
               )}
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
               <Button
                 variant="outline"
                 onClick={handlePause}

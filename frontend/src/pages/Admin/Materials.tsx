@@ -136,7 +136,7 @@ export const Materials = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
         <h1 className="text-2xl font-bold">📁 Управление материалами</h1>
         <Button onClick={loadMaterials} disabled={loading}>
           🔄 Обновить

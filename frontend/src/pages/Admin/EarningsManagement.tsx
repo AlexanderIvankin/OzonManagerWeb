@@ -152,7 +152,7 @@ export const EarningsManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
         <h1 className="text-2xl font-bold">🏦 Управление заработком</h1>
         <Button onClick={loadData} disabled={loading}>
           🔄 Обновить
@@ -164,7 +164,7 @@ export const EarningsManagement = () => {
         <CardHeader className="flex justify-center">
           <CardTitle>Экспорт и действия</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-4">
+        <CardContent className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-end">
           <div>
             <Label className="mb-[15px] justify-center">Месяц</Label>
             <Input
@@ -176,7 +176,7 @@ export const EarningsManagement = () => {
           </div>
           <Button onClick={handleExport}>📥 Скачать отчёт</Button>
           <Button
-            className="ml-auto"
+            className="sm:ml-auto"
             variant="destructive"
             onClick={handleResetAll}
           >

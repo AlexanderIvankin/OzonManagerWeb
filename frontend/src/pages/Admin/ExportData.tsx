@@ -139,7 +139,7 @@ export const ExportData = () => {
             Файл Excel со списком сотрудников, их складами и настройками
             (используется для синхронизации).
           </p>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
             <Button
               onClick={() => handleExportTeamInfo(false)}
               disabled={loadingTeam}
@@ -173,7 +173,7 @@ export const ExportData = () => {
               backend/backups (ежедневный автобэкап также запускается
               планировщиком в 00:00).
             </p>
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
               <Button
                 onClick={handleDownloadDatabase}
                 disabled={loadingDb}

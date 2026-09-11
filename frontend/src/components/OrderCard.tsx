@@ -134,7 +134,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex flex-wrap gap-2">
+      <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
         <Button
           onClick={handleFinish}
           disabled={loading || order.statsStatus === "missing"}
@@ -146,7 +146,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
         </Button>
         <Button
           variant="secondary"
-          className="ml-auto"
+          className="sm:ml-auto"
           onClick={handleDownloadLabel}
           disabled={loading}
         >
