@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
 import { logout } from "../../store/authSlice";
@@ -29,6 +29,15 @@ export const Layout = () => {
   const handleToggleTheme = () => {
     setTheme(toggleTheme(theme));
   };
+
+  // Общие классы пунктов сайдбара: активная вкладка подсвечивается,
+  // чтобы было видно, где находишься (end — точное совпадение пути,
+  // нужно для /admin, иначе он «активен» на всех разделах админки).
+  const navClass =
+    ({ isActive }: { isActive: boolean }) =>
+      `flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md transition-colors ${
+        isActive ? "bg-primary/10 font-medium text-primary" : "hover:bg-accent"
+      }`;
 
   useEffect(() => {
     let cancelled = false;
@@ -104,29 +113,29 @@ export const Layout = () => {
           </p>
         </div>
         <nav className="flex-1 space-y-1">
-          <Link
-            to="/profile"
-            className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-          >
+          <NavLink to="/profile" className={navClass}>
             <span className="inline-block align-middle -translate-y-[3px]">
               🪪
             </span>
             <span className="hidden md:inline md:ml-2">Профиль</span>
-          </Link>
+          </NavLink>
           {["employee", "moderator", "admin", "god"].includes(
             user?.role || "",
           ) && (
-            <Link
-              to="/orders"
-              className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-            >
+            <NavLink to="/orders" className={navClass}>
               📦
               <span className="hidden md:inline md:ml-2">Заказы</span>
-            </Link>
+            </NavLink>
           )}
-          <Link
+          <NavLink
             to="/notifications"
-            className="relative flex items-center justify-center md:justify-between px-2 md:px-3 py-2 rounded-md hover:bg-accent"
+            className={({ isActive }) =>
+              `relative flex items-center justify-center md:justify-between px-2 md:px-3 py-2 rounded-md transition-colors ${
+                isActive
+                  ? "bg-primary/10 font-medium text-primary"
+                  : "hover:bg-accent"
+              }`
+            }
           >
             <span className="flex items-center">
               🔔
@@ -137,82 +146,55 @@ export const Layout = () => {
                 {unreadCount > 99 ? "99+" : unreadCount}
               </Badge>
             )}
-          </Link>
+          </NavLink>
           {/* Модератор = Администратор: все разделы админки доступны
               также и Создателю */}
           {["moderator", "admin", "god"].includes(user?.role || "") && (
-            <Link
-              to="/admin"
-              className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-            >
+            <NavLink to="/admin" end className={navClass}>
               ⚙️
               <span className="hidden md:inline md:ml-2">Админка</span>
-            </Link>
+            </NavLink>
           )}
           {["moderator", "admin", "god"].includes(user?.role || "") && (
             <>
-              <Link
-                to="/admin/users"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              <NavLink to="/admin/users" className={navClass}>
                 <span className="inline-block align-middle -translate-y-[2px]">
                   👥
                 </span>
                 <span className="hidden md:inline md:ml-2">Пользователи</span>
-              </Link>
-              <Link
-                to="/admin/warehouses"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/warehouses" className={navClass}>
                 🏭
                 <span className="hidden md:inline md:ml-2">Склады</span>
-              </Link>
-              <Link
-                to="/admin/orders"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/orders" className={navClass}>
                 ⏳
                 <span className="hidden md:inline md:ml-2">
                   Очередь заказов
                 </span>
-              </Link>
-              <Link
-                to="/admin/active-orders"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/active-orders" className={navClass}>
                 📋
                 <span className="hidden md:inline md:ml-2">
                   Активные заказы
                 </span>
-              </Link>
-              <Link
-                to="/admin/materials"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/materials" className={navClass}>
                 📁
                 <span className="hidden md:inline md:ml-2">Материалы</span>
-              </Link>
-              <Link
-                to="/admin/export"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/export" className={navClass}>
                 📤
                 <span className="hidden md:inline md:ml-2">Экспорт данных</span>
-              </Link>
-              <Link
-                to="/admin/earnings"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/earnings" className={navClass}>
                 🏦
                 <span className="hidden md:inline md:ml-2">Заработок</span>
-              </Link>
-              <Link
-                to="/admin/stats"
-                className="flex items-center justify-center md:justify-start px-2 md:px-3 py-2 rounded-md hover:bg-accent"
-              >
+              </NavLink>
+              <NavLink to="/admin/stats" className={navClass}>
                 📊
                 <span className="hidden md:inline md:ml-2">Статистика</span>
-              </Link>
+              </NavLink>
             </>
           )}
         </nav>
