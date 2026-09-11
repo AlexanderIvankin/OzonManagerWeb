@@ -333,7 +333,7 @@ export const Users = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
+      <div className="flex flex-col items-center justify-center gap-3 text-center lg:flex-row lg:justify-between">
         <h1 className="text-2xl font-bold">
           {" "}
           <span className="inline-block align-middle -translate-y-[5px]">
@@ -341,7 +341,7 @@ export const Users = () => {
           </span>{" "}
           Пользователи
         </h1>
-        <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col items-center gap-2 sm:flex-row">
           <Button
             size="sm"
             onClick={() => {

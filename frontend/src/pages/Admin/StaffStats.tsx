@@ -173,21 +173,25 @@ export const StaffStats = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
+      <div className="flex flex-col items-center justify-center gap-3 text-center lg:flex-row lg:justify-between">
         <h1 className="text-2xl font-bold">📊 Статистика команды</h1>
         <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center">
           {isGod && godRow && (
-            <Button className="bg-purple-900 text-halloween-text border-purple-900 hover:bg-purple-700" size="sm" onClick={openGodEdit}>
+            <Button
+              className="bg-purple-900 text-halloween-text border-purple-900 hover:bg-purple-700"
+              size="sm"
+              onClick={openGodEdit}
+            >
               🎃 Моя пасхалка
             </Button>
           )}
-          <label className="flex items-center gap-1 text-sm">
+          <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
             <input
               type="checkbox"
               checked={includeFired}
               onChange={(e) => setIncludeFired(e.target.checked)}
             />
-            Показывать уволенных
+            <span>Показывать уволенных</span>
           </label>
           <Button onClick={loadStats} disabled={loading}>
             {loading ? "Загрузка..." : "🔄 Обновить"}
