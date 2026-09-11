@@ -217,7 +217,7 @@ export const OrdersManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
           ⏳ Очередь заказов (awaiting_packaging)<br></br>
           <span className="flex text-muted-foreground justify-center">
@@ -225,7 +225,7 @@ export const OrdersManagement = () => {
             <span className="text-blue-600">&nbsp;{orders.length}</span>
           </span>
         </h1>
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           {/* Фильтр по складу (аналог /orders [warehouse_id]) */}
           <div className="flex flex-col">
             <Label className="mb-[8px]">Склад</Label>
@@ -233,7 +233,7 @@ export const OrdersManagement = () => {
               value={warehouseFilter}
               onValueChange={handleWarehouseFilterChange}
             >
-              <SelectTrigger className="w-64">
+              <SelectTrigger className="w-full sm:w-64">
                 <SelectValue placeholder="Все склады">
                   {(val) =>
                     !val || val === "all"
@@ -314,9 +314,7 @@ export const OrdersManagement = () => {
                     </div>
                   </div>
                   <div>
-                    <div className="font-semibold text-l mb-[5px]">
-                      Состав:
-                    </div>
+                    <div className="font-semibold text-l mb-[5px]">Состав:</div>
                     <ul className="text-sm space-y-5">
                       {order.products?.map((p, idx) => (
                         <li key={idx}>
@@ -372,14 +370,17 @@ export const OrdersManagement = () => {
                           variant={mode === "all" ? "default" : "outline"}
                           onClick={() => changeListMode(order, "all")}
                         >
-                          👥 Все ({visibleEmployees.length})
+                          <span className="inline-block align-middle -translate-y-[1px]">
+                            👥
+                          </span>{" "}
+                          Все ({visibleEmployees.length})
                         </Button>
                         <span className="text-xs text-muted-foreground">
                           🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴 нет),
                           выдача при назначении пока не реализована
                         </span>
                       </div>
-                      <div className="flex flex-row items-center gap-4">
+                      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-4">
                         <Select
                           value={selectedEmployee[order.posting_number] || ""}
                           onValueChange={(val) =>
@@ -427,7 +428,7 @@ export const OrdersManagement = () => {
                         </Select>
                         <Button
                           size="lg"
-                          className="h-10 px-5 text-base"
+                          className="h-10 px-5 text-base w-full sm:w-auto"
                           onClick={() =>
                             handleAssign(
                               order.posting_number,

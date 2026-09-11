@@ -103,7 +103,7 @@ export const ActiveOrders = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">
           📋 Активные заказы
           <br></br>
@@ -201,7 +201,7 @@ export const ActiveOrders = () => {
           {filtered.map((order) => (
             <Card key={order.orderId}>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex flex-wrap items-center justify-between gap-2">
                   <span>
                     Заказ{" "}
                     <span className="font-bold">

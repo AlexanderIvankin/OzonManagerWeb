@@ -70,7 +70,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center justify-between">
+        <CardTitle className="flex flex-wrap items-center justify-between gap-2">
           <span>
             Заказ{" "}
             <span className="font-bold">

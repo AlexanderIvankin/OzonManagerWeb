@@ -173,9 +173,9 @@ export const StaffStats = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">📊 Статистика команды</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isGod && godRow && (
             <Button className="bg-purple-900 text-halloween-text border-purple-900 hover:bg-purple-700" size="sm" onClick={openGodEdit}>
               🎃 Моя пасхалка
@@ -201,7 +201,7 @@ export const StaffStats = () => {
             <TableHeader>
               <TableRow>
                 <TableHead
-                  className="text-center cursor-pointer select-none"
+                  className="text-center cursor-pointer select-none hidden md:table-cell"
                   onClick={() => toggleSort("id")}
                 >
                   ID{sortIcon("id")}
@@ -213,7 +213,7 @@ export const StaffStats = () => {
                   Имя{sortIcon("name")}
                 </TableHead>
                 <TableHead
-                  className="text-center cursor-pointer select-none"
+                  className="text-center cursor-pointer select-none hidden md:table-cell"
                   onClick={() => toggleSort("username")}
                 >
                   Логин{sortIcon("username")}
@@ -264,7 +264,7 @@ export const StaffStats = () => {
                     key={row.id}
                     className={row.is_fired ? "opacity-50" : ""}
                   >
-                    <TableCell className="text-center">
+                    <TableCell className="text-center hidden md:table-cell">
                       <code>{row.id}</code>
                     </TableCell>
                     <TableCell className="text-center">
@@ -279,7 +279,7 @@ export const StaffStats = () => {
                         </Badge>
                       )} */}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell className="text-center hidden md:table-cell">
                       {row.username}
                     </TableCell>
                     <TableCell className="text-center">

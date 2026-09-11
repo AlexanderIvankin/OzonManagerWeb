@@ -654,14 +654,14 @@ export const Notifications = () => {
               value={orderInput}
               onChange={(e) => setOrderInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && applySearch()}
-              className="w-52"
+              className="w-full sm:w-52"
             />
             <Input
               placeholder="🔖 Артикул (offer_id)..."
               value={offerInput}
               onChange={(e) => setOfferInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && applySearch()}
-              className="w-52"
+              className="w-full sm:w-52"
             />
             {tab === "staff" && (
               <Input
@@ -669,7 +669,7 @@ export const Notifications = () => {
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && applySearch()}
-                className="w-52"
+                className="w-full sm:w-52"
               />
             )}
             <Button size="sm" variant="outline" onClick={applySearch}>

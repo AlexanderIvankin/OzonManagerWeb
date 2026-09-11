@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { useSelector } from "react-redux";
 import { RootState } from "../../store";
-import { adminApi, getBlobErrorMessage, getDownloadFileName } from "../../api/admin";
+import {
+  adminApi,
+  getBlobErrorMessage,
+  getDownloadFileName,
+} from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -65,7 +69,9 @@ export const ExportData = () => {
   };
 
   const handleCreateBackup = async () => {
-    if (!confirm("Создать бэкап базы данных на сервере (папка backend/backups)?"))
+    if (
+      !confirm("Создать бэкап базы данных на сервере (папка backend/backups)?")
+    )
       return;
     setCreatingBackup(true);
     try {
@@ -120,14 +126,20 @@ export const ExportData = () => {
       {/* Сотрудники (team-info) */}
       <Card>
         <CardHeader>
-          <CardTitle>👥 Сотрудники и склады</CardTitle>
+          <CardTitle>
+            {" "}
+            <span className="inline-block align-middle -translate-y-[3px]">
+              👥
+            </span>{" "}
+            Сотрудники и склады
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Файл Excel со списком сотрудников, их складами и настройками
             (используется для синхронизации).
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <Button
               onClick={() => handleExportTeamInfo(false)}
               disabled={loadingTeam}
@@ -157,8 +169,8 @@ export const ExportData = () => {
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Скачивается консистентный снимок базы данных (VACUUM INTO) на
-              момент запроса. Кнопка «Бэкап на сервере» создаёт копию БД в
-              папке backend/backups (ежедневный автобэкап также запускается
+              момент запроса. Кнопка «Бэкап на сервере» создаёт копию БД в папке
+              backend/backups (ежедневный автобэкап также запускается
               планировщиком в 00:00).
             </p>
             <div className="flex flex-wrap gap-4">
