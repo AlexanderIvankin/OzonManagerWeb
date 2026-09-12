@@ -123,6 +123,19 @@ async function createTables(db) {
     )
   `);
 
+  // Миграция assignments (аналог BOTFILES/db.js): колонки для напоминаний
+  // о неотправленных заказах (планировщик awaiting_deliver). Добавляются
+  // безопасно, только если их ещё нет.
+  const assignmentsInfo = await db.all('PRAGMA table_info(assignments)');
+  if (!assignmentsInfo.some((col) => col.name === 'deliver_reminder_sent_at')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN deliver_reminder_sent_at INTEGER');
+    console.log('[DB] Добавлена колонка deliver_reminder_sent_at в assignments');
+  }
+  if (!assignmentsInfo.some((col) => col.name === 'deliver_reminder_count')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN deliver_reminder_count INTEGER DEFAULT 0');
+    console.log('[DB] Добавлена колонка deliver_reminder_count в assignments');
+  }
+
   // --- Склады ---
   await db.exec(`
     CREATE TABLE IF NOT EXISTS warehouses (
