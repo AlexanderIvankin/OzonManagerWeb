@@ -187,6 +187,66 @@ const TEMPLATES = {
       message: `${p.adminName || 'Администратор'} отправил этикетку заказа ${p.orderId} сотруднику ${p.userName || '—'}.`,
     },
   }),
+
+  // ==========================================================================
+  // Напоминания о неотправленных заказах (статус awaiting_deliver).
+  // Создаются планировщиком awaiting_deliver (scheduler.js) раз в сутки:
+  //   user  — лично сотруднику, чей заказ «висит» без отправки;
+  //   staff — копия в журнал действий персоналу (модераторы получают её
+  //           ещё и live через WebSocket, как обычные действия сотрудников).
+  // ==========================================================================
+  deliver_reminder: (p) => {
+    const products = Array.isArray(p.details?.products) ? p.details.products : [];
+    const shown = products.slice(0, 3);
+    const more = products.length - shown.length;
+    const productsLine = products.length
+      ? `\nТовары: ${shown
+          .map((pr) => `${pr.name || '—'}${pr.offer_id ? ` (${pr.offer_id})` : ''} — ${pr.quantity || 1} шт.`)
+          .join('; ')}${more > 0 ? ` … и ещё ${more}` : ''}.`
+      : '';
+    const earningsLine =
+      p.amount != null ? `\n💰 Заработок по заказу: ${p.amount} руб.` : '';
+    const repeatedLine =
+      p.reminderCount > 0 ? `\n🔔 Ранее вам уже напоминали: ${p.reminderCount} раз(а).` : '';
+
+    return {
+      user: {
+        title: `⏰ Заказ ${p.orderId} не отправлен`,
+        message:
+          `Заказ ${p.orderId} был завершён ${p.daysPassed} дн. назад, но всё ещё находится в статусе «ожидает отправки».` +
+          repeatedLine +
+          earningsLine +
+          productsLine +
+          `\n⚠️ Пожалуйста, отправьте заказ как можно скорее, иначе заработок может быть отменён.`,
+      },
+      staff: {
+        title: `⏰ ${p.userName || 'Сотрудник'}: заказ ${p.orderId} не отправлен`,
+        message:
+          `Сотрудник ${p.userName || 'Неизвестно'} завершил заказ ${p.orderId} ${p.daysPassed} дн. назад, но заказ всё ещё в статусе «ожидает отправки».` +
+          `\n🔔 Напоминаний отправлено: ${(p.reminderCount || 0) + 1}.` +
+          earningsLine +
+          productsLine,
+      },
+    };
+  },
+
+  // Итог ежедневной проверки «ожидает отправки» — только персоналу.
+  deliver_reminder_summary: (p) => ({
+    user: null,
+    staff: {
+      title: `📋 Проверка «ожидает отправки» завершена`,
+      message: `Найдено проблемных заказов: ${p.found ?? 0}.\nНапоминаний отправлено сотрудникам: ${p.sent ?? 0}.`,
+    },
+  }),
+
+  // Автоматический ежемесячный экспорт заработка (планировщик) — только персоналу.
+  monthly_export_done: (p) => ({
+    user: null,
+    staff: {
+      title: `📊 Экспорт заработка за ${p.month} выполнен`,
+      message: `Автоматический экспорт заработка за ${p.month} выполнен.\nФайл: ${p.file || '—'}.`,
+    },
+  }),
 };
 
 /**

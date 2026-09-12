@@ -146,6 +146,16 @@ initSocket(server);
     scheduler.startDailyPromotionCleaner();
     scheduler.startMonthlyExportChecker();
 
+    // Ежедневная проверка заказов «ожидает отправки» (awaiting_deliver):
+    // напоминания уходят в оповещения сотруднику и персоналу (модераторам
+    // и остальным staff-ролям), а не сообщениями Telegram-бота.
+    if (process.env.DELIVER_REMINDER_ENABLED === 'true') {
+      scheduler.startAwaitingDeliverReminderChecker();
+      console.log('✅ Проверка awaiting_deliver включена');
+    } else {
+      console.log('⏭️ Проверка awaiting_deliver отключена (DELIVER_REMINDER_ENABLED != true)');
+    }
+
     console.log('✅ Планировщик запущен');
 
     // Первоначальная загрузка очереди
