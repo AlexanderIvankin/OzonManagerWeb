@@ -29,6 +29,19 @@ export interface User {
   }>;
   // Заполняется только при withWarehouses=true в getUsers
   active_count?: number;
+  // Выданные 3D-модели (offer_id из issued_models) — при withWarehouses=true
+  issued_offer_ids?: string[];
+}
+
+export interface OfferModelRow {
+  offer_id: string;
+  s3_key: string;
+  file_name: string | null;
+  file_hash: string | null;
+  file_size: number | null;
+  uploaded_at: number | null;
+  uploaded_by: number | null;
+  uploaded_by_name: string | null;
 }
 
 export interface StaffStatsRow {
@@ -71,6 +84,8 @@ export interface AdminActiveOrder {
     offer_id?: string;
     sku?: string;
     images?: Array<{ url: string; name: string }>;
+    // 3D-модель (zip в S3): наличие = кнопка скачивания у сотрудника
+    model?: { offerId: string; fileName: string; fileSize: number | null } | null;
   }>;
 }
 
@@ -292,6 +307,38 @@ export const adminApi = {
     api
       .post(`/admin/orders/${encodeURIComponent(orderId)}/label/send`, { userId })
       .then((res) => res.data),
+
+  // === 3D-модели (zip-архивы в S3, раздел «Модели») ===
+  // Список всех моделей
+  getModels: () =>
+    api.get<OfferModelRow[]>("/admin/models").then((res) => res.data),
+
+  // Загрузить/обновить zip для offer_id (offer_id можно не указывать —
+  // тогда сервер возьмёт его из имени файла {offer_id}.zip)
+  uploadModel: (file: File, offerId?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (offerId) formData.append("offerId", offerId);
+    return api
+      .post<{ message: string; model: OfferModelRow }>(
+        "/admin/models/upload",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      )
+      .then((res) => res.data);
+  },
+
+  // Удалить модель (zip из S3 + метаданные)
+  deleteModel: (offerId: string) =>
+    api
+      .delete<{ message: string }>(`/admin/models/${encodeURIComponent(offerId)}`)
+      .then((res) => res.data),
+
+  // Скачать модель себе (персонал)
+  downloadModel: (offerId: string): Promise<AxiosResponse<Blob>> =>
+    api.get(`/admin/models/${encodeURIComponent(offerId)}/download`, {
+      responseType: "blob",
+    }),
 };
 
 /**

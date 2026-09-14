@@ -13,6 +13,13 @@ import { toast } from "sonner";
 import { FillStatsDialog } from "./FillStatsDialog";
 import { ProductImages } from "./ProductImages";
 
+// Размер файла в человекочитаемом виде (МБ)
+const formatSize = (bytes: number | null | undefined) => {
+  if (!bytes) return "";
+  const mb = bytes / (1024 * 1024);
+  return ` · ${mb >= 1 ? `${mb.toFixed(1)} МБ` : `${(bytes / 1024).toFixed(0)} КБ`}`;
+};
+
 interface OrderCardProps {
   order: Order;
   onOrderUpdated: () => void;
@@ -20,6 +27,8 @@ interface OrderCardProps {
 
 export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
   const [loading, setLoading] = useState(false);
+  // Скачивание моделей: индикаторы по offer_id (одноразовый токен + скачивание)
+  const [modelLoading, setModelLoading] = useState<Record<string, boolean>>({});
 
   const handleFinish = async () => {
     if (!confirm(`Завершить заказ ${order.orderId}?`)) return;
@@ -62,6 +71,31 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
       toast.error(err.message || "Не удалось скачать этикетку");
+    }
+  };
+
+  // Скачивание 3D-модели товара: токен -> zip (прямых ссылок на S3 нет)
+  const handleDownloadModel = async (
+    offerId: string,
+    fileName: string,
+  ) => {
+    setModelLoading((prev) => ({ ...prev, [offerId]: true }));
+    try {
+      const grant = await ordersApi.requestModelToken(offerId);
+      const blob = await ordersApi.downloadModelByToken(grant.token);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = grant.fileName || fileName;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success(`Модель ${grant.fileName} скачана`);
+    } catch (err: any) {
+      const message =
+        err.response?.data?.error || err.message || "Не удалось скачать модель";
+      toast.error(message);
+    } finally {
+      setModelLoading((prev) => ({ ...prev, [offerId]: false }));
     }
   };
 
@@ -123,6 +157,27 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
                         </span>
                         )
                       </span>
+                    )}
+                    {p.offer_id && p.model && (
+                      <div className="mt-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!!modelLoading[p.offer_id]}
+                          onClick={() =>
+                            handleDownloadModel(p.offer_id!, p.model!.fileName)
+                          }
+                          title={`Скачать 3D-модель: ${p.model.fileName}${formatSize(p.model.fileSize)}`}
+                        >
+                          {modelLoading[p.offer_id]
+                            ? "⏳ Скачивание…"
+                            : "⬇️ Скачать модель"}{" "}
+                          <span className="text-muted-foreground">
+                            ({p.model.fileName}
+                            {formatSize(p.model.fileSize)})
+                          </span>
+                        </Button>
+                      </div>
                     )}
                   </div>
                   {p.images && p.images.length > 0 && (

@@ -15,6 +15,7 @@ import { Warehouses } from "./pages/Admin/Warehouses";
 import { OrdersManagement } from "./pages/Admin/OrdersManagement";
 import { ActiveOrders } from "./pages/Admin/ActiveOrders";
 import { Materials } from "./pages/Admin/Materials";
+import { Models } from "./pages/Admin/Models";
 import { EarningsManagement } from "./pages/Admin/EarningsManagement";
 import { StaffStats } from "./pages/Admin/StaffStats";
 import { ExportData } from "./pages/Admin/ExportData";
@@ -63,6 +64,7 @@ function App() {
               <Route path="/admin/orders" element={<OrdersManagement />} />
               <Route path="/admin/active-orders" element={<ActiveOrders />} />
               <Route path="/admin/materials" element={<Materials />} />
+              <Route path="/admin/models" element={<Models />} />
               <Route path="/admin/earnings" element={<EarningsManagement />} />
               <Route path="/admin/stats" element={<StaffStats />} />
               <Route path="/admin/export" element={<ExportData />} />

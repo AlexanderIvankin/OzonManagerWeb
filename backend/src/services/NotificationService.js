@@ -247,6 +247,69 @@ const TEMPLATES = {
       message: `Автоматический экспорт заработка за ${p.month} выполнен.\nФайл: ${p.file || '—'}.`,
     },
   }),
+
+  // === 3D-модели (zip в S3) ===
+
+  // Сотруднику: модели по заказу доступны для скачивания (кнопка в карточке заказа
+  // и в самом оповещении). offerIds участвуют в поиске по артикулу.
+  models_available: (p) => {
+    const offers = Array.isArray(p.offerIds) ? p.offerIds.join(', ') : '';
+    const missing = Array.isArray(p.missingOffers) && p.missingOffers.length
+      ? `\n⚠️ Без моделей остались: ${p.missingOffers.join(', ')} — обратитесь к модератору.`
+      : '';
+    return {
+      user: {
+        title: `📁 3D-модели для заказа ${p.orderId} доступны`,
+        message: `Доступны 3D-модели для заказа ${p.orderId}:\n${offers}.${missing}\nСкачайте их в карточке заказа («Мои заказы»).`,
+      },
+      staff: {
+        title: `📁 ${p.userName}: выданы 3D-модели (заказ ${p.orderId})`,
+        message: `Сотруднику ${p.userName} выданы 3D-модели по заказу ${p.orderId}: ${offers}.`,
+      },
+    };
+  },
+
+  // Ни одной модели по заказу не найдено — сотруднику info, персоналу задача.
+  models_missing: (p) => {
+    const offers = Array.isArray(p.offerIds) ? p.offerIds.join(', ') : '';
+    return {
+      user: {
+        title: `ℹ️ Нет 3D-моделей для заказа ${p.orderId}`,
+        message: `Для товаров заказа ${p.orderId} (${offers}) нет 3D-моделей.\nОбратитесь к модератору.`,
+      },
+      staff: {
+        title: `⚠️ ${p.userName}: нет 3D-моделей (заказ ${p.orderId})`,
+        message: `Для заказа ${p.orderId} (${p.userName}) отсутствуют 3D-модели: ${offers}.\nЗагрузите их в разделе «Модели» или передайте сотруднику вручную.`,
+      },
+    };
+  },
+
+  // Журнал персонала: модель загружена/обновлена
+  model_uploaded: (p) => ({
+    user: null,
+    staff: {
+      title: `📤 Модель ${p.offerId} загружена`,
+      message: `Модель ${p.fileName || p.offerId + '.zip'} для ${p.offerId} загружена (${p.filesCount || 0} файл(ов) в архиве).${p.adminName ? `\nЗагрузил: ${p.adminName}.` : ''}`,
+    },
+  }),
+
+  // Сотруднику с выданной моделью: архив обновился — скачайте заново
+  model_updated: (p) => ({
+    user: {
+      title: `🔄 Модель ${p.offerId} обновлена`,
+      message: `3D-модель для ${p.offerId} обновлена (${p.fileName}).\nСкачайте актуальную версию в карточке заказа.`,
+    },
+    staff: null,
+  }),
+
+  // Журнал персонала: модель удалена
+  model_deleted: (p) => ({
+    user: null,
+    staff: {
+      title: `🗑 Модель ${p.offerId} удалена`,
+      message: `3D-модель для ${p.offerId} удалена из хранилища.${p.adminName ? `\nУдалил: ${p.adminName}.` : ''}`,
+    },
+  }),
 };
 
 /**

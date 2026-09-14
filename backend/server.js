@@ -33,6 +33,7 @@ const authRoutes = require('./src/routes/auth');
 const userRoutes = require('./src/routes/user');
 const adminRoutes = require('./src/routes/admin');
 const notificationsRoutes = require('./src/routes/notifications');
+const modelsRoutes = require('./src/routes/models');
 const NotificationService = require('./src/services/NotificationService');
 const { initSocket } = require('./src/socket');
 
@@ -111,6 +112,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/models', modelsRoutes);
 
 // Error handling middleware.
 // ВАЖНО: сигнатура обязана иметь 4 аргумента (даже если некоторые не используются) —
@@ -145,6 +147,9 @@ initSocket(server);
     scheduler.startNotificationsCleanup();
     scheduler.startDailyPromotionCleaner();
     scheduler.startMonthlyExportChecker();
+    // 3D-модели: ежечасная чистка просроченного локального кэша zip
+    // (TTL — MODELS_CACHE_TTL_MIN) и использованных/просроченных токенов скачивания.
+    scheduler.startModelsMaintenanceChecker();
 
     // Ежедневная проверка заказов «ожидает отправки» (awaiting_deliver):
     // напоминания уходят в оповещения сотруднику и персоналу (модераторам

@@ -183,6 +183,10 @@ export const Layout = () => {
                 📁
                 <span className="hidden md:inline md:ml-2">Материалы</span>
               </NavLink>
+              <NavLink to="/admin/models" className={navClass}>
+                🧊
+                <span className="hidden md:inline md:ml-2">Модели</span>
+              </NavLink>
               <NavLink to="/admin/export" className={navClass}>
                 📤
                 <span className="hidden md:inline md:ml-2">Экспорт данных</span>

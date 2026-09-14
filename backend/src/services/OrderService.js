@@ -5,6 +5,7 @@ const NotificationService = require('./NotificationService');
 const { escapeHtml } = require('../utils');
 const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders, productImagesCache } = require('../state');
 const EarningsService = require('./EarningsService');
+const ModelService = require('./ModelService');
 
 // Глобальное состояние очереди (в памяти)
 let pendingNewOrders = [];
@@ -305,13 +306,28 @@ class OrderService {
       // В веб-версии фото всегда доступны на странице «Заказы»
       // (attachProductImages) — дублировать в оповещения не нужно.
 
-      // === 3D-МОДЕЛИ: TODO ===
-      // TODO: перенос выдачи 3D-моделей из commands.js assignOrder (шаг 9):
-      //  - выбор моделей по расширениям (.stl/.3mf/.step/.obj/.zip) с учётом
-      //    родительского offer_id (getParentOfferId),
-      //  - текстовые инструкции (textFiles) и skipped-модели -> уведомление персонала,
-      //  - учёт выданных моделей сотруднику (issued_models / addIssuedModel).
-      // Пока модели выдаются вручную (как раньше — через модератора).
+      // === 3D-МОДЕЛИ (шаг 9 из bot.js assignOrder) ===
+      // Для каждого offer_id из состава заказа ищем zip-модель в offer_models
+      // (с учётом родительского артикула -NR/-NL). Найденные модели записываются
+      // сотруднику в issued_models, сотруднику уходит оповещение «модели доступны»,
+      // персоналу — журнал выданных и список недостающих. Ошибка выдачи моделей
+      // НЕ отменяет назначение заказа (как в бот-версии).
+      let modelsSummary = null;
+      try {
+        modelsSummary = await ModelService.issueForAssignment(
+          orderId,
+          userId,
+          employee,
+          orderDetails
+        );
+      } catch (modelsErr) {
+        console.error(`[ASSIGN] Ошибка выдачи 3D-моделей для ${orderId}:`, modelsErr);
+        NotificationService.notifyStaff('order_assign_error', {
+          orderId,
+          error: `Выдача 3D-моделей: ${modelsErr.message}`,
+          userName: employee.name,
+        });
+      }
 
       orderAssignRetries.delete(orderId);
       console.log(`[ASSIGN] Заказ ${orderId} успешно назначен сотруднику ${employee.name} (ID ${employee.id})`);

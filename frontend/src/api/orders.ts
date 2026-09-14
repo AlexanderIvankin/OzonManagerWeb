@@ -1,5 +1,12 @@
 import api from ".";
 
+export interface ProductModel {
+  /** Артикул, по которому лежит zip (может отличаться: родитель -NR/-NL) */
+  offerId: string;
+  fileName: string;
+  fileSize: number | null;
+}
+
 export interface Order {
   orderId: string;
   assignedAt: number;
@@ -16,12 +23,22 @@ export interface OrderProduct {
   sku?: string;
   price?: number;
   images?: Array<{ url: string; name: string }>;
+  // 3D-модель (zip в S3) — если есть, клиент показывает кнопку «Скачать модель»
+  model?: ProductModel | null;
 }
 
 export interface FinishOrderResponse {
   message: string;
   earnings: number;
   label: "available" | "not available";
+}
+
+export interface ModelDownloadGrant {
+  token: string;
+  expiresAt: number;
+  offerId: string;
+  fileName: string;
+  fileSize: number | null;
 }
 
 export const ordersApi = {
@@ -58,4 +75,20 @@ export const ordersApi = {
         responseType: "blob",
       })
       .then((res) => res.data),
+
+  // === 3D-модели (zip, без прямых ссылок на S3) ===
+  // Шаг 1: запросить одноразовый токен скачивания (TTL ~15 минут)
+  requestModelToken: (offerId: string) =>
+    api
+      .post<ModelDownloadGrant>(
+        `/models/request/${encodeURIComponent(offerId)}`,
+      )
+      .then((res) => res.data),
+
+  // Шаг 2: скачать zip по токену (токен гасится при первом обращении)
+  downloadModelByToken: (token: string) =>
+    api
+      .get(`/models/download/${token}`, { responseType: "blob" })
+      .then((res) => res.data),
 };
+
