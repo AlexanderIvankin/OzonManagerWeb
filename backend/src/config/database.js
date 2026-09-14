@@ -234,32 +234,53 @@ async function createTables(db) {
     )
   `);
 
-  // --- Модели 3D ---
+  // --- Модели 3D (zip-архивы в S3, одна запись = один offer_id) ---
+  // Модель хранится в S3 одним zip-архивом на артикул: s3://bucket/models/{offer_id}.zip.
+  // Здесь — только метаданные. Заменяет прежнюю схему product_models
+  // (много файлов Telegram file_id на offer_id), которая в веб-версии не нужна.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS offer_models (
+        offer_id TEXT PRIMARY KEY,
+        s3_key TEXT NOT NULL,
+        file_name TEXT,
+        file_hash TEXT,
+        file_size INTEGER,
+        uploaded_at INTEGER,
+        uploaded_by INTEGER,
+        FOREIGN KEY (uploaded_by) REFERENCES users(id)
+    )
+  `);
 
-  // // Таблица 3D-моделей товаров
-  // await db.exec(`
-  //   CREATE TABLE IF NOT EXISTS product_models (
-  //       id INTEGER PRIMARY KEY AUTOINCREMENT,
-  //       offer_id TEXT NOT NULL,
-  //       file_id TEXT NOT NULL,
-  //       file_name TEXT,
-  //       file_size INTEGER,
-  //       uploaded_at INTEGER
-  //   )
-  // `);
-  // await db.exec(`CREATE INDEX IF NOT EXISTS idx_product_models_offer_id ON product_models(offer_id);`);
+  // Таблица выданных сотруднику 3D-моделей (паритет с бот-версией).
+  // Уникальная пара (user_id, offer_id): повторная выдача не дублирует запись.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS issued_models (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        offer_id TEXT NOT NULL,
+        issued_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        UNIQUE (user_id, offer_id)
+    )
+  `);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_issued_models_user_offer ON issued_models(user_id, offer_id);`);
 
-  // // Таблица выданных сотруднику 3D-моделей
-  // await db.exec(`
-  //   CREATE TABLE IF NOT EXISTS issued_models (
-  //       id INTEGER PRIMARY KEY AUTOINCREMENT,
-  //       user_id INTEGER NOT NULL,
-  //       offer_id TEXT NOT NULL,
-  //       issued_at INTEGER NOT NULL,
-  //       FOREIGN KEY (user_id) REFERENCES users(id)
-  //   )
-  // `);
-  // await db.exec(`CREATE INDEX IF NOT EXISTS idx_issued_models_user_offer ON issued_models(user_id, offer_id);`);
+  // Одноразовые токены скачивания моделей (защита вместо прямых ссылок на S3):
+  // клиент -> POST /api/models/request/:offerId -> { token } -> GET /api/models/download/:token.
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS model_download_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        offer_id TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        token TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_model_tokens_token ON model_download_tokens(token);`);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_model_tokens_expires ON model_download_tokens(expires_at);`);
 
   console.log('✅ Все таблицы созданы/проверены');
 }

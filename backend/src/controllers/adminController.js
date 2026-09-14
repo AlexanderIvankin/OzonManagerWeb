@@ -8,6 +8,7 @@ const EarningsService = require('../services/EarningsService');
 const MaterialsService = require('../services/MaterialsService');
 const BackupService = require('../services/BackupService');
 const ProductStatsService = require('../services/ProductStatsService');
+const ModelService = require('../services/ModelService');
 const AuthService = require('../services/AuthService');
 const NotificationService = require('../services/NotificationService');
 const scheduler = require('../scheduler');
@@ -67,10 +68,19 @@ exports.getUsers = async (req, res, next) => {
         });
       }
       const countsMap = new Map(counts.map((c) => [c.user_id, c.count]));
+      // Выданные 3D-модели сотрудников (для индикатора 🟢🟡🔴 в «Очереди заказов»):
+      // offer_id, по которым у сотрудника уже есть запись в issued_models
+      const issuedMap = new Map();
+      const issuedRows = await db.all('SELECT user_id, offer_id FROM issued_models');
+      for (const row of issuedRows) {
+        if (!issuedMap.has(row.user_id)) issuedMap.set(row.user_id, []);
+        issuedMap.get(row.user_id).push(row.offer_id);
+      }
       res.json(users.map((u) => ({
         ...u,
         warehouses: warehousesMap.get(u.id) || [],
         active_count: countsMap.get(u.id) || 0,
+        issued_offer_ids: issuedMap.get(u.id) || [],
       })));
       return;
     }
@@ -503,6 +513,8 @@ exports.getActiveOrdersAll = async (req, res, next) => {
       }
       // Фото по каждому товару (через кэш — фото грузятся с Ozon 1 раз на offer_id)
       const products = await OrderService.attachProductImages(details?.products || []);
+      // Информация о 3D-моделях (p.model) — наличие zip-архива для артикула
+      await ModelService.attachToProducts(products);
       result.push({
         orderId: a.order_id,
         userId: a.user_id,
@@ -1012,6 +1024,110 @@ exports.sendOrderLabelToEmployee = async (req, res, next) => {
     console.error('[sendOrderLabelToEmployee] Ошибка:', err);
     if (err.statusCode) {
       return res.status(err.statusCode).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+// =====================================================================
+// 3D-МОДЕЛИ (zip-архивы в S3, раздел «Модели» админки)
+// =====================================================================
+
+/**
+ * Список всех 3D-моделей (offer_id, размер, хеш, кто и когда загрузил)
+ */
+exports.listModels = async (req, res, next) => {
+  try {
+    const models = await ModelService.listModels();
+    res.json(models);
+  } catch (err) {
+    console.error('[listModels] Ошибка:', err);
+    next(err);
+  }
+};
+
+/**
+ * Загрузить/обновить zip-модель для offer_id.
+ * offer_id берётся из поля offer_id формы, а если не указан — из имени файла
+ * ({offer_id}.zip). Zip валидируется (расширения, traversal, шифрование, размер),
+ * заливается в S3, метаданные пишутся в БД, кэш инвалидируется.
+ */
+exports.uploadModel = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Файл не передан (поле file)' });
+    }
+
+    // Приоритет: явный offer_id из формы -> артикул из имени файла ({offer_id}.zip)
+    let offerId = req.body.offerId || req.body.offer_id || '';
+    if (!offerId) {
+      const original = req.file.originalname || '';
+      offerId = original.replace(/\.zip$/i, '');
+    }
+
+    const buffer = fs.readFileSync(req.file.path);
+    try { fs.unlinkSync(req.file.path); } catch { /* временный файл multer не критичен */ }
+
+    const record = await ModelService.uploadModel(offerId, buffer, req.user.id);
+
+    console.log(
+      `[ADMIN] ${req.user?.name || req.user?.id} загрузил модель ${record.offer_id} (${buffer.length} байт)`
+    );
+    res.json({
+      message: `Модель ${record.offer_id} загружена (${record.entries.length} файл(ов) в архиве)`,
+      model: record,
+    });
+  } catch (err) {
+    console.error('[uploadModel] Ошибка:', err);
+    // Ошибки валидации — 400, остальные — наверх (500)
+    if (err.message && !err.message.includes('S3')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+/**
+ * Удалить модель (zip из S3 + метаданные)
+ */
+exports.deleteModel = async (req, res, next) => {
+  try {
+    const { offerId } = req.params;
+    // Допускаем 'ARD000003-N.zip' и 'ARD000003-N' — приводим к артикулу
+    const normalized = String(offerId).trim().replace(/\.zip$/i, '');
+    if (!normalized) {
+      return res.status(400).json({ error: 'Некорректный артикул' });
+    }
+    await ModelService.deleteModel(normalized, req.user.id);
+    console.log(`[ADMIN] ${req.user?.name || req.user?.id} удалил модель ${normalized}`);
+    res.json({ message: `Модель ${normalized} удалена` });
+  } catch (err) {
+    console.error('[deleteModel] Ошибка:', err);
+    next(err);
+  }
+};
+
+/**
+ * Скачать модель себе (персонал): заливает кэш из S3 при необходимости
+ * и отдаёт zip-файл. Для сотрудников скачивание идёт через одноразовые токены.
+ */
+exports.downloadModel = async (req, res, next) => {
+  try {
+    const { offerId } = req.params;
+    const normalized = String(offerId).trim().replace(/\.zip$/i, '');
+    const info = await ModelService.getDownloadInfo(normalized);
+    if (!fs.existsSync(info.path)) {
+      return res.status(404).json({ error: 'Файл модели не найден в хранилище' });
+    }
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${info.fileName}"`);
+    if (info.size) res.setHeader('Content-Length', String(info.size));
+    const stream = fs.createReadStream(info.path);
+    stream.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.end(); });
+    stream.pipe(res);
+  } catch (err) {
+    console.error('[downloadModel] Ошибка:', err);
+    if (err.message && err.message.includes('ENOENT')) {
+      return res.status(404).json({ error: 'Модель не найдена' });
     }
     next(err);
   }

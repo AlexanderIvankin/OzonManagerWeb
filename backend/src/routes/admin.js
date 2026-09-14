@@ -75,6 +75,19 @@ router.post('/orders/reload-queue', authorize(...STAFF_ROLES), adminController.r
 // --- Статистика товара: удаление (аналог /clear_product_stats) ---
 router.delete('/product-stats/:offerId', adminController.deleteProductStats);
 
+// --- 3D-модели (zip-архивы в S3, раздел «Модели») ---
+// Лимит размера zip — MODELS_MAX_UPLOAD_MB (по умолчанию 200 МБ)
+const modelsUpload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: (parseInt(process.env.MODELS_MAX_UPLOAD_MB, 10) || 200) * 1024 * 1024,
+  },
+});
+router.get('/models', adminController.listModels);
+router.post('/models/upload', modelsUpload.single('file'), adminController.uploadModel);
+router.get('/models/:offerId/download', adminController.downloadModel);
+router.delete('/models/:offerId', adminController.deleteModel);
+
 // --- Планировщик: пауза/возобновление авто-проверки очереди (аналог /pause, /resume) ---
 router.get('/scheduler/status', adminController.getSchedulerStatus);
 router.post('/scheduler/pause', adminController.pauseScheduler);

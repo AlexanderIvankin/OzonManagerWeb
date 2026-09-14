@@ -39,19 +39,32 @@ interface EmployeeOption {
   active_count?: number;
   // ID складов, на которых у сотрудника стоит приоритет (user_warehouses)
   warehouses: string[];
+  // Выданные 3D-модели (offer_id из issued_models)
+  issuedOfferIds: string[];
   // Роль «Создатель» (god): виден в списке только самому Создателю
   isGod?: boolean;
 }
 
 type ListMode = "priority" | "all";
 
-// === Индикатор наличия 3D-моделей у сотрудника ===
-// Как в боте: 🟢 — все модели заказа выданы, 🟡 — частично, 🔴 — нет.
-// В веб-версии выдача моделей при назначении (assignOrder) ещё не
-// реализована (TODO в OrderService.assignOrder), поэтому индикатор
-// пока всегда показывает «нет моделей» (🔴).
-const MODEL_INDICATOR = "🔴";
-const MODEL_LABEL = "нет моделей";
+// === Индикатор наличия 3D-моделей у сотрудника по заказу ===
+// Как в боте: 🟢 — все модели заказа уже выданы сотруднику, 🟡 — частично,
+// 🔴 — ничего не выдано. Данные — issued_models (issued_offer_ids в getUsers).
+// Родительские артикулы учитываются: выдача ARD000003-N покрывает -NR/-NL.
+const modelCoverage = (emp: EmployeeOption, order: AwaitingOrder) => {
+  const offers = (order.products || [])
+    .map((p) => p.offer_id)
+    .filter(Boolean) as string[];
+  if (!offers.length) return { icon: "🔴", label: "нет моделей" };
+  const issued = new Set(emp.issuedOfferIds || []);
+  const hasIssued = (offerId: string) =>
+    issued.has(offerId) ||
+    (/-(NR|NL)$/.test(offerId) && issued.has(offerId.slice(0, -1)));
+  const covered = offers.filter(hasIssued).length;
+  if (covered === 0) return { icon: "🔴", label: "нет моделей" };
+  if (covered === offers.length) return { icon: "🟢", label: "все модели выданы" };
+  return { icon: "🟡", label: "часть моделей" };
+};
 
 // ID склада заказа: сначала верхнеуровневый warehouse_id,
 // затем из полных деталей (delivery_method.warehouse_id)
@@ -75,23 +88,26 @@ const filterPriorityEmployees = (
 // 🔴 Имя (ID: 123) | 📦: активные заказы | 🖨️: принтеры | 🗃️: модели
 // На узких экранах (max-md) статистика переносится на вторую строку,
 // чтобы не вылезать за пределы Select.
-const renderEmployeeLabel = (emp: EmployeeOption) => (
-  <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-1 text-center lg:text-left">
-    <div>
-      {" "}
-      <span aria-hidden>{MODEL_INDICATOR}</span>
-      {" "}<b>{emp.name}</b>{" "}
-      <span>
-        (ID: <code>{emp.id}</code>)
+const renderEmployeeLabel = (emp: EmployeeOption, order?: AwaitingOrder) => {
+  const coverage = order ? modelCoverage(emp, order) : { icon: "🔴", label: "нет моделей" };
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-1 text-center lg:text-left">
+      <div>
+        {" "}
+        <span aria-hidden>{coverage.icon}</span>
+        {" "}<b>{emp.name}</b>{" "}
+        <span>
+          (ID: <code>{emp.id}</code>)
+        </span>
+      </div>
+      <span className="text-muted-foreground max-lg:w-full max-lg:whitespace-normal">
+        <span className="hidden lg:inline">| </span>
+        📦: {emp.active_count ?? 0} | 🖨️: {emp.capacity ?? "—"} | 🗃️:{" "}
+        {coverage.label}
       </span>
     </div>
-    <span className="text-muted-foreground max-lg:w-full max-lg:whitespace-normal">
-      <span className="hidden lg:inline">| </span>
-      📦: {emp.active_count ?? 0} | 🖨️: {emp.capacity ?? "—"} | 🗃️:{" "}
-      {MODEL_LABEL}
-    </span>
-  </div>
-);
+  );
+};
 
 export const OrdersManagement = () => {
   // Текущий пользователь: Создатель виден в списке сотрудников только самому себе
@@ -164,6 +180,7 @@ export const OrdersManagement = () => {
           capacity: u.capacity,
           active_count: u.active_count ?? 0,
           warehouses: (u.warehouses || []).map((w) => String(w.warehouse_id)),
+          issuedOfferIds: u.issued_offer_ids || [],
           isGod: u.role === "god",
         }));
       setEmployees(emp);
@@ -386,8 +403,8 @@ export const OrdersManagement = () => {
                             Все ({visibleEmployees.length})
                           </Button>
                           <span className="text-xs text-muted-foreground">
-                            🗃️ — наличие 3D-моделей (🟢 все · 🟡 часть · 🔴
-                            нет), выдача при назначении пока не реализована
+                            🗃️ — выданные сотруднику 3D-модели (🟢 все модели
+                            заказа · 🟡 часть · 🔴 нет)
                           </span>
                         </div>
                       </div>
@@ -414,7 +431,7 @@ export const OrdersManagement = () => {
                                   (e) => String(e.id) === String(val),
                                 );
                                 return emp
-                                  ? renderEmployeeLabel(emp)
+                                  ? renderEmployeeLabel(emp, order)
                                   : String(val);
                               }}
                             </SelectValue>
@@ -431,7 +448,7 @@ export const OrdersManagement = () => {
                             ) : (
                               list.map((emp) => (
                                 <SelectItem key={emp.id} value={String(emp.id)}>
-                                  {renderEmployeeLabel(emp)}
+                                  {renderEmployeeLabel(emp, order)}
                                 </SelectItem>
                               ))
                             )}

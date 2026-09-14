@@ -1,6 +1,7 @@
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const Notification = require('../models/Notification');
 const OrderService = require('../services/OrderService');
+const ModelService = require('../services/ModelService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
 const { getLocalDate } = require('../utils');
@@ -57,6 +58,9 @@ exports.getActiveOrders = async (req, res, next) => {
       }
       // Привязываем фото к каждому товару (через кэш — фото грузятся с Ozon 1 раз на offer_id)
       const products = await OrderService.attachProductImages(details?.products || []);
+      // Привязываем информацию о 3D-моделях (p.model) — по флагу клиент рисует
+      // кнопку «Скачать модель» (скачивание по одноразовому токену)
+      await ModelService.attachToProducts(products);
       result.push({
         orderId: order.order_id,
         assignedAt: order.assigned_at,

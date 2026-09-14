@@ -34,6 +34,12 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   order_assign_failed: { icon: "🚨", label: "Ошибка назначения" },
   // Этикетка, отправленная администратором (аналог /admin_send_label)
   label_sent: { icon: "🏷️", label: "Этикетка отправлена" },
+  // 3D-модели (zip в S3)
+  models_available: { icon: "📁", label: "3D-модели выданы" },
+  models_missing: { icon: "ℹ️", label: "Нет 3D-моделей" },
+  model_uploaded: { icon: "📤", label: "Модель загружена" },
+  model_updated: { icon: "🔄", label: "Модель обновлена" },
+  model_deleted: { icon: "🗑", label: "Модель удалена" },
 };
 
 const formatDateTime = (ts: number) =>

@@ -6,6 +6,8 @@ const OrderService = require('./services/OrderService');
 const OzonService = require('./services/OzonService');
 const EarningsService = require('./services/EarningsService');
 const BackupService = require('./services/BackupService');
+const StorageService = require('./services/StorageService');
+const OfferModel = require('./models/OfferModel');
 const Notification = require('./models/Notification');
 const NotificationService = require('./services/NotificationService');
 
@@ -661,6 +663,53 @@ function stopAwaitingDeliverReminderChecker() {
   }
   isDeliverReminderRunning = false;
 }
+
+// ============================================================================
+// Обслуживание 3D-моделей (ежечасно, дешёвые идемпотентные операции):
+//   • чистка просроченного локального кэша zip (models-cache/, TTL —
+//     MODELS_CACHE_TTL_MIN, по умолчанию 1 час) — StorageService.cleanCache();
+//   • удаление использованных и просроченных одноразовых токенов скачивания —
+//     OfferModel.pruneExpiredTokens().
+// В отличие от суточных задач здесь не нужен daily-gate: операция лёгкая,
+// и пропуск тика не является проблемой (кэш просто живёт дольше на час).
+// ============================================================================
+let modelsMaintenanceInterval = null;
+let isModelsMaintenanceRunning = false;
+
+function startModelsMaintenanceChecker() {
+  if (modelsMaintenanceInterval) clearInterval(modelsMaintenanceInterval);
+  isModelsMaintenanceRunning = false;
+
+  modelsMaintenanceInterval = setInterval(async () => {
+    if (isModelsMaintenanceRunning) return;
+    isModelsMaintenanceRunning = true;
+    try {
+      const removed = StorageService.cleanCache();
+      const pruned = await OfferModel.pruneExpiredTokens();
+      if (removed || pruned) {
+        console.log(
+          `[SCHEDULER] Обслуживание моделей: удалено ${removed} файл(ов) кэша, ${pruned} токен(ов)`
+        );
+      }
+    } catch (err) {
+      console.error('[SCHEDULER] Ошибка обслуживания моделей:', err.message);
+      NotificationService.logServerError('scheduler.modelsMaintenance', err);
+    } finally {
+      isModelsMaintenanceRunning = false;
+    }
+  }, 60 * 60 * 1000); // ежечасно
+
+  console.log('[SCHEDULER] Ежечасное обслуживание моделей запущено (кэш + токены)');
+}
+
+function stopModelsMaintenanceChecker() {
+  if (modelsMaintenanceInterval) {
+    clearInterval(modelsMaintenanceInterval);
+    modelsMaintenanceInterval = null;
+  }
+  isModelsMaintenanceRunning = false;
+}
+
 module.exports = {
   startOrderChecker,
   stopOrderChecker,
@@ -680,4 +729,6 @@ module.exports = {
   startAwaitingDeliverReminderChecker,
   stopAwaitingDeliverReminderChecker,
   runAwaitingDeliverReminder,
+  startModelsMaintenanceChecker,
+  stopModelsMaintenanceChecker,
 };

@@ -4,6 +4,7 @@ const UserStats = require('./UserStats');
 const Earnings = require('./Earnings');
 const ProductStat = require('./ProductStat');
 const Warehouse = require('./Warehouse');
+const OfferModel = require('./OfferModel');
 
 module.exports = {
   User,
@@ -12,4 +13,5 @@ module.exports = {
   Earnings,
   ProductStat,
   Warehouse,
+  OfferModel,
 };
