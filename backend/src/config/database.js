@@ -136,6 +136,25 @@ async function createTables(db) {
     console.log('[DB] Добавлена колонка deliver_reminder_count в assignments');
   }
 
+  // Колонки-«слепки» завершённого заказа (страница «Завершённые заказы»):
+  // order_amount — сумма заказа на момент завершения (из Ozon),
+  // offer_ids — артикулы через пробел (для LIKE-поиска по артикулу),
+  // products_json — JSON состава заказа (offer_id, название, количество).
+  // Для заказов, завершённых до миграции, колонки остаются NULL —
+  // в интерфейсе для них показывается «—».
+  if (!assignmentsInfo.some((col) => col.name === 'order_amount')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN order_amount REAL');
+    console.log('[DB] Добавлена колонка order_amount в assignments');
+  }
+  if (!assignmentsInfo.some((col) => col.name === 'offer_ids')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN offer_ids TEXT');
+    console.log('[DB] Добавлена колонка offer_ids в assignments');
+  }
+  if (!assignmentsInfo.some((col) => col.name === 'products_json')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN products_json TEXT');
+    console.log('[DB] Добавлена колонка products_json в assignments');
+  }
+
   // --- Склады ---
   await db.exec(`
     CREATE TABLE IF NOT EXISTS warehouses (

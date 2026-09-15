@@ -548,17 +548,41 @@ exports.getUserOrders = async (req, res, next) => {
 };
 
 /**
- * Последние завершённые заказы (для админки).
- * Параметры: userId — опционально (без него показываются заказы ВСЕХ
- * сотрудников), days — период в днях (week=7, month=30), limit — максимум записей.
+ * Завершённые заказы (страница «Завершённые заказы»).
+ * Query-параметры:
+ *   userId  — ID сотрудника (опционально; без него — все сотрудники)
+ *   days    — период в днях (week=7, month=30; без параметра — всё время)
+ *   limit   — размер страницы (число) или 'all' (полная выгрузка)
+ *   offset  — смещение для пагинации
+ *   orderId — подстрока номера заказа
+ *   offerId — подстрока артикула (offer_id)
+ * Ответ: { items, total, hasMore }
  */
 exports.getCompletedOrders = async (req, res, next) => {
   try {
     const userId = req.query.userId ? parseInt(req.query.userId, 10) : null;
     const days = req.query.days ? parseInt(req.query.days, 10) : null;
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 50;
-    const orders = await Assignment.getRecentCompletedOrders(userId, { days, limit });
-    res.json(orders);
+    let limit = 25;
+    if (req.query.limit === 'all') {
+      limit = 'all';
+    } else if (req.query.limit) {
+      const n = parseInt(req.query.limit, 10);
+      if (Number.isFinite(n) && n > 0) limit = Math.min(n, 1000);
+    }
+    const offset = req.query.offset
+      ? Math.max(parseInt(req.query.offset, 10) || 0, 0)
+      : 0;
+    const orderId = String(req.query.orderId || '').trim() || null;
+    const offerId = String(req.query.offerId || '').trim() || null;
+    const data = await Assignment.getCompletedOrdersPaged({
+      userId,
+      days,
+      limit,
+      offset,
+      orderId,
+      offerId,
+    });
+    res.json(data);
   } catch (err) {
     next(err);
   }

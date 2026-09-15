@@ -14,6 +14,7 @@ import { Users } from "./pages/Admin/Users";
 import { Warehouses } from "./pages/Admin/Warehouses";
 import { OrdersManagement } from "./pages/Admin/OrdersManagement";
 import { ActiveOrders } from "./pages/Admin/ActiveOrders";
+import { CompletedOrders } from "./pages/Admin/CompletedOrders";
 import { Materials } from "./pages/Admin/Materials";
 import { Models } from "./pages/Admin/Models";
 import { EarningsManagement } from "./pages/Admin/EarningsManagement";
@@ -63,6 +64,10 @@ function App() {
               <Route path="/admin/warehouses" element={<Warehouses />} />
               <Route path="/admin/orders" element={<OrdersManagement />} />
               <Route path="/admin/active-orders" element={<ActiveOrders />} />
+              <Route
+                path="/admin/completed-orders"
+                element={<CompletedOrders />}
+              />
               <Route path="/admin/materials" element={<Materials />} />
               <Route path="/admin/models" element={<Models />} />
               <Route path="/admin/earnings" element={<EarningsManagement />} />
