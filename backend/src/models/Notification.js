@@ -154,7 +154,12 @@ class Notification {
       }
       await db.run('COMMIT');
     } catch (err) {
-      await db.run('ROLLBACK');
+      try {
+        await db.run('ROLLBACK');
+      } catch {
+        // Транзакция уже закрыта (например, BEGIN не удался) — не маскируем
+        // исходную ошибку: наверх уходит именно причина сбоя пакета.
+      }
       throw err;
     }
     return ids;
