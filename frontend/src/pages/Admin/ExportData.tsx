@@ -110,7 +110,9 @@ export const ExportData = () => {
       {/* Статистика товаров */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-center sm:text-start">📊 Статистика товаров</CardTitle>
+          <CardTitle className="text-center sm:text-start">
+            📊 Статистика товаров
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
@@ -145,15 +147,21 @@ export const ExportData = () => {
             <Button
               onClick={() => handleExportTeamInfo(false)}
               disabled={loadingTeam}
+              className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
             >
-              📥 Скачать (активные)
+              <span className="truncate block w-full sm:w-auto text-center">
+                📥 Скачать (активные)
+              </span>
             </Button>
             <Button
               onClick={() => handleExportTeamInfo(true)}
               disabled={loadingTeam}
               variant="outline"
+              className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
             >
-              📥 Скачать (включая уволенных)
+              <span className="truncate block w-full sm:w-auto text-center">
+                📥 Скачать (включая уволенных)
+              </span>
             </Button>
           </div>
         </CardContent>
@@ -180,17 +188,23 @@ export const ExportData = () => {
                 onClick={handleDownloadDatabase}
                 disabled={loadingDb}
                 variant="outline"
+                className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
               >
-                {loadingDb
-                  ? "Готовим снимок..."
-                  : "💾 Скачать базу данных (.db)"}
+                <span className="truncate block w-full sm:w-auto text-center">
+                  {loadingDb
+                    ? "Готовим снимок..."
+                    : "💾 Скачать базу данных (.db)"}
+                </span>
               </Button>
               <Button
                 onClick={handleCreateBackup}
                 disabled={creatingBackup}
                 variant="outline"
+                className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
               >
-                {creatingBackup ? "Создаём бэкап..." : "🗄️ Бэкап на сервере"}
+                <span className="truncate block w-full sm:w-auto text-center">
+                  {creatingBackup ? "Создаём бэкап..." : "🗄️ Бэкап на сервере"}
+                </span>
               </Button>
             </div>
           </CardContent>

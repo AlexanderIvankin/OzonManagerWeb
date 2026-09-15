@@ -561,13 +561,17 @@ export const AdminPanel = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button
-              variant="destructive"
-              className="w-full bg-destructive text-white hover:bg-destructive/90"
-              onClick={() => setClearOpen(true)}
-            >
-              ⚠️ Сбросить ВСЕ назначения
-            </Button>
+            <div className="flex justify-center md:justify-start">
+              <Button
+                variant="destructive"
+                className="w-full max-w-[340px] md:max-w-none bg-destructive text-white hover:bg-destructive/90"
+                onClick={() => setClearOpen(true)}
+              >
+                <span className="truncate block w-full text-center">
+                  ⚠️ Сбросить ВСЕ назначения
+                </span>
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
