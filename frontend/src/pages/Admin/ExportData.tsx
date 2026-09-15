@@ -110,23 +110,25 @@ export const ExportData = () => {
       {/* Статистика товаров */}
       <Card>
         <CardHeader>
-          <CardTitle>📊 Статистика товаров</CardTitle>
+          <CardTitle className="text-center sm:text-start">📊 Статистика товаров</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Выгрузка всей заполненной статистики товаров (артикул, материал,
             цвет, вес, кто заполнил, дата) в Excel.
           </p>
-          <Button onClick={handleExportProductStats} disabled={loadingStats}>
-            {loadingStats ? "Готовим файл..." : "📥 Скачать статистику"}
-          </Button>
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <Button onClick={handleExportProductStats} disabled={loadingStats}>
+              {loadingStats ? "Готовим файл..." : "📥 Скачать статистику"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
       {/* Сотрудники (team-info) */}
       <Card>
         <CardHeader>
-          <CardTitle>
+          <CardTitle className="text-center sm:text-start">
             {" "}
             <span className="inline-block align-middle -translate-y-[3px]">
               👥
@@ -160,7 +162,7 @@ export const ExportData = () => {
       {/* База данных — для персонала (admin/moderator/god) */}
       {isAdmin && (
         <Card>
-          <CardHeader>
+          <CardHeader className="justify-center sm:justify-start">
             <CardTitle className="flex items-center gap-2">
               🗄️ Файл базы данных
               <Badge variant="destructive">Backup</Badge>
