@@ -95,6 +95,36 @@ export interface AdminActiveOrder {
   }>;
 }
 
+/** Товар в «слепке» завершённого заказа (сохраняется при завершении) */
+export interface CompletedOrderProduct {
+  offer_id?: string | null;
+  name?: string | null;
+  quantity?: number;
+}
+
+/** Строка таблицы «Завершённые заказы» */
+export interface CompletedOrderRow {
+  order_id: string;
+  completed_at: number;
+  user_id: number;
+  user_name: string;
+  /** Сумма заказа на момент завершения; null — заказ завершён до сохранения слепка */
+  order_amount: number | null;
+  /** Заработок по заказу (из earnings_history); 0, если не рассчитан */
+  amount: number;
+  /** Артикулы через пробел (для серверного поиска); null — слепка нет */
+  offer_ids: string | null;
+  /** Состав заказа; null — заказ завершён до сохранения слепка */
+  products: CompletedOrderProduct[] | null;
+}
+
+/** Страница завершённых заказов (серверная пагинация) */
+export interface CompletedOrdersPage {
+  items: CompletedOrderRow[];
+  total: number;
+  hasMore: boolean;
+}
+
 export const adminApi = {
   // === Пользователи ===
   getUsers: (params?: {
@@ -194,24 +224,29 @@ export const adminApi = {
       )
       .then((res) => res.data),
 
-  // Последние завершённые заказы (аналог /employee_orders, но по завершённым).
-  // userId — опционально: null = все сотрудники.
-  // Фильтры: days — период в днях, limit — максимум записей.
-  getCompletedOrders: (
-    userId: number | null,
-    params?: { days?: number | null; limit?: number },
-  ) =>
+  // Завершённые заказы (страница «Завершённые заказы»): серверная пагинация.
+  // userId — опционально: null/undefined = все сотрудники.
+  // limit — размер страницы (число) или 'all' (полная выгрузка).
+  // Фильтры: days — период в днях, orderId — подстрока номера заказа,
+  // offerId — подстрока артикула (offer_id).
+  getCompletedOrders: (params?: {
+    userId?: number | null;
+    days?: number | null;
+    limit?: number | "all";
+    offset?: number;
+    orderId?: string;
+    offerId?: string;
+  }) =>
     api
-      .get<
-        Array<{
-          order_id: string;
-          completed_at: number;
-          amount: number;
-          user_id: number;
-          user_name: string;
-        }>
-      >("/admin/orders/completed", {
-        params: { ...(userId ? { userId } : {}), ...params },
+      .get<CompletedOrdersPage>("/admin/orders/completed", {
+        params: {
+          ...(params?.userId ? { userId: params.userId } : {}),
+          ...(params?.days ? { days: params.days } : {}),
+          limit: params?.limit ?? 25,
+          ...(params?.offset ? { offset: params.offset } : {}),
+          ...(params?.orderId ? { orderId: params.orderId } : {}),
+          ...(params?.offerId ? { offerId: params.offerId } : {}),
+        },
       })
       .then((res) => res.data),
 

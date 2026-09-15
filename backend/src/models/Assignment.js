@@ -1,5 +1,13 @@
 const { getDB } = require('../config/database');
 
+/**
+ * Экранирует спецсимволы LIKE (% _ \), чтобы поиск работал как поиск подстроки
+ * (аналогично модели Notification).
+ */
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, '\\$&');
+}
+
 class Assignment {
   /**
    * Назначить заказ сотруднику (пользователю)
@@ -14,13 +22,43 @@ class Assignment {
   }
 
   /**
-   * Завершить заказ (обновить статус на 'completed')
+   * Завершить заказ (обновить статус на 'completed').
+   * Опционально сохраняет «слепок» заказа для страницы «Завершённые заказы»:
+   *   orderAmount — сумма заказа на момент завершения (из Ozon);
+   *   products    — состав заказа [{ offer_id, name, quantity, ... }].
+   * offer_ids — уникальные артикулы через пробел (LIKE-поиск по артикулу).
+   * Для заказов, завершённых без слепка, колонки остаются NULL.
    */
-  static async complete(orderId) {
+  static async complete(orderId, { orderAmount = null, products = null } = {}) {
     const db = getDB();
+    const list = Array.isArray(products) ? products : null;
+    const offerIds = list
+      ? Array.from(
+          new Set(
+            list
+              .map((p) => String(p.offer_id || '').trim())
+              .filter(Boolean)
+          )
+        ).join(' ')
+      : null;
+    const productsJson = list
+      ? JSON.stringify(
+          list.map((p) => ({
+            offer_id: p.offer_id || null,
+            name: p.name || null,
+            quantity: p.quantity || 1,
+          }))
+        )
+      : null;
     await db.run(
-      `UPDATE assignments SET status = 'completed', completed_at = ? WHERE order_id = ? AND status = 'assigned'`,
-      Date.now(), orderId
+      `UPDATE assignments
+       SET status = 'completed', completed_at = ?, order_amount = ?, offer_ids = ?, products_json = ?
+       WHERE order_id = ? AND status = 'assigned'`,
+      Date.now(),
+      orderAmount === undefined ? null : orderAmount,
+      offerIds,
+      productsJson,
+      orderId
     );
   }
 
@@ -116,39 +154,108 @@ class Assignment {
   }
 
   /**
-   * Последние завершённые заказы с фильтрами (для админки).
-   * Возвращает заказы от новых к старым с суммой заработка из earnings_history
-   * (LEFT JOIN — если заработок не сохранён, amount = null).
+   * Завершённые заказы с фильтрами и пагинацией (страница «Завершённые заказы»).
+   * Возвращает заказы от новых к старым: сотрудник, время завершения,
+   * сумма заказа (order_amount — слепок при завершении), заработок из
+   * earnings_history (LEFT-подзапрос — если заработок не сохранён, amount = 0)
+   * и состав заказа (products_json).
    *
-   * @param {number|null} userId    — ID сотрудника (null = все сотрудники)
    * @param {object} [options]
-   * @param {number|null} [options.days]  — период: сколько последних дней включать (null = всё время)
-   * @param {number} [options.limit]      — максимум записей (по умолчанию 50)
+   * @param {number|null} [options.userId]   — ID сотрудника (null = все сотрудники)
+   * @param {number|null} [options.days]     — период: сколько последних дней включать (null = всё время)
+   * @param {number|'all'} [options.limit]   — размер страницы или 'all' (полная выгрузка)
+   * @param {number} [options.offset]        — смещение (пагинация)
+   * @param {string|null} [options.orderId]  — подстрока номера заказа
+   * @param {string|null} [options.offerId]  — подстрока артикула (offer_id)
+   * @returns {Promise<{items: Array, total: number, hasMore: boolean}>}
    */
-  static async getRecentCompletedOrders(userId, { days = null, limit = 50 } = {}) {
+  static async getCompletedOrdersPaged({
+    userId = null,
+    days = null,
+    limit = 25,
+    offset = 0,
+    orderId = null,
+    offerId = null,
+  } = {}) {
     const db = getDB();
+
+    const where = ["a.status = 'completed'"];
+    const params = [];
+    if (userId) {
+      where.push('a.user_id = ?');
+      params.push(userId);
+    }
+    if (days) {
+      where.push('a.completed_at >= ?');
+      params.push(Date.now() - days * 24 * 60 * 60 * 1000);
+    }
+    // Поиск по подстроке номера заказа / артикула
+    // (спецсимволы LIKE экранируются — ищем как обычный текст)
+    if (orderId) {
+      where.push("a.order_id LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(orderId)}%`);
+    }
+    if (offerId) {
+      where.push("a.offer_ids LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(offerId)}%`);
+    }
+    const whereSql = where.join(' AND ');
+
+    const totalRow = await db.get(
+      `SELECT COUNT(*) as count FROM assignments a WHERE ${whereSql}`,
+      ...params
+    );
+    const total = totalRow ? totalRow.count : 0;
+
     let sql = `
       SELECT a.order_id, a.completed_at, a.user_id, u.name AS user_name,
+        a.order_amount, a.offer_ids, a.products_json,
         (SELECT COALESCE(SUM(amount), 0)
          FROM earnings_history eh
          WHERE eh.order_id = a.order_id AND eh.user_id = a.user_id) AS amount
       FROM assignments a
       JOIN users u ON a.user_id = u.id
-      WHERE a.status = 'completed'
+      WHERE ${whereSql}
+      ORDER BY a.completed_at DESC
     `;
-    const params = [];
-    if (userId) {
-      sql += ' AND a.user_id = ?';
-      params.push(userId);
+    // 'all' — полная выгрузка без LIMIT/OFFSET
+    if (limit !== 'all') {
+      sql += ' LIMIT ? OFFSET ?';
+      params.push(limit, offset);
     }
-    if (days) {
-      sql += ' AND a.completed_at >= ?';
-      params.push(Date.now() - days * 24 * 60 * 60 * 1000);
-    }
-    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
-    sql += ' ORDER BY a.completed_at DESC LIMIT ?';
-    params.push(safeLimit);
-    return db.all(sql, ...params);
+    const rows = await db.all(sql, ...params);
+
+    const items = rows.map((row) => {
+      let products = null;
+      if (row.products_json) {
+        try {
+          products = JSON.parse(row.products_json);
+        } catch {
+          products = null;
+        }
+      }
+      return {
+        order_id: row.order_id,
+        completed_at: row.completed_at,
+        user_id: row.user_id,
+        user_name: row.user_name,
+        // Сумма заказа: null — заказ завершён до внедрения слепка
+        order_amount:
+          row.order_amount === null || row.order_amount === undefined
+            ? null
+            : Number(row.order_amount),
+        // Заработок за заказ (0 — если не рассчитан/не сохранён)
+        amount: Number(row.amount) || 0,
+        offer_ids: row.offer_ids || null,
+        products,
+      };
+    });
+
+    return {
+      items,
+      total,
+      hasMore: limit === 'all' ? false : offset + items.length < total,
+    };
   }
 }
 

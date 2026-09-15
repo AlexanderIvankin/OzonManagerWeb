@@ -463,8 +463,15 @@ class OrderService {
           }
         }
 
-        // Завершаем заказ
-        await Assignment.complete(orderId);
+        // Завершаем заказ + сохраняем «слепок» (сумма и состав) для
+        // страницы «Завершённые заказы»
+        await Assignment.complete(orderId, {
+          orderAmount: orderAmount,
+          products:
+            orderDetails && Array.isArray(orderDetails.products)
+              ? orderDetails.products
+              : null,
+        });
 
         // Очищаем in-memory кэш фотографий для товаров этого заказа
         // (заказ завершён — фото больше не нужны на страницах активных заказов)

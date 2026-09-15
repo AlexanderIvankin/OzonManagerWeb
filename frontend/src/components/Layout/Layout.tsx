@@ -179,6 +179,12 @@ export const Layout = () => {
                   Активные заказы
                 </span>
               </NavLink>
+              <NavLink to="/admin/completed-orders" className={navClass}>
+                📜
+                <span className="hidden md:inline md:ml-2">
+                  Завершённые заказы
+                </span>
+              </NavLink>
               <NavLink to="/admin/materials" className={navClass}>
                 📁
                 <span className="hidden md:inline md:ml-2">Материалы</span>
