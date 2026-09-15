@@ -36,7 +36,11 @@ export interface FinishOrderResponse {
 export interface ModelDownloadGrant {
   token: string;
   expiresAt: number;
+  /** Артикул, по которому реально лежит zip (для товара -NR/-NL это родитель) */
   offerId: string;
+  /** Артикул, запрошенный клиентом (может отличаться от offerId) */
+  requestedOfferId?: string;
+  sourceOfferId?: string;
   fileName: string;
   fileSize: number | null;
 }

@@ -21,7 +21,12 @@ exports.requestDownload = async (req, res) => {
     res.json({
       token: grant.token,
       expiresAt: grant.expiresAt,
+      // offerId — архив модели, который реально отдаём (может быть родительским
+      // артикулом товара: ARD000003-NR -> ARD000003-N)
       offerId: grant.offerId,
+      requestedOfferId: grant.requestedOfferId,
+      sourceOfferId: grant.sourceOfferId,
+      viaParent: String(grant.requestedOfferId) !== String(grant.sourceOfferId),
       fileName: grant.fileName,
       fileSize: grant.fileSize,
     });

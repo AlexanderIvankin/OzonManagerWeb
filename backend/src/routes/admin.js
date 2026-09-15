@@ -76,11 +76,15 @@ router.post('/orders/reload-queue', authorize(...STAFF_ROLES), adminController.r
 router.delete('/product-stats/:offerId', adminController.deleteProductStats);
 
 // --- 3D-модели (zip-архивы в S3, раздел «Модели») ---
-// Лимит размера zip — MODELS_MAX_UPLOAD_MB (по умолчанию 200 МБ)
+// Модель на артикул — ОДИН zip-архив в корне бакета: s3://<bucket>/{offer_id}.zip.
+// Лимит размера zip — MODELS_MAX_UPLOAD_MB (по умолчанию 1024 МБ = 1 ГБ).
+// Жёсткая проверка «только .zip» выполняется в adminController.uploadModel
+// (расширение имени файла + magic-байты архива): при отказе загрузивший
+// получает live-оповещение, а запись в историю не создаётся.
 const modelsUpload = multer({
   dest: 'uploads/',
   limits: {
-    fileSize: (parseInt(process.env.MODELS_MAX_UPLOAD_MB, 10) || 200) * 1024 * 1024,
+    fileSize: (parseInt(process.env.MODELS_MAX_UPLOAD_MB, 10) || 1024) * 1024 * 1024,
   },
 });
 router.get('/models', adminController.listModels);

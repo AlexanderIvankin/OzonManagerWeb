@@ -42,6 +42,12 @@ export interface OfferModelRow {
   uploaded_at: number | null;
   uploaded_by: number | null;
   uploaded_by_name: string | null;
+  // Заполняются в ответе на загрузку zip (ModelService.uploadModel):
+  // список файлов в архиве и файлов-моделей (мягкая проверка содержимого)
+  entries?: string[];
+  modelFiles?: string[];
+  hasModelFiles?: boolean;
+  totalUncompressed?: number;
 }
 
 export interface StaffStatsRow {

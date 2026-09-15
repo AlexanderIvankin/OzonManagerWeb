@@ -5,7 +5,8 @@ const crypto = require('crypto');
  * Управление 3D-моделями (zip-архивы в S3): метаданные (offer_models),
  * факты выдачи сотрудникам (issued_models) и одноразовые токены скачивания
  * (model_download_tokens). Одна запись = один offer_id: модель на артикул
- * всегда хранится одним zip-архивом (s3://bucket/models/{offer_id}.zip).
+ * всегда хранится одним zip-архивом в КОРНЕ бакета:
+ * s3://<bucket>/{offer_id}.zip (например, ARD000003-N.zip).
  */
 class OfferModel {
   // ============================ offer_models ============================
@@ -135,6 +136,26 @@ class OfferModel {
       userId, ...offerIds
     );
     return !!row;
+  }
+
+  /**
+   * Какой именно артикул из списка кандидатов выдан сотруднику.
+   * Возвращает первый найденный в порядке переданного списка (сам артикул,
+   * затем родительский) — нужен, чтобы понять, выдан ли доступ по прямому
+   * артикулу или по родительскому (-NR/-NL -> -N) и оповестить персонал.
+   * @returns {Promise<string|null>} выданный offer_id или null
+   */
+  static async matchIssued(userId, offerIds) {
+    if (!Array.isArray(offerIds) || !offerIds.length) return null;
+    const db = getDB();
+    for (const offerId of offerIds) {
+      const row = await db.get(
+        'SELECT offer_id FROM issued_models WHERE user_id = ? AND offer_id = ? LIMIT 1',
+        userId, offerId
+      );
+      if (row) return row.offer_id;
+    }
+    return null;
   }
 
   /**
