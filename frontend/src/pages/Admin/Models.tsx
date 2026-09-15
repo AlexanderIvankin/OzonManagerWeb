@@ -223,7 +223,7 @@ export const Models = () => {
       </Card>
 
       {/* Список моделей */}
-      <Card>
+      <Card className="text-center md:justify-center md:text-start">
         <CardHeader>
           <CardTitle className="text-lg">
             🗃️ Загруженные модели{" "}
