@@ -161,22 +161,29 @@ export const EarningsManagement = () => {
 
       {/* Экспорт и сброс */}
       <Card>
-        <CardHeader className="flex justify-center">
+        <CardHeader className="text-center">
           <CardTitle>Экспорт и действия</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-end">
-          <div>
-            <Label className="mb-[15px] justify-center">Месяц</Label>
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:flex lg:items-end">
+          {/* Инпут */}
+          <div className="sm:col-span-1">
+            <Label className="mb-2 block">Месяц</Label>
             <Input
               type="month"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              className="w-40"
+              className="w-full"
             />
           </div>
-          <Button onClick={handleExport}>📥 Скачать отчёт</Button>
+
+          {/* Экспорт */}
+          <Button onClick={handleExport} className="sm:col-span-1 sm:self-end">
+            📥 Скачать отчёт
+          </Button>
+
+          {/* Кнопка сброса: на планшетах занимает всю нижнюю строчку (col-span-2) */}
           <Button
-            className="sm:ml-auto"
+            className="sm:col-span-2 lg:col-span-1 lg:ml-auto lg:w-auto"
             variant="destructive"
             onClick={handleResetAll}
           >

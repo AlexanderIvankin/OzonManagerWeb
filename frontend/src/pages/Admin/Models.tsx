@@ -148,15 +148,17 @@ export const Models = () => {
 
   return (
     <div className="container mx-auto space-y-6 py-6">
-      <h1 className="text-2xl font-bold">🧊 3D-модели (zip в S3)</h1>
+      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
+        <h1 className="text-2xl font-bold">🧊 3D-модели (zip в S3)</h1>
+      </div>
 
       {/* Загрузка новой/обновлённой модели */}
-      <Card>
+      <Card className="text-center md:justify-center md:text-start">
         <CardHeader>
           <CardTitle className="text-lg">📤 Загрузить модель (zip)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground text-start">
             Модель на артикул — всегда <strong>ОДИН zip-архив</strong> в корне
             S3-бакета:{" "}
             <code>
@@ -171,9 +173,9 @@ export const Models = () => {
             загрузится. Артикул можно не указывать, если файл назван{" "}
             <code>{"{offer_id}.zip"}</code>.
           </p>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2 lg:text-center">
             <div className="space-y-1.5">
-              <Label htmlFor="model-offer-id">Артикул (offer_id)</Label>
+              <Label className="justify-center lg:justify-start" htmlFor="model-offer-id">Артикул (offer_id)</Label>
               <Input
                 id="model-offer-id"
                 placeholder="ARD000003-N"
@@ -182,7 +184,7 @@ export const Models = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="model-file-upload" className="cursor-pointer">
+              <Label className="justify-center lg:justify-start cursor-pointer" htmlFor="model-file-upload">
                 Zip-архив
               </Label>
               <Input

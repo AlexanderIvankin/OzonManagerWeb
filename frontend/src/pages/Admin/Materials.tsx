@@ -190,14 +190,23 @@ export const Materials = () => {
               </p>
             )}
           </div>
-          <Button
-            onClick={handleUpload}
-            disabled={!file || uploading || fileNameMismatch}
-          >
-            {uploading
-              ? "Загрузка..."
-              : `📤 Загрузить ${expectedFileName || "materials-prices.json"}`}
-          </Button>
+          <div className="flex justify-center md:justify-start">
+            <Button
+              onClick={handleUpload}
+              disabled={!file || uploading || fileNameMismatch}
+              /* max-w-full не дает кнопке вылезать за пределы экрана, а w-full растягивает в пределах контейнера */
+              className="md:w-auto w-full max-w-[340px] md:max-w-none"
+            >
+              {uploading ? (
+                "Загрузка..."
+              ) : (
+                /* Оборачиваем текст в span с классом truncate */
+                <span className="truncate block w-full text-center">
+                  📤 Загрузить {expectedFileName || "materials-prices.json"}
+                </span>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -212,15 +221,24 @@ export const Materials = () => {
             чтобы сохранить копию текущих настроек или отредактировать его для
             повторной загрузки.
           </p>
-          <Button
-            onClick={handleDownload}
-            disabled={downloading}
-            variant="outline"
-          >
-            {downloading
-              ? "Скачивание..."
-              : `📥 Скачать ${expectedFileName || "materials-prices.json"}`}
-          </Button>
+          <div className="flex justify-center md:justify-start">
+            <Button
+              onClick={handleDownload}
+              disabled={downloading}
+              variant="outline"
+              /* max-w-full не дает кнопке вылезать за пределы экрана, а w-full растягивает в пределах контейнера */
+              className="md:w-auto w-full max-w-[340px] md:max-w-none"
+            >
+              {downloading ? (
+                "Скачивание..."
+              ) : (
+                /* Оборачиваем текст в span с классом truncate */
+                <span className="truncate block w-full text-center">
+                  📥 Скачать {expectedFileName || "materials-prices.json"}
+                </span>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
