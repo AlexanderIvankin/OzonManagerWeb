@@ -78,16 +78,26 @@ export const Models = () => {
     }
     const target = offerId.trim().replace(/\.zip$/i, "");
     if (!target) {
-      toast.error("Укажите артикул (offer_id) или назовите файл {offer_id}.zip");
+      toast.error(
+        "Укажите артикул (offer_id) или назовите файл {offer_id}.zip",
+      );
       return;
     }
     setUploading(true);
     try {
       const result = await adminApi.uploadModel(file, target);
       toast.success(result.message || `Модель ${target} загружена`);
+      // Мягкая проверка содержимого: архив сохранён, но файлов-моделей внутри нет
+      if (result.model?.hasModelFiles === false) {
+        toast.warning(
+          "В архиве не найдено файлов-моделей (.stl/.3mf/.step/.obj/.txt) — архив сохранён, но проверьте содержимое",
+        );
+      }
       setFile(null);
       setOfferId("");
-      const input = document.getElementById("model-file-upload") as HTMLInputElement;
+      const input = document.getElementById(
+        "model-file-upload",
+      ) as HTMLInputElement;
       if (input) input.value = "";
       loadModels();
     } catch (err: any) {
@@ -111,9 +121,7 @@ export const Models = () => {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      toast.error(
-        await getBlobErrorMessage(err, "Не удалось скачать модель"),
-      );
+      toast.error(await getBlobErrorMessage(err, "Не удалось скачать модель"));
     } finally {
       setDownloadingOffer(null);
     }
@@ -145,18 +153,23 @@ export const Models = () => {
       {/* Загрузка новой/обновлённой модели */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">
-            📤 Загрузить модель (zip)
-          </CardTitle>
+          <CardTitle className="text-lg">📤 Загрузить модель (zip)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Модель на артикул — один zip-архив с файлами (.stl, .3mf, .step,
-            .obj, .zip). При обновлении файлов просто залейте новый архив —
-            старый перезапишется, кэш сбросится, сотрудники получат оповещение.
-            Артикул можно не указывать, если файл назван{" "}
-            <code>{"{offer_id}.zip"}</code> (например,{" "}
-            <code>ARD000003-N.zip</code>).
+            Модель на артикул — всегда <strong>ОДИН zip-архив</strong> в корне
+            S3-бакета:{" "}
+            <code>
+              s3://{"{bucket}"}/{"{offer_id}"}.zip
+            </code>{" "}
+            (например, <code>ARD000003-N.zip</code>). При обновлении файлов
+            просто залейте новый архив — старый перезапишется, локальный кэш
+            сбросится, а сотрудники с выданной моделью получат оповещение.
+            Принимается только <strong>.zip</strong> (до 1 ГБ); содержимое
+            архива проверяется мягко: файлы моделей (.stl, .3mf, .step, .obj,
+            .txt) фиксируются в оповещении, но архив с посторонними файлами тоже
+            загрузится. Артикул можно не указывать, если файл назван{" "}
+            <code>{"{offer_id}.zip"}</code>.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -169,13 +182,36 @@ export const Models = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="model-file-upload">Zip-архив</Label>
+              <Label htmlFor="model-file-upload" className="cursor-pointer">
+                Zip-архив
+              </Label>
               <Input
                 id="model-file-upload"
                 type="file"
                 accept=".zip,application/zip"
                 onChange={handleFileChange}
+                className="m-0 p-0 items-center file:h-full file:mr-4 file:px-3 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground file:font-semibold file:cursor-pointer file:hover:bg-primary/90 hover:border-primary/60 cursor-pointer transition-all hover:bg-input/50 active:scale-[0.98]"
               />
+
+              {file ? (
+                <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                  <span className="text-foreground font-medium">Выбран:</span>{" "}
+                  <div>
+                    {" "}
+                    <span className="font-mono text-xs break-all">
+                      {file.name}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({formatSize(file.size)})
+                    </span>
+                  </div>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Архив не выбран
+                </p>
+              )}
             </div>
           </div>
           <Button onClick={handleUpload} disabled={uploading || !file}>

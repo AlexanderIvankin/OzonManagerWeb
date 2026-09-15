@@ -40,6 +40,10 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   model_uploaded: { icon: "📤", label: "Модель загружена" },
   model_updated: { icon: "🔄", label: "Модель обновлена" },
   model_deleted: { icon: "🗑", label: "Модель удалена" },
+  // Модель выдана по РОДИТЕЛЬСКОМУ артикулу (-NR/-NL -> -N) — журнал персонала
+  models_parent_used: { icon: "🧩", label: "Модель по родительскому артикулу" },
+  // Отказ загрузки: файл не .zip (только live-тост, в истории не сохраняется)
+  model_upload_rejected: { icon: "⛔", label: "Модель не загружена" },
 };
 
 const formatDateTime = (ts: number) =>

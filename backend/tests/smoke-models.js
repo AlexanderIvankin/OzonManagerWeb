@@ -159,6 +159,10 @@ function assert(cond, label) {
     const okValidation = ModelService.validateZipBuffer(goodZip);
     assert(okValidation.entries.includes('ARD000003-N.stl'), 'validateZipBuffer: хороший zip проходит (.stl + .txt)');
     assert(okValidation.totalUncompressed > 0, 'validateZipBuffer: суммарный размер посчитан');
+    assert(
+      okValidation.hasModelFiles && okValidation.modelFiles.includes('ARD000003-N.stl'),
+      'validateZipBuffer: файлы-модели перечислены (modelFiles)'
+    );
 
     const mustFail = (zip, label) => {
       try {
@@ -171,14 +175,54 @@ function assert(cond, label) {
     };
     mustFail(buildZip([{ name: 'virus.exe', content: 'x' }]), 'zip с .exe отклоняется');
     mustFail(buildZip([{ name: '../escape.stl', content: 'x' }]), 'zip с path traversal отклоняется');
-    mustFail(buildZip([{ name: 'only.docx', content: 'x' }]), 'zip без 3D-моделей отклоняется');
+    // Внутри архива проверка файлов-моделей МЯГКАЯ: zip с посторонними файлами
+    // (.docx и т.п.) загружается, но фиксируется как «без файлов-моделей».
+    const softValidation = ModelService.validateZipBuffer(
+      buildZip([{ name: 'only.docx', content: 'x' }])
+    );
+    assert(
+      softValidation.hasModelFiles === false && softValidation.modelFiles.length === 0,
+      'validateZipBuffer: zip без файлов-моделей проходит (мягкая проверка)'
+    );
     mustFail(Buffer.from('не zip вообще'), 'не-zip отклоняется');
 
+    // ЖЁСТКАЯ проверка загружаемого персоналом файла: имя обязано быть .zip
+    const mustRejectUpload = (fileName, zip, label) => {
+      try {
+        ModelService.validateUploadFile(fileName, zip);
+        throw new Error(`Ожидалась ошибка: ${label}`);
+      } catch (err) {
+        if (String(err.message).startsWith('Ожидалась ошибка')) throw err;
+        assert(err.validation === true, `${label}: помечена как validation`);
+        console.log(`  ✔ ${label}: «${err.message.slice(0, 60)}»`);
+      }
+    };
+    mustRejectUpload('ARD000003-N.rar', goodZip, 'validateUploadFile: не-zip имя отклоняется');
+    mustRejectUpload('ARD000003-N.zip', Buffer.from('не zip вообще'), 'validateUploadFile: не-zip содержимое отклоняется');
+    const nameOk = ModelService.validateUploadFile('ARD000003-N.zip', goodZip);
+    assert(nameOk.hasModelFiles, 'validateUploadFile: правильный .zip проходит');
+
     // 4. Загрузка модели модератором -> offer_models + S3-заглушка
-    const uploaded = await ModelService.uploadModel(TEST_OFFER, goodZip, mod.id);
+    const uploaded = await ModelService.uploadModel(
+      TEST_OFFER, goodZip, mod.id, `${TEST_OFFER}.zip`
+    );
     assert(uploaded.offer_id === TEST_OFFER, 'uploadModel: запись в offer_models создана');
-    assert(uploaded.s3_key === `models/${TEST_OFFER}.zip`, `uploadModel: ключ S3 = models/${TEST_OFFER}.zip`);
-    assert(fakeS3Objects.has(`models/${TEST_OFFER}.zip`), 'uploadModel: zip залит в S3 (заглушку)');
+    assert(
+      uploaded.s3_key === `${TEST_OFFER}.zip`,
+      `uploadModel: ключ S3 = ${TEST_OFFER}.zip (корень бакета)`
+    );
+    assert(fakeS3Objects.has(`${TEST_OFFER}.zip`), 'uploadModel: zip залит в S3 (заглушку)');
+    assert(uploaded.hasModelFiles === true, 'uploadModel: файлы-модели в ответе');
+    // Отказ валидации: не-zip имя отклоняется ДО обращения к S3
+    let uploadRejected = false;
+    const s3KeysBefore = fakeS3Objects.size;
+    try {
+      await ModelService.uploadModel(TEST_OFFER, goodZip, mod.id, 'ARD000003-N.txt');
+    } catch (err) {
+      uploadRejected = err.validation === true;
+    }
+    assert(uploadRejected, 'uploadModel: не-zip имя файла отклоняется (validation)');
+    assert(fakeS3Objects.size === s3KeysBefore, 'uploadModel: при отказе валидации S3 не тронут');
     assert(!!uploaded.file_hash && uploaded.file_hash.length === 64, 'uploadModel: sha256-хеш записан');
     assert(uploaded.file_size === goodZip.length, 'uploadModel: размер zip записан');
 
@@ -197,6 +241,13 @@ function assert(cond, label) {
     );
     assert(summary.available.length === 1 && summary.missing.length === 0, 'issueForAssignment: модель выдана через родителя');
     assert(summary.available[0].sourceOfferId === TEST_OFFER, `issueForAssignment: sourceOfferId = ${TEST_OFFER}`);
+    assert(summary.parentMatched.length === 1, 'issueForAssignment: parentMatched заполнен (модель от родителя)');
+    assert(
+      summary.parentMatched[0].offerId === `${TEST_OFFER}R` &&
+        summary.parentMatched[0].parentOfferId === TEST_OFFER &&
+        summary.parentMatched[0].fileName === `${TEST_OFFER}.zip`,
+      'issueForAssignment: parentMatched содержит оба артикула и имя файла'
+    );
     const issuedRow = await db.get(
       'SELECT * FROM issued_models WHERE user_id = ? AND offer_id = ?',
       emp.id, `${TEST_OFFER}R`
@@ -213,6 +264,10 @@ function assert(cond, label) {
       `SELECT type FROM notifications WHERE audience = 'staff' AND type LIKE 'model%'`
     );
     assert(staffNotifs.some((n) => n.type === 'models_available'), 'issueForAssignment: журнал models_available (staff) создан');
+    assert(
+      staffNotifs.some((n) => n.type === 'models_parent_used'),
+      'issueForAssignment: журнал models_parent_used (staff) создан (модель взята у родителя)'
+    );
 
     // Повторная выдача — идемпотентна (без дублей)
     await ModelService.issueForAssignment(`SMOKE-ORDER-2-${stamp}`, emp.id, emp, {
@@ -270,7 +325,7 @@ function assert(cond, label) {
     const info = await ModelService.getDownloadInfo(TEST_OFFER);
     assert(fs.existsSync(info.path), 'getDownloadInfo: файл прогрет в локальный кэш');
     assert(
-      fs.readFileSync(info.path).equals(fakeS3Objects.get(`models/${TEST_OFFER}.zip`)),
+      fs.readFileSync(info.path).equals(fakeS3Objects.get(`${TEST_OFFER}.zip`)),
       'getDownloadInfo: содержимое кэша совпадает с S3'
     );
     assert(info.fileName === `${TEST_OFFER}.zip`, 'getDownloadInfo: имя файла корректно');

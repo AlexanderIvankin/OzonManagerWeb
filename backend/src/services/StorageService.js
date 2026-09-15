@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pipeline } = require('stream/promises');
-const { s3, BUCKET, PREFIX, MODELS_PREFIX } = require('../config/s3');
+const { s3, BUCKET, MODELS_PREFIX } = require('../config/s3');
 const {
   PutObjectCommand,
   GetObjectCommand,
@@ -19,8 +19,8 @@ class StorageService {
   }
 
   static keyFor(offerId) {
-    // s3://bucket/[PREFIX]models/{offer_id}.zip
-    return `${PREFIX}${MODELS_PREFIX}${offerId}.zip`;
+    // s3://bucket/[S3_MODELS_PREFIX]{offer_id}.zip — по умолчанию файлы в корне бакета
+    return `${MODELS_PREFIX}${offerId}.zip`;
   }
 
   static cachePath(offerId) {

@@ -257,14 +257,41 @@ const TEMPLATES = {
     const missing = Array.isArray(p.missingOffers) && p.missingOffers.length
       ? `\n⚠️ Без моделей остались: ${p.missingOffers.join(', ')} — обратитесь к модератору.`
       : '';
+    const hasParents = Array.isArray(p.parentOffers) && p.parentOffers.length;
+    const parentNote = hasParents
+      ? `\nℹ️ Часть моделей выдана по родительскому артикулу: ${p.parentOffers
+          .map((x) => `${x.offerId} ← ${x.parentOfferId}`)
+          .join(', ')}.`
+      : '';
     return {
       user: {
         title: `📁 3D-модели для заказа ${p.orderId} доступны`,
-        message: `Доступны 3D-модели для заказа ${p.orderId}:\n${offers}.${missing}\nСкачайте их в карточке заказа («Мои заказы»).`,
+        message: `Доступны 3D-модели для заказа ${p.orderId}:\n${offers}.${parentNote}${missing}\nСкачайте их в карточке заказа («Мои заказы»).`,
       },
       staff: {
         title: `📁 ${p.userName}: выданы 3D-модели (заказ ${p.orderId})`,
-        message: `Сотруднику ${p.userName} выданы 3D-модели по заказу ${p.orderId}: ${offers}.`,
+        message: `Сотруднику ${p.userName} выданы 3D-модели по заказу ${p.orderId}: ${offers}.${parentNote}`,
+      },
+    };
+  },
+
+  // Модель найдена НЕ по прямому артикулу, а по родительскому (-NR/-NL -> -N):
+  // персоналу нужно знать, что для прямого offer_id модели нет (при случае —
+  // завести отдельную модель или переименовать архив в родительский артикул).
+  models_parent_used: (p) => {
+    const pairs = Array.isArray(p.parentOffers)
+      ? p.parentOffers
+          .map((x) => `${x.offerId} ← ${x.parentOfferId} (${x.fileName || `${x.parentOfferId}.zip`})`)
+          .join('\n')
+      : '';
+    const orderPart = p.orderId ? ` (заказ ${p.orderId}${p.userName ? `, ${p.userName}` : ''})` : '';
+    return {
+      user: null,
+      staff: {
+        title: `ℹ️ Модели выданы по родительскому артикулу${orderPart}`,
+        message:
+          `Для артикулов не нашлось моделей по прямому offer_id — выданы модели родителя:\n${pairs}\n` +
+          `Если для этих артикулов нужны свои модели — загрузите их в разделе «Модели».`,
       },
     };
   },
@@ -285,13 +312,19 @@ const TEMPLATES = {
   },
 
   // Журнал персонала: модель загружена/обновлена
-  model_uploaded: (p) => ({
-    user: null,
-    staff: {
-      title: `📤 Модель ${p.offerId} загружена`,
-      message: `Модель ${p.fileName || p.offerId + '.zip'} для ${p.offerId} загружена (${p.filesCount || 0} файл(ов) в архиве).${p.adminName ? `\nЗагрузил: ${p.adminName}.` : ''}`,
-    },
-  }),
+  model_uploaded: (p) => {
+    const models =
+      Array.isArray(p.modelFiles) && p.modelFiles.length
+        ? `\nФайлы-модели: ${p.modelFiles.join(', ')}.`
+        : '\n⚠️ В архиве не найдено файлов-моделей (допустимо для фото/текстовых архивов).';
+    return {
+      user: null,
+      staff: {
+        title: `📤 Модель ${p.offerId} загружена`,
+        message: `Модель ${p.fileName || p.offerId + '.zip'} для ${p.offerId} загружена (${p.filesCount || 0} файл(ов) в архиве).${models}${p.adminName ? `\nЗагрузил: ${p.adminName}.` : ''}`,
+      },
+    };
+  },
 
   // Сотруднику с выданной моделью: архив обновился — скачайте заново
   model_updated: (p) => ({
@@ -309,6 +342,19 @@ const TEMPLATES = {
       title: `🗑 Модель ${p.offerId} удалена`,
       message: `3D-модель для ${p.offerId} удалена из хранилища.${p.adminName ? `\nУдалил: ${p.adminName}.` : ''}`,
     },
+  }),
+
+  // ЖЁСТКАЯ валидация загрузки модели (принимаем ТОЛЬКО .zip) не пройдена:
+  // уходит ЛИЧНО загрузившему МГНОВЕННО через WebSocket (persist: false — в
+  // историю «Оповещений» запись НЕ создаётся), в журнал персонала не пишется.
+  model_upload_rejected: (p) => ({
+    user: {
+      title: `⛔ Модель${p.offerId ? ` ${p.offerId}` : ''} не загружена`,
+      message:
+        `Загрузка отклонена: ${p.error || 'файл не является zip-архивом'}.\n` +
+        `Модель на артикул — всегда ОДИН zip-архив: назовите файл «{offer_id}.zip» (например, ARD000003-N.zip).`,
+    },
+    staff: null,
   }),
 };
 
@@ -330,6 +376,11 @@ function extractSearchFields(payload) {
     offerIds = payload.details.products.map((p) => p.offer_id).filter(Boolean);
   } else if (Array.isArray(payload?.earningsDetails)) {
     offerIds = payload.earningsDetails.map((item) => item.offerId).filter(Boolean);
+  } else if (Array.isArray(payload?.parentOffers)) {
+    // models_parent_used: ищем и по прямому артикулу, и по родительскому
+    offerIds = payload.parentOffers
+      .flatMap((x) => [x.offerId, x.parentOfferId])
+      .filter(Boolean);
   }
   const uniqueOfferIds = Array.from(new Set(offerIds.map(String)));
 

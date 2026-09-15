@@ -26,6 +26,26 @@ function placeholders(ids) {
   return ids.map(() => '?').join(', ');
 }
 
+// === Сериализация пакетных (транзакционных) записей ===
+// Соединение SQLite одно: если два пакета (например, два notifyStaff из
+// ModelService.issueForAssignment — «модели выданы» и «модель взята у
+// родителя») стартуют одновременно, второй BEGIN TRANSACTION падает с
+// «cannot start a transaction within a transaction», и его оповещения
+// теряются. Все пакетные записи выстраиваются в единую очередь.
+let writeChain = Promise.resolve();
+
+/**
+ * Выполнить пакетную запись строго после завершения предыдущей.
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ * @template T
+ */
+function serializeWrite(task) {
+  const run = writeChain.then(task, task);
+  writeChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 /**
  * Экранирует спецсимволы LIKE (% _ \), чтобы поиск работал как поиск подстроки.
  */
@@ -98,9 +118,19 @@ class Notification {
    * Возвращает массив id.
    */
   static async createMany(rows) {
+    if (!rows.length) return [];
+    // Пакетные записи — строго по очереди (см. serializeWrite), иначе
+    // параллельные notifyStaff ломают транзакцию SQLite и теряют оповещения.
+    return serializeWrite(() => Notification.writeMany(rows));
+  }
+
+  /**
+   * Внутренний исполнитель пакетной вставки: одна транзакция на пакет.
+   * Вызывать только через createMany (сериализация записи).
+   */
+  static async writeMany(rows) {
     const db = getNotificationsDB();
     const ids = [];
-    if (!rows.length) return ids;
 
     await db.run('BEGIN TRANSACTION');
     try {

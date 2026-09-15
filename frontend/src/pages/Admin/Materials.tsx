@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { adminApi, getBlobErrorMessage, getDownloadFileName } from "../../api/admin";
+import {
+  adminApi,
+  getBlobErrorMessage,
+  getDownloadFileName,
+} from "../../api/admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,7 +78,10 @@ export const Materials = () => {
       return;
     }
     // Запасная проверка, если сервер не сообщил имя (старый бэкенд)
-    if (!expectedFileName && !/^materials-prices(-\d+)?\.json$/.test(file.name)) {
+    if (
+      !expectedFileName &&
+      !/^materials-prices(-\d+)?\.json$/.test(file.name)
+    ) {
       toast.error(
         "Неверное имя файла: ожидается materials-prices.json или materials-prices-<версия>.json",
       );
@@ -91,7 +98,9 @@ export const Materials = () => {
       loadMaterials(); // перезагрузить данные
     } catch (err: any) {
       // Показываем текст ошибки с сервера (например, про несовпадение имени)
-      toast.error(err.response?.data?.error || err.message || "Ошибка загрузки");
+      toast.error(
+        err.response?.data?.error || err.message || "Ошибка загрузки",
+      );
     } finally {
       setUploading(false);
     }
@@ -150,7 +159,7 @@ export const Materials = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label className="mb-[10px]" htmlFor="file-upload">
+            <Label className="mb-[10px] cursor-pointer" htmlFor="file-upload">
               Файл настроек (ожидается{" "}
               {expectedFileName || "materials-prices.json"})
             </Label>
@@ -159,8 +168,22 @@ export const Materials = () => {
               type="file"
               accept=".json"
               onChange={handleFileChange}
-              className="mt-1"
+              className="m-0 p-0 items-center file:h-full file:mr-4 file:px-3 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground file:font-semibold file:cursor-pointer file:hover:bg-primary/90 hover:border-primary/60 cursor-pointer transition-all hover:bg-input/50 active:scale-[0.98]"
             />
+            {file ? (
+              <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                <span className="text-foreground font-medium">Выбран:</span>{" "}
+                <div>
+                  <span className="font-mono text-xs break-all">
+                    {file.name}
+                  </span>
+                </div>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-2">
+                Файл не выбран
+              </p>
+            )}
             {fileNameMismatch && (
               <p className="text-xs text-red-500 mt-1">
                 ⚠️ Имя файла не совпадает с актуальным: {expectedFileName}

@@ -10,7 +10,11 @@ const s3 = new S3Client({
   forcePathStyle: true, // Beget требует path-style
 });
 
-// Префикс ключей моделей внутри бакета: s3://bucket/models/{offer_id}.zip
-const MODELS_PREFIX = process.env.S3_MODELS_PREFIX || 'models/';
+// Префикс ключей моделей внутри бакета — по умолчанию ПУСТО:
+// файлы лежат в корне бакета, s3://<bucket>{offer_id}.zip (например, ARD000003-N.zip).
+// Настройка оставлена на будущее: если захочется перенести модели в подпапку —
+// достаточно указать S3_MODELS_PREFIX="subdir/" в .env.
+const MODELS_PREFIX = process.env.S3_MODELS_PREFIX || '';
 
-module.exports = { s3, BUCKET: process.env.S3_BUCKET, PREFIX: process.env.S3_PREFIX || '', MODELS_PREFIX };
+module.exports = { s3, BUCKET: process.env.S3_BUCKET, MODELS_PREFIX };
+

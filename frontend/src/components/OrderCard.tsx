@@ -177,6 +177,14 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
                             {formatSize(p.model.fileSize)})
                           </span>
                         </Button>
+                        {/* Модель взята у родительского артикула: показываем, по
+                            какому именно артикулу лежит zip (для идентификации) */}
+                        {p.model.offerId !== p.offer_id && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            🧩 Модель родительского артикула{" "}
+                            <code>{p.model.offerId}</code>
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

@@ -1067,7 +1067,13 @@ exports.uploadModel = async (req, res, next) => {
     const buffer = fs.readFileSync(req.file.path);
     try { fs.unlinkSync(req.file.path); } catch { /* временный файл multer не критичен */ }
 
-    const record = await ModelService.uploadModel(offerId, buffer, req.user.id);
+    // originalname передаётся для ЖЁСТКОЙ проверки «только .zip» (по расширению)
+    const record = await ModelService.uploadModel(
+      offerId,
+      buffer,
+      req.user.id,
+      req.file.originalname || null
+    );
 
     console.log(
       `[ADMIN] ${req.user?.name || req.user?.id} загрузил модель ${record.offer_id} (${buffer.length} байт)`
@@ -1078,9 +1084,24 @@ exports.uploadModel = async (req, res, next) => {
     });
   } catch (err) {
     console.error('[uploadModel] Ошибка:', err);
-    // Ошибки валидации — 400, остальные — наверх (500)
-    if (err.message && !err.message.includes('S3')) {
-      return res.status(400).json({ error: err.message });
+    // ЖЁСТКАЯ проверка «только .zip» не пройдена (или иная ошибка валидации):
+    // загрузившему уходит личное LIVE-оповещение (persist: false — в историю
+    // «Оповещений» запись НЕ создаётся, в журнал персонала тоже не пишется),
+    // ответ — 400 с текстом ошибки. Остальные ошибки — наверх (500).
+    const isValidation =
+      err.validation === true || (err.message && !err.message.includes('S3'));
+    if (isValidation) {
+      await NotificationService.notifyUser(
+        req.user.id,
+        'model_upload_rejected',
+        {
+          offerId: req.body.offerId || req.body.offer_id || null,
+          fileName: req.file?.originalname || null,
+          error: err.message,
+        },
+        { persist: false },
+      );
+      return res.status(400).json({ error: err.message, rejected: true });
     }
     next(err);
   }
