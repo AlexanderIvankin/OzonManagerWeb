@@ -9,6 +9,10 @@ router.use(authenticate);
 // Профиль доступен всем авторизованным (даже с ролью 'user')
 router.get('/profile', userController.getProfile);
 
+// Обновление отображаемого имени (display_name) — только свой профиль,
+// доступно всем авторизованным (даже с ролью 'user')
+router.put('/profile', userController.updateDisplayName);
+
 // Для всех остальных маршрутов требуется роль сотрудника (employee, moderator, admin)
 router.use(requireEmployee);
 

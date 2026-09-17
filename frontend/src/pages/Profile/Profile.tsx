@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 
 export const Profile = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -34,6 +35,33 @@ export const Profile = () => {
   } | null>(null);
   const [loadingEarnings, setLoadingEarnings] = useState(false);
   const [loadingToggle, setLoadingToggle] = useState(false);
+  // Редактирование отображаемого имени (display_name) — видит и меняет сам пользователь
+  const [editingDisplayName, setEditingDisplayName] = useState(false);
+  const [displayNameInput, setDisplayNameInput] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+
+  const handleSaveDisplayName = async () => {
+    const value = displayNameInput.trim();
+    if (!value) {
+      toast.error("Укажите отображаемое имя");
+      return;
+    }
+    setSavingDisplayName(true);
+    try {
+      const updated = await userApi.updateDisplayName(value);
+      if (user) {
+        dispatch(updateUser({ ...user, display_name: updated.display_name }));
+      }
+      setEditingDisplayName(false);
+      toast.success("Отображаемое имя обновлено");
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.error || err?.message || "Ошибка сохранения",
+      );
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
 
   const loadActiveEarnings = async () => {
     try {
@@ -105,9 +133,55 @@ export const Profile = () => {
       <Card>
         <CardHeader>
           <div className="flex flex-col items-center justify-center mb-[15px]">
-            <CardTitle className="text-2xl mb-[5px]">
-              {user?.name}
-            </CardTitle>
+            {/* Заголовок = display_name, редактируется самим пользователем прямо здесь */}
+            {editingDisplayName ? (
+              <div className="flex items-center justify-center gap-2 mb-[5px]">
+                <Input
+                  className="max-w-xs text-center"
+                  value={displayNameInput}
+                  autoFocus
+                  placeholder="Как вас показывать"
+                  onChange={(e) => setDisplayNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveDisplayName();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleSaveDisplayName}
+                  disabled={savingDisplayName}
+                >
+                  {savingDisplayName ? "..." : "Сохранить"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditingDisplayName(false)}
+                  disabled={savingDisplayName}
+                >
+                  Отмена
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1 mb-[5px] w-full max-w-full px-1">
+                {/* Спейсер той же ширины, что и кнопка справа */}
+                <span className="w-7 shrink-0" aria-hidden="true" />
+                <CardTitle className="text-2xl text-center break-words min-w-0">
+                  {user?.display_name || user?.name || user?.username}
+                </CardTitle>
+                <Button
+                  className="h-7 w-7 p-0 shrink-0"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setDisplayNameInput(user?.display_name || user?.name || "");
+                    setEditingDisplayName(true);
+                  }}
+                >
+                  ✏️
+                </Button>
+              </div>
+            )}
             <CardDescription>
               <RoleBadge role={user?.role ?? ""} />
             </CardDescription>

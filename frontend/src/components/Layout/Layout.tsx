@@ -101,7 +101,7 @@ export const Layout = () => {
           </span>
           <h1 className="hidden md:block text-xl font-bold">Ozon Manager</h1>
           <p className="hidden md:block text-sm text-muted-foreground mb-[5px]">
-            {user?.name}
+            {user?.display_name}
           </p>
           <p className="hidden md:block text-xs text-muted-foreground">
             Роль:{" "}

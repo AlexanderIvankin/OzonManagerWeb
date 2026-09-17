@@ -79,6 +79,7 @@ async function createTables(db) {
       taking_orders INTEGER DEFAULT 1,
       tg_user_id TEXT UNIQUE,
       email_verified INTEGER DEFAULT 0,
+      display_name TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
@@ -122,6 +123,14 @@ async function createTables(db) {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+
+  // Миграция users: display_name — имя, которое пользователь видит и меняет
+  // сам в Профиле (name редактирует только Персонал). Добавляется безопасно.
+  const usersInfo = await db.all('PRAGMA table_info(users)');
+  if (!usersInfo.some((col) => col.name === 'display_name')) {
+    await db.run('ALTER TABLE users ADD COLUMN display_name TEXT');
+    console.log('[DB] Добавлена колонка display_name в users');
+  }
 
   // Миграция assignments (аналог BOTFILES/db.js): колонки для напоминаний
   // о неотправленных заказах (планировщик awaiting_deliver). Добавляются

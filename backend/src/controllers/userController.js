@@ -33,6 +33,29 @@ exports.getProfile = async (req, res) => {
 };
 
 /**
+ * Обновить отображаемое имя (display_name) — только для себя.
+ * В отличие от name (которое редактирует Персонал в админке),
+ * display_name пользователь меняет сам на странице Профиль.
+ */
+exports.updateDisplayName = async (req, res) => {
+  try {
+    const { displayName } = req.body;
+    if (typeof displayName !== 'string' || displayName.trim().length < 1) {
+      return res.status(400).json({ error: 'Укажите отображаемое имя' });
+    }
+    if (displayName.trim().length > 100) {
+      return res.status(400).json({ error: 'Отображаемое имя: максимум 100 символов' });
+    }
+    const user = await User.update(req.user.id, { display_name: displayName.trim() });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    console.error('[updateDisplayName] Ошибка:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
  * Получить активные заказы пользователя с деталями (состав, статус статистики)
  */
 exports.getActiveOrders = async (req, res, next) => {

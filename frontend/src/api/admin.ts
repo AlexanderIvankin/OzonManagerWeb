@@ -6,6 +6,8 @@ export interface User {
   username: string;
   email: string;
   name: string;
+  /** Отображаемое имя для самого пользователя (меняется в Профиле) */
+  display_name?: string | null;
   phone: string;
   capacity: number;
   earnings_factor: number;
