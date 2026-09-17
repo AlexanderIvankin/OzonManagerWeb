@@ -109,8 +109,8 @@ export const Register = () => {
               {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Имя</Label>
-              <Input id="name" placeholder="Ваше имя" {...registerField('name')} />
+              <Label htmlFor="name">Отображаемое имя (опционально)</Label>
+              <Input id="name" placeholder="По умолчанию — логин" {...registerField('name')} />
               {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
             </div>
             <div className="space-y-2">

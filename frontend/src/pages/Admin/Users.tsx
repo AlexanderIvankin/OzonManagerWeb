@@ -760,7 +760,7 @@ export const Users = () => {
               <Label htmlFor="create-name">Имя</Label>
               <Input
                 id="create-name"
-                placeholder="Если не указать — будет использован логин"
+                placeholder="По умолчанию — логин"
                 value={createForm.name}
                 onChange={(e) =>
                   setCreateForm({ ...createForm, name: e.target.value })

@@ -14,4 +14,10 @@ export const userApi = {
   // Переключить приём заказов
   toggleTakingOrders: () =>
     api.post("/user/toggle-orders").then((res) => res.data),
+
+  // Обновить отображаемое имя (display_name) — только свой профиль
+  updateDisplayName: (displayName: string) =>
+    api
+      .put("/user/profile", { displayName })
+      .then((res) => res.data),
 };

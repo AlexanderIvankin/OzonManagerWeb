@@ -97,8 +97,11 @@ class AuthService {
       username: String(username).trim(),
       email: String(email).trim(),
       passwordHash,
-      // Если имя не указано — используем логин
+      // Имя для Персонала: если не указано — используем логин
       name: name && String(name).trim() ? String(name).trim() : String(username).trim(),
+      // Отображаемое имя для самого пользователя: по умолчанию логин,
+      // он сам сможет поменять его в Профиле
+      displayName: String(username).trim(),
       phone: phone || '',
       // Положительность capacity проверена в validateAdminRegisterData;
       // пустое -> дефолт 1
@@ -126,9 +129,12 @@ class AuthService {
       username,
       email,
       passwordHash,
-      name,
+      // Регистрация самим пользователем: указанное имя — это его отображаемое
+      // имя (display_name), которое он видит в Профиле и может менять сам.
+      // name (имя для Персонала) пока ставим из логина — позже его поправит Персонал.
+      name: String(username).trim(),
+      displayName: name && String(name).trim() ? String(name).trim() : String(username).trim(),
       phone: phone || '',
-      // Диапазон 1..99 проверяется в validateRegisterData; пустое/0 -> дефолт 1
       capacity: capacity || 1,
       earningsFactor: earningsFactor || 1.0,
       // До подтверждения email пользователь — 'guest'.

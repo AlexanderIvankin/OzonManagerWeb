@@ -8,6 +8,7 @@ class User {
     const db = getDB();
     const {
       username, email, passwordHash, name,
+      displayName = null,
       phone = '', capacity = 1, earningsFactor = 1.0, role = 'user',
       tgUserId = null
     } = data;
@@ -23,9 +24,9 @@ class User {
     }
 
     const result = await db.run(
-      `INSERT INTO users (username, email, password_hash, name, phone, capacity, earnings_factor, role, tg_user_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      username, email, passwordHash, name, phone, capacity, earningsFactor, role, tgUserId || null, Date.now(), Date.now()
+      `INSERT INTO users (username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, tg_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      username, email, passwordHash, name, displayName, phone, capacity, earningsFactor, role, tgUserId || null, Date.now(), Date.now()
     );
     const id = result.lastID;
     return this.getById(id);
@@ -34,7 +35,7 @@ class User {
   static async getById(id) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at
+      `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at
        FROM users WHERE id = ?`,
       id
     );
@@ -44,7 +45,7 @@ class User {
   static async getByUsername(username) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, password_hash, name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
+      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
        FROM users WHERE username = ?`,
       username
     );
@@ -54,7 +55,7 @@ class User {
   static async getByEmail(email) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, password_hash, name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
+      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
        FROM users WHERE email = ?`,
       email
     );
@@ -68,7 +69,7 @@ class User {
 
   static async update(id, fields) {
     const db = getDB();
-    const allowed = ['name', 'phone', 'capacity', 'earnings_factor', 'role', 'is_fired', 'taking_orders', 'email_verified', 'tg_user_id'];
+    const allowed = ['name', 'display_name', 'phone', 'capacity', 'earnings_factor', 'role', 'is_fired', 'taking_orders', 'email_verified', 'tg_user_id'];
     const setClauses = [];
     const values = [];
     for (const [key, val] of Object.entries(fields)) {
@@ -163,7 +164,7 @@ class User {
    */
   static async getAll({ includeFired = false, includeAll = false, role = null } = {}) {
     const db = getDB();
-    let sql = `SELECT id, username, email, name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at FROM users`;
+    let sql = `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at FROM users`;
     const conditions = [];
     const params = [];
 
