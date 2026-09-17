@@ -75,10 +75,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
   };
 
   // Скачивание 3D-модели товара: токен -> zip (прямых ссылок на S3 нет)
-  const handleDownloadModel = async (
-    offerId: string,
-    fileName: string,
-  ) => {
+  const handleDownloadModel = async (offerId: string, fileName: string) => {
     setModelLoading((prev) => ({ ...prev, [offerId]: true }));
     try {
       const grant = await ordersApi.requestModelToken(offerId);
@@ -197,19 +194,21 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+      <CardFooter className="flex flex-col gap-2 items-stretch sm:flex-row md:flex-col xl:flex-row xl:items-center">
         <Button
           onClick={handleFinish}
           disabled={loading || order.statsStatus === "missing"}
         >
           ✅ Завершить
         </Button>
+
         <Button variant="outline" onClick={handleCancel} disabled={loading}>
           ❌ Отменить
         </Button>
+
         <Button
           variant="secondary"
-          className="sm:ml-auto"
+          className="ml-0 sm:ml-auto md:ml-0 xl:ml-auto"
           onClick={handleDownloadLabel}
           disabled={loading}
         >
