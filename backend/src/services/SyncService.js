@@ -204,9 +204,12 @@ class SyncService {
         // Роль 'god' (Создатель) выдаётся ТОЛЬКО по идентификаторам из .env
         if (this.isGodIdentity(data)) {
           updateFields.role = 'god';
+        } else if (user.role === 'user') {
+          // Пользователь прошёл синхронизацию из Excel → он сотрудник.
+          // Апгрейд user → employee при попадании в team-info.xlsx.
+          // admin/moderator не трогаем — их роли назначаются вручную.
+          updateFields.role = 'employee';
         }
-        // Если роль была 'user' (не admin/moderator) – можно оставить как есть, не меняем
-        // Если хотим повысить роль до 'employee' – можно, но пока оставим как есть.
         await User.update(user.id, updateFields);
 
         // Создатель — в единственном числе: если роль 'god' выдана по .env,
@@ -245,7 +248,7 @@ class SyncService {
           capacity: data.capacity,
           earningsFactor: data.earningsFactor,
           // Создатель создаётся сразу с ролью 'god', остальные — 'user'
-          role: this.isGodIdentity(data) ? 'god' : 'user',
+          role: this.isGodIdentity(data) ? 'god' : 'employee',
           tgUserId: data.tgUserId || null,
         });
         // Обновляем склады
