@@ -132,12 +132,12 @@ export const Profile = () => {
     <div className="container mx-auto py-10 max-w-5xl">
       <Card>
         <CardHeader>
-          <div className="flex flex-col items-center justify-center mb-[15px]">
+          <div className="flex flex-col items-center justify-center mb-[15px] w-full min-w-0">
             {/* Заголовок = display_name, редактируется самим пользователем прямо здесь */}
             {editingDisplayName ? (
-              <div className="flex items-center justify-center gap-2 mb-[5px]">
+              <div className="flex items-center justify-center gap-2 mb-[5px] w-full max-w-full px-1 flex-wrap">
                 <Input
-                  className="max-w-xs text-center"
+                  className="max-w-xs text-center min-w-0 flex-1"
                   value={displayNameInput}
                   autoFocus
                   placeholder="Как вас показывать"
@@ -163,14 +163,22 @@ export const Profile = () => {
                 </Button>
               </div>
             ) : (
-              <div className="flex items-center justify-center gap-1 mb-[5px] w-full max-w-full px-1">
+              <div className="flex items-start justify-center gap-1 mb-[5px] w-full max-w-full min-w-0 px-1">
                 {/* Спейсер той же ширины, что и кнопка справа */}
                 <span className="w-7 shrink-0" aria-hidden="true" />
-                <CardTitle className="text-2xl text-center break-words min-w-0">
+                <CardTitle
+                  className="
+          flex-1 min-w-0
+          text-lg sm:text-xl md:text-2xl
+          text-center
+          break-all [overflow-wrap:anywhere] [word-break:break-word]
+          leading-tight
+        "
+                >
                   {user?.display_name || user?.name || user?.username}
                 </CardTitle>
                 <Button
-                  className="h-7 w-7 p-0 shrink-0"
+                  className="h-7 w-7 p-0 shrink-0 mt-0.5"
                   size="sm"
                   variant="ghost"
                   onClick={() => {

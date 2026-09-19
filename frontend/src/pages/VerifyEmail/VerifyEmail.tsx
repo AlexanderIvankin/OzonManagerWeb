@@ -142,7 +142,7 @@ export const VerifyEmail = () => {
                 <p className="text-sm text-red-500">{errors.email.message}</p>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 mb-[8px]">
               <Label htmlFor="code">Код из письма</Label>
               <Input
                 id="code"
