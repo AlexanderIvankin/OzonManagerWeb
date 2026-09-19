@@ -223,7 +223,7 @@ export const Models = () => {
       </Card>
 
       {/* Список моделей */}
-      <Card className="text-center md:justify-center md:text-start">
+      <Card className="text-center md:justify-center">
         <CardHeader>
           <CardTitle className="text-lg">
             🗃️ Загруженные модели{" "}
@@ -245,41 +245,41 @@ export const Models = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Артикул</TableHead>
-                  <TableHead>Размер</TableHead>
-                  <TableHead className="hidden md:table-cell">
+                  <TableHead className="text-center">Артикул</TableHead>
+                  <TableHead className="text-center">Размер</TableHead>
+                  <TableHead className="text-center hidden md:table-cell">
                     SHA-256
                   </TableHead>
-                  <TableHead className="hidden lg:table-cell">
+                  <TableHead className="text-center hidden lg:table-cell">
                     Загружена
                   </TableHead>
-                  <TableHead className="hidden lg:table-cell">Кем</TableHead>
-                  <TableHead className="text-right">Действия</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">Кем</TableHead>
+                  <TableHead className="text-center">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {models.map((m) => (
                   <TableRow key={m.offer_id}>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <code className="font-bold">{m.offer_id}</code>
                       <div className="text-xs text-muted-foreground">
                         {m.file_name || `${m.offer_id}.zip`}
                       </div>
                     </TableCell>
-                    <TableCell>{formatSize(m.file_size)}</TableCell>
-                    <TableCell className="hidden md:table-cell">
+                    <TableCell className="text-center">{formatSize(m.file_size)}</TableCell>
+                    <TableCell className="text-center hidden md:table-cell">
                       <code className="text-xs text-muted-foreground">
                         {shortHash(m.file_hash)}
                       </code>
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                    <TableCell className="text-center hidden lg:table-cell text-xs text-muted-foreground">
                       {formatDateTime(m.uploaded_at)}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                    <TableCell className="text-center hidden lg:table-cell text-xs text-muted-foreground">
                       {m.uploaded_by_name || m.uploaded_by || "—"}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                    <TableCell className="text-center">
+                      <div className="flex justify-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
