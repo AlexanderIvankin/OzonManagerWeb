@@ -20,7 +20,6 @@ const registerSchema = z.object({
   username: z.string().min(6, 'Логин: минимум 6 символов'),
   email: z.string().email('Некорректный email'),
   password: z.string().min(6, 'Минимум 6 символов'),
-  name: z.string().min(1, 'Введите имя'),
   phone: z
     .string()
     .optional()

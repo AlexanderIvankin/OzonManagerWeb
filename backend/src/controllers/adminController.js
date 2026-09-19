@@ -357,7 +357,11 @@ exports.syncEmployeesServerFile = async (req, res, next) => {
 exports.exportTeamInfo = async (req, res, next) => {
   try {
     const includeFired = req.query.includeFired === 'true';
-    const filePath = await SyncService.exportTeamInfoXlsx(req.user.id, includeFired);
+    // Имя файла зависит от режима: employees-db (включая уволенных) или team-info (активные).
+    // SyncService версонирует его (team-info-1.xlsx / employees-db-1.xlsx),
+    // и это же имя уходит в Content-Disposition для фронта.
+    const outputFileName = includeFired ? 'employees-db.xlsx' : 'team-info.xlsx';
+    const filePath = await SyncService.exportTeamInfoXlsx(req.user.id, includeFired, outputFileName);
     res.download(filePath);
   } catch (err) {
     console.error('[exportTeamInfo] Ошибка:', err);

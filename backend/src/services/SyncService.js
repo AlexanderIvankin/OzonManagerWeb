@@ -247,7 +247,7 @@ class SyncService {
           phone: data.phone,
           capacity: data.capacity,
           earningsFactor: data.earningsFactor,
-          // Создатель создаётся сразу с ролью 'god', остальные — 'user'
+          // Создатель создаётся сразу с ролью 'god', остальные — 'employee'
           role: this.isGodIdentity(data) ? 'god' : 'employee',
           tgUserId: data.tgUserId || null,
         });

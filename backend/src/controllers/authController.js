@@ -4,7 +4,7 @@ exports.register = async (req, res, next) => {
   try {
     const { username, email, password, name, phone, capacity, earningsFactor } = req.body;
     // Валидация
-    if (!username || !email || !password || !name) {
+    if (!username || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     const validationErrors = AuthService.validateRegisterData({ username, email, password, capacity });
