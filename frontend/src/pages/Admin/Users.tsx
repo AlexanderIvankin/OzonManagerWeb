@@ -658,12 +658,31 @@ export const Users = () => {
                                       ) : (
                                         <Select
                                           value={editingUser.role}
-                                          onValueChange={(val) =>
-                                            setEditingUser({
-                                              ...editingUser,
-                                              role: val as any,
-                                            })
-                                          }
+                                          onValueChange={(val) => {
+                                            const role = val as User["role"];
+                                            setEditingUser((prev) => {
+                                              if (!prev) return prev;
+                                              // Роль «Пользователь» = вывод из активного состава:
+                                              // автоматически помечаем уволенным и выключаем
+                                              // приём заказов (аналог кнопки «🗑️ Уволить»)
+                                              if (role === "user") {
+                                                return {
+                                                  ...prev,
+                                                  role,
+                                                  is_fired: true,
+                                                  taking_orders: false,
+                                                };
+                                              }
+                                              // Обратно: сотрудник/модератор/админ —
+                                              // автоматически восстанавливаем, если был уволен
+                                              return {
+                                                ...prev,
+                                                role,
+                                                is_fired: false,
+                                                taking_orders: true,
+                                              };
+                                            });
+                                          }}
                                         >
                                           <SelectTrigger>
                                             <SelectValue>
@@ -688,6 +707,20 @@ export const Users = () => {
                                             </SelectItem>
                                           </SelectContent>
                                         </Select>
+                                      )}
+                                      {/* Связка роли и статуса: Пользователь = уволен */}
+                                      {editingUser.role === "user" ? (
+                                        <p className="text-xs text-red-500">
+                                          Роль «Пользователь» = сотрудник
+                                          выведен из состава: статус станет
+                                          «Уволен»
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground">
+                                          При выборе этой роли сотрудник
+                                          автоматически восстанавливается из
+                                          уволенных
+                                        </p>
                                       )}
                                     </div>
                                     <div className="space-y-2">
