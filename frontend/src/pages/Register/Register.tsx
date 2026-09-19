@@ -20,6 +20,9 @@ const registerSchema = z.object({
   username: z.string().min(6, 'Логин: минимум 6 символов'),
   email: z.string().email('Некорректный email'),
   password: z.string().min(6, 'Минимум 6 символов'),
+  // Отображаемое имя необязательное: если оставлено пустым,
+  // бэкенд (AuthService.register) подставит в display_name логин
+  name: z.string().optional(),
   phone: z
     .string()
     .optional()
@@ -65,7 +68,9 @@ export const Register = () => {
         username: data.username,
         email: data.email,
         password: data.password,
-        name: data.name,
+        name: data.name || '',
+        // name необязателен: пустое значение бэкенд заменит на username
+        // (AuthService.register: displayName = указанное имя || username)
         phone: data.phone || '',
         // zod-схема гарантирует: пусто или целое 1..99. Number вместо parseInt,
         // чтобы дробные значения не обрезались молча
