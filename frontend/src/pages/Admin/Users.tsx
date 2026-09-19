@@ -3,7 +3,7 @@ import { useSelector } from "react-redux";
 import { adminApi, User } from "../../api/admin";
 import { RootState } from "../../store";
 import { RoleBadge, ROLE_LABELS } from "@/components/RoleBadge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -130,6 +130,14 @@ export const Users = () => {
   // === Синхронизация из серверного team-info.xlsx (кнопка «Обновить») ===
   const [syncing, setSyncing] = useState(false);
 
+  // === Синхронизация из загруженного файла team-info (карточка под таблицей) ===
+  // Жёсткая проверка имени файла: принимается только актуальный версионированный
+  // team-info[-<версия>].xlsx — как на странице «Материалы»
+  const [teamFile, setTeamFile] = useState<File | null>(null);
+  const [uploadingTeamFile, setUploadingTeamFile] = useState(false);
+  // Актуальное имя файла сотрудников (приходит с сервера, зависит от BOT_VERSION)
+  const [expectedTeamFileName, setExpectedTeamFileName] = useState("");
+
   const loadUsers = async () => {
     setLoading(true);
     try {
@@ -157,7 +165,7 @@ export const Users = () => {
     try {
       const result = await adminApi.syncFromServerFile();
       toast.success(
-        `Синхронизация выполнена: обновлено ${result.updated}, создано ${result.created}, пропущено ${result.skipped}`,
+        `Синхронизация выполнена: обновлено ${result.updated}, создано ${result.created}, пропущено ${result.skipped}${result.fired ? `, уволено ${result.fired}` : ""}`,
       );
     } catch (err: any) {
       toast.error(
@@ -166,6 +174,78 @@ export const Users = () => {
     } finally {
       setSyncing(false);
       loadUsers();
+    }
+  };
+
+  // Актуальное (версионированное) имя файла сотрудников: как в «Материалах»,
+  // сервер сообщает его сам, клиент сверяет с ним имя выбранного файла
+  useEffect(() => {
+    adminApi
+      .getExpectedTeamInfoFileName()
+      .then((res) => setExpectedTeamFileName(res.fileName || ""))
+      .catch(() => {
+        // Не критично: при загрузке сработает запасная проверка
+        // team-info[-<версия>].xlsx, как у старого бэкенда в «Материалах»
+      });
+  }, []);
+
+  // === Загрузка файла сотрудников с последующей синхронизацией ===
+  const handleTeamFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setTeamFile(e.target.files[0]);
+    }
+  };
+
+  // Строгое совпадение имени с актуальным версионированным файлом
+  const teamFileNameMismatch =
+    teamFile !== null &&
+    expectedTeamFileName !== "" &&
+    teamFile.name !== expectedTeamFileName;
+
+  const handleSyncFromFile = async () => {
+    if (!teamFile) {
+      toast.error("Выберите файл");
+      return;
+    }
+    // Жёсткая проверка имени: только актуальный версионированный файл
+    if (teamFileNameMismatch) {
+      toast.error(
+        `Неверное имя файла: "${teamFile.name}". Ожидается "${expectedTeamFileName}"`,
+      );
+      return;
+    }
+    // Запасная проверка, если сервер не сообщил имя (старый бэкенд)
+    if (
+      !expectedTeamFileName &&
+      !/^team-info(-\d+)?\.xlsx$/.test(teamFile.name)
+    ) {
+      toast.error(
+        "Неверное имя файла: ожидается team-info.xlsx или team-info-<версия>.xlsx",
+      );
+      return;
+    }
+    setUploadingTeamFile(true);
+    try {
+      // Тот же syncBy=email, что и у кнопки «Обновить» — файл сначала
+      // сохраняется на сервере, затем идёт синхронизация из него
+      const result = await adminApi.syncEmployeesFile(teamFile);
+      toast.success(
+        `Синхронизация выполнена: обновлено ${result.updated}, создано ${result.created}, пропущено ${result.skipped}${result.fired ? `, уволено ${result.fired}` : ""}`,
+      );
+      setTeamFile(null);
+      // Сбросить input
+      const input = document.getElementById(
+        "team-file-upload",
+      ) as HTMLInputElement | null;
+      if (input) input.value = "";
+      loadUsers(); // перезагрузить список
+    } catch (err: any) {
+      // Ошибки бэкенда: 400 (неверное имя/файл) и прочие ошибки синхронизации
+      toast.error(
+        err?.response?.data?.error || err?.message || "Ошибка синхронизации",
+      );
+    } finally {
+      setUploadingTeamFile(false);
     }
   };
 
@@ -693,6 +773,73 @@ export const Users = () => {
               )}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* Синхронизация из загруженного файла сотрудников (под таблицей).
+          Стили формы — как на странице «Материалы», выравнивание по центру */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🔄 Синхронизация из файла сотрудников</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="mx-auto w-full max-w-2xl">
+            <Label
+              className="mb-[10px] block cursor-pointer text-center"
+              htmlFor="team-file-upload"
+            >
+              Файл сотрудников (ожидается{" "}
+              {expectedTeamFileName || "team-info.xlsx"})
+            </Label>
+            <Input
+              id="team-file-upload"
+              type="file"
+              accept=".xlsx"
+              onChange={handleTeamFileChange}
+              className="m-0 p-0 items-center file:h-full file:mr-4 file:px-3 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground file:font-semibold file:cursor-pointer file:hover:bg-primary/90 hover:border-primary/60 cursor-pointer transition-all hover:bg-input/50 active:scale-[0.98]"
+            />
+            {teamFile ? (
+              <p className="text-sm text-muted-foreground mt-2 flex items-center justify-center gap-2">
+                <span className="text-foreground font-medium">Выбран:</span>{" "}
+                <div>
+                  <span className="font-mono text-xs break-all">
+                    {teamFile.name}
+                  </span>
+                </div>
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground mt-2 text-center">
+                Файл не выбран
+              </p>
+            )}
+            {teamFileNameMismatch && (
+              <p className="text-xs text-red-500 mt-1 text-center">
+                ⚠️ Имя файла не совпадает с актуальным: {expectedTeamFileName}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-2 text-center">
+              Загрузите актуальный {expectedTeamFileName || "team-info.xlsx"} —
+              синхронизация выполнится по email (как кнопка «Обновить»):
+              обновляются состав сотрудников, список складов и приоритеты.
+            </p>
+          </div>
+          <div className="flex justify-center">
+            <Button
+              onClick={handleSyncFromFile}
+              disabled={!teamFile || uploadingTeamFile || teamFileNameMismatch}
+              /* max-w-full не дает кнопке вылезать за пределы экрана, а w-full растягивает в пределах контейнера */
+              className="md:w-auto w-full max-w-[340px] md:max-w-none"
+            >
+              {uploadingTeamFile ? (
+                "Синхронизация..."
+              ) : (
+                /* Оборачиваем текст в span с классом truncate */
+                <span className="truncate block w-full text-center">
+                  📤 Загрузить {expectedTeamFileName || "team-info.xlsx"}
+                </span>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

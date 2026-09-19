@@ -71,6 +71,39 @@ class SyncService {
   }
 
   /**
+   * Перегенерирует серверные Excel-файлы сотрудников (team-info и employees-db)
+   * по текущему состоянию БД. Вызывается после ЛЮБОГО изменения активного
+   * состава/ролей/статуса is_fired, чтобы серверный Excel не «откатывал»
+   * изменения при следующей синхронизации.
+   */
+  static async refreshServerExports() {
+    try {
+      await this.exportTeamInfoXlsx(null, false, 'team-info.xlsx', { syncWarehouses: false });
+      await this.exportTeamInfoXlsx(null, true, 'employees-db.xlsx', { syncWarehouses: false });
+      console.log('[SyncService] Excel-файлы сотрудников перегенерированы');
+    } catch (err) {
+      // Перегенерация не критична — логируем и не выбрасываем
+      console.warn('[SyncService] Не удалось перегенерировать Excel-файлы:', err.message);
+    }
+  }
+
+  /**
+   * Регистронезависимый поиск пользователя по email.
+   * Email в БД может храниться в другом регистре, чем в Excel (например,
+   * «Ivan@Mail.Ru»), а точное сравнение не находило запись — и сотрудник
+   * пропускался без апгрейда user → employee.
+   * @param {string} email - email из Excel (уже в нижнем регистре)
+   */
+  static async findUserByEmailCI(email) {
+    if (!email) return null;
+    const db = getDB();
+    return db.get(
+      'SELECT * FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1',
+      email
+    );
+  }
+
+  /**
    * Синхронизация из файла team-info.xlsx
    * @param {string} filePath - путь к файлу
    * @param {number} adminUserId - ID администратора (для лога)
@@ -78,6 +111,7 @@ class SyncService {
    * @returns {Promise<{ updated: number, created: number, skipped: number }>}
    */
   static async syncFromExcel(filePath, adminUserId, options = { createMissing: false, syncBy: 'email' }) {
+    console.log(`[SyncService] Синхронизация из Excel (запустил админ #${adminUserId ?? 'система'})`);
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
@@ -145,10 +179,12 @@ class SyncService {
     let updated = 0, created = 0, skipped = 0;
 
     for (const data of usersData) {
-      // Поиск пользователя: если syncBy = 'email' и email есть – ищем по email, иначе по tgUserId
+      // Поиск пользователя: если syncBy = 'email' и email есть – ищем по email
+      // (регистронезависимо — регистр в БД и Excel может отличаться),
+      // иначе по tgUserId
       let user = null;
       if (options.syncBy === 'email' && data.email) {
-        user = await User.getByEmail(data.email);
+        user = await this.findUserByEmailCI(data.email);
         // Фолбэк: если по email не нашли (например, у Создателя в Excel новый
         // email, а в БД старый) — пробуем по tg_user_id
         if (!user && data.tgUserId) {
@@ -159,7 +195,7 @@ class SyncService {
         user = await User.findByTgId(data.tgUserId);
         // Если не нашли по tg, но есть email – пробуем по email (запасной вариант)
         if (!user && data.email) {
-          user = await User.getByEmail(data.email);
+          user = await this.findUserByEmailCI(data.email);
         }
       } else {
         // Нет ни email, ни tg – пропускаем
@@ -201,6 +237,10 @@ class SyncService {
         if (data.tgUserId && user.tg_user_id !== data.tgUserId) {
           updateFields.tg_user_id = data.tgUserId;
         }
+        // Пользователь есть в актуальном team-info.xlsx → он работает:
+        // восстанавливаем (is_fired = 0), включаем приём заказов
+        updateFields.is_fired = 0;
+        updateFields.taking_orders = 1;
         // Роль 'god' (Создатель) выдаётся ТОЛЬКО по идентификаторам из .env
         if (this.isGodIdentity(data)) {
           updateFields.role = 'god';
@@ -209,6 +249,9 @@ class SyncService {
           // Апгрейд user → employee при попадании в team-info.xlsx.
           // admin/moderator не трогаем — их роли назначаются вручную.
           updateFields.role = 'employee';
+        }
+        if (user.is_fired) {
+          console.log(`[SyncService] Пользователь #${user.id} (${user.name || data.name}) восстановлен — присутствует в актуальном team-info.xlsx`);
         }
         await User.update(user.id, updateFields);
 
@@ -281,8 +324,39 @@ class SyncService {
       }
     }
 
-    console.log(`[SyncService] Синхронизация завершена: обновлено ${updated}, создано ${created}, пропущено ${skipped}`);
-    return { updated, created, skipped };
+    // --- Увольнение сотрудников, отсутствующих в актуальном team-info.xlsx ---
+    // Считаем сотрудниками (и кандидатами на увольнение) активных пользователей
+    // с ролью 'employee'; admin/moderator/god не трогаем — их членство в
+    // Excel не обязательно. Увольнение — по образцу fireUser (кнопка «🗑️»
+    // на странице «Пользователи»): is_fired=1, приём заказов выключается,
+    // роль понижается employee → user, активные назначения снимаются.
+    const excelEmails = new Set(usersData.map(d => d.email).filter(Boolean));
+    const excelTgIds = new Set(usersData.map(d => d.tgUserId).filter(Boolean));
+    const activeEmployees = await db.all(
+      "SELECT id, username, name, email, tg_user_id FROM users WHERE is_fired = 0 AND role = 'employee'"
+    );
+    let fired = 0;
+    for (const emp of activeEmployees) {
+      const inExcel =
+        (emp.email && excelEmails.has(String(emp.email).trim().toLowerCase())) ||
+        (emp.tg_user_id && excelTgIds.has(String(emp.tg_user_id).trim()));
+      if (inExcel) continue;
+
+      console.log(`[SyncService] Сотрудник #${emp.id} (${emp.name || emp.username}) отсутствует в team-info.xlsx — помечается уволенным`);
+      // is_fired=1, приём заказов выключается, роль понижается employee → user
+      await User.update(emp.id, { is_fired: 1, taking_orders: 0, role: 'user' });
+      // Снять все активные назначения (как fireUser в adminController)
+      await db.run('DELETE FROM assignments WHERE user_id = ? AND status = "assigned"', emp.id);
+      fired++;
+    }
+
+    console.log(`[SyncService] Синхронизация завершена: обновлено ${updated}, создано ${created}, пропущено ${skipped}, уволено ${fired}`);
+
+    // Роли/состав/is_fired изменились — сразу перегенерируем серверный Excel,
+    // иначе при следующей синхронизации изменения могли бы «откатиться»
+    await this.refreshServerExports();
+
+    return { updated, created, skipped, fired };
   }
 
   /**

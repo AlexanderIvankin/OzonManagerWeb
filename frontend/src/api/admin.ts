@@ -195,8 +195,36 @@ export const adminApi = {
         updated: number;
         created: number;
         skipped: number;
+        /** Сотрудники, отсутствовавшие в Excel, — помечены уволенными */
+        fired: number;
       }>("/admin/sync/server-file")
       .then((res) => res.data),
+
+  // Актуальное (версионированное) имя файла сотрудников team-info-<версия>.xlsx —
+  // для строгой проверки имени при загрузке файла на странице «Пользователи»
+  getExpectedTeamInfoFileName: () =>
+    api
+      .get<{ fileName: string }>("/admin/sync/expected-filename")
+      .then((res) => res.data),
+
+  // Синхронизация сотрудников из загруженного Excel (team-info-<версия>.xlsx):
+  // тот же syncBy=email, что и у кнопки «Обновить», но файл присылает клиент
+  syncEmployeesFile: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api
+      .post<{
+        message: string;
+        updated: number;
+        created: number;
+        skipped: number;
+        /** Сотрудники, отсутствовавшие в Excel, — помечены уволенными */
+        fired: number;
+      }>("/admin/sync/employees", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((res) => res.data);
+  },
 
   // === Заказы (админ) ===
   getAwaitingOrders: (warehouseId?: string) =>

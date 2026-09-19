@@ -22,9 +22,7 @@ const { getLocalTimestamp, getDbBaseName, getVersionedFileName } = require('../u
  */
 async function refreshServerExports() {
   try {
-    await SyncService.exportTeamInfoXlsx(null, false, 'team-info.xlsx', { syncWarehouses: false });
-    await SyncService.exportTeamInfoXlsx(null, true, 'employees-db.xlsx', { syncWarehouses: false });
-    console.log('[adminController] Excel-файлы сотрудников перегенерированы');
+    await SyncService.refreshServerExports();
   } catch (err) {
     console.error('[adminController] Ошибка перегенерации Excel-файлов:', err.message);
   }
@@ -321,8 +319,49 @@ exports.syncEmployees = async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
+    // Жёсткая проверка имени файла: синхронизация всегда идёт из актуального
+    // версионированного team-info[-<версия>].xlsx, чужое имя — вероятная ошибка
+    // (тот же принцип, что и в uploadMaterials для materials-prices.json)
+    const expectedName = getVersionedFileName('team-info', 'xlsx');
+    if (req.file.originalname !== expectedName) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        // временный файл multer не критичен
+      }
+      return res.status(400).json({
+        error: `Неверное имя файла: "${req.file.originalname}". Ожидается "${expectedName}" (актуальная версия файла сотрудников)`,
+      });
+    }
     const result = await SyncService.syncFromExcel(req.file.path, req.user.id);
+    // Временный файл multer больше не нужен
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      // не критично
+    }
     res.json({ message: 'Sync completed', ...result });
+  } catch (err) {
+    // Ошибка синхронизации — временный файл тоже убираем
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        // не критично
+      }
+    }
+    next(err);
+  }
+};
+
+/**
+ * Актуальное (версионированное) имя файла сотрудников team-info.xlsx —
+ * для строгой проверки имени при загрузке и подписей на клиенте
+ */
+exports.getSyncExpectedFileName = async (req, res, next) => {
+  try {
+    // team-info-1.xlsx | team-info.xlsx (зависит от BOT_VERSION)
+    res.json({ fileName: getVersionedFileName('team-info', 'xlsx') });
   } catch (err) {
     next(err);
   }
