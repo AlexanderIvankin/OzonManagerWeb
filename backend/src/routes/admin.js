@@ -30,6 +30,9 @@ router.put('/stats/god', authorize('god'), adminController.updateGodFakeStats);
 router.post('/sync/employees', upload.single('file'), adminController.syncEmployees);
 // Синхронизация из серверного файла team-info.xlsx (кнопка «Обновить»)
 router.post('/sync/server-file', adminController.syncEmployeesServerFile);
+// Актуальное (версионированное) имя файла сотрудников — для строгой
+// проверки имени при загрузке файла на странице «Пользователи»
+router.get('/sync/expected-filename', adminController.getSyncExpectedFileName);
 // --- Экспорт данных ---
 router.get('/export/team-info', adminController.exportTeamInfo);
 router.get('/export/product-stats', adminController.exportProductStats);
