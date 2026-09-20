@@ -31,5 +31,6 @@ backend/employees-db*.xlsx
 *.xls~
 ~$*.xlsx
 
+.env.production
 .env
 
