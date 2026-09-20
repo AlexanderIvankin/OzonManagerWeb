@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid'); // добавим позже, но можно генерировать простой случайный токен
+// uuid не нужен: токены генерируются встроенным crypto (randomBytes / randomInt)
 const config = require('../config');
 const User = require('../models/User');
 const { getDB } = require('../config/database');
