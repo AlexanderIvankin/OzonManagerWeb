@@ -155,38 +155,47 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
                         )
                       </span>
                     )}
-                    {p.offer_id && p.model && (
-                      <div className="mt-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!!modelLoading[p.offer_id]}
-                          onClick={() =>
-                            handleDownloadModel(p.offer_id!, p.model!.fileName)
-                          }
-                          title={`Скачать 3D-модель: ${p.model.fileName}${formatSize(p.model.fileSize)}`}
-                        >
-                          {modelLoading[p.offer_id]
-                            ? "⏳ Скачивание…"
-                            : "⬇️ Скачать модель"}{" "}
-                          <span className="text-muted-foreground">
-                            ({p.model.fileName}
-                            {formatSize(p.model.fileSize)})
-                          </span>
-                        </Button>
-                        {/* Модель взята у родительского артикула: показываем, по
-                            какому именно артикулу лежит zip (для идентификации) */}
-                        {p.model.offerId !== p.offer_id && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            🧩 Модель родительского артикула{" "}
-                            <code>{p.model.offerId}</code>
-                          </p>
-                        )}
-                      </div>
-                    )}
                   </div>
                   {p.images && p.images.length > 0 && (
                     <ProductImages productName={p.name} images={p.images} />
+                  )}
+                  {p.offer_id && p.model && (
+                    <div className="flex flex-col items-center mt-5 w-full min-w-0 px-2 gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!!modelLoading[p.offer_id]}
+                        onClick={() =>
+                          handleDownloadModel(p.offer_id!, p.model!.fileName)
+                        }
+                        title={`Скачать 3D-модель: ${p.model.fileName}${formatSize(p.model.fileSize)}`}
+                        className="
+        h-auto min-w-0 max-w-full
+        whitespace-normal
+        flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5
+        text-center leading-tight
+        py-1.5 px-3
+      "
+                      >
+                        <span className="shrink-0">
+                          {modelLoading[p.offer_id]
+                            ? "⏳ Скачивание…"
+                            : "⬇️ Скачать модель"}
+                        </span>
+                        <span className="text-muted-foreground break-all [overflow-wrap:anywhere] min-w-0">
+                          ({p.model.fileName}
+                          {formatSize(p.model.fileSize)})
+                        </span>
+                      </Button>
+
+                      {/* Модель взята у родительского артикула */}
+                      {p.model.offerId !== p.offer_id && (
+                        <p className="text-xs text-muted-foreground text-center break-all [overflow-wrap:anywhere] min-w-0 max-w-full">
+                          🧩 Модель родительского артикула{" "}
+                          <code className="break-all">{p.model.offerId}</code>
+                        </p>
+                      )}
+                    </div>
                   )}
                 </li>
               ))}
