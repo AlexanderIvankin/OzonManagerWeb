@@ -24,13 +24,16 @@ export const login = createAsyncThunk<
   return response.data;
 });
 
-export const register = createAsyncThunk<User, any>(
-  "auth/register",
-  async (userData) => {
-    const response = await api.post("/auth/register", userData);
-    return response.data.user;
-  },
-);
+// Регистрация: сервер возвращает { user, message, resent }, где resent —
+// была ли заменена «зависшая» неподтверждённая регистрация тем же
+// логином/email (код отправлен повторно)
+export const register = createAsyncThunk<
+  { user: User; message: string; resent?: boolean },
+  any
+>("auth/register", async (userData) => {
+  const response = await api.post("/auth/register", userData);
+  return response.data;
+});
 
 // Подтверждение email по коду из письма — после него сервер присваивает роль user
 export const verifyEmail = createAsyncThunk<
@@ -41,14 +44,17 @@ export const verifyEmail = createAsyncThunk<
   return response.data;
 });
 
-// Повторная отправка кода подтверждения (если письмо не дошло)
-export const resendCode = createAsyncThunk<{ message: string }, { email: string }>(
-  "auth/resendCode",
-  async ({ email }) => {
-    const response = await api.post("/auth/resend-code", { email });
-    return response.data;
-  },
-);
+// Повторная отправка кода подтверждения (если письмо не дошло).
+// Сервер диктует кулдаун: retryAfterSec — сколько секунд кнопка будет
+// заблокирована, sent = false — письмо не отправлено (кулдаун ещё идёт,
+// аккаунта нет или email уже подтверждён)
+export const resendCode = createAsyncThunk<
+  { message: string; sent?: boolean; retryAfterSec?: number },
+  { email: string }
+>("auth/resendCode", async ({ email }) => {
+  const response = await api.post("/auth/resend-code", { email });
+  return response.data;
+});
 
 export const logout = createAsyncThunk("auth/logout", async () => {
   const refreshToken = localStorage.getItem("refreshToken");

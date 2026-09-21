@@ -96,6 +96,19 @@ async function createTables(db) {
     )
   `);
 
+  // Миграция email_verifications: created_at — когда код был отправлен.
+  // Нужна для антифлуда повторной отправки (одна отправка в
+  // RESEND_CODE_COOLDOWN_SEC секунд). У старых строк значение NULL —
+  // для них кулдаун не применяется (created_at трактуется как «давно»).
+  const verificationsInfo = await db.all('PRAGMA table_info(email_verifications)');
+  if (!verificationsInfo.some((col) => col.name === 'created_at')) {
+    await db.run('ALTER TABLE email_verifications ADD COLUMN created_at INTEGER');
+    console.log('[DB] Добавлена колонка created_at в email_verifications');
+  }
+
+  // Индекс для выборки последнего кода пользователя (кулдаун повторной отправки)
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id)');
+
   // --- Таблица refresh-токенов ---
   await db.exec(`
     CREATE TABLE IF NOT EXISTS refresh_tokens (

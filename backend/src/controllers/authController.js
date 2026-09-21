@@ -15,12 +15,17 @@ exports.register = async (req, res, next) => {
         errors: validationErrors,
       });
     }
-    const user = await AuthService.register({
+    const { user, resent } = await AuthService.register({
       username, email, password, name, phone, capacity, earningsFactor
     });
     res.status(201).json({
       user,
-      message: 'Код подтверждения отправлен на указанный email',
+      // resent: заменили «зависшую» неподтверждённую регистрацию тем же
+      // логином/email — код сгенерирован и отправлен заново
+      message: resent
+        ? 'Код подтверждения отправлен повторно на указанный email'
+        : 'Код подтверждения отправлен на указанный email',
+      resent,
     });
   } catch (err) {
     if (err.message.includes('already taken')) {
@@ -55,11 +60,16 @@ exports.resendCode = async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
-    await AuthService.resendCode(email);
+    const result = await AuthService.resendCode(email);
     // Ответ одинаковый независимо от того, существует ли аккаунт,
-    // чтобы не раскрывать список зарегистрированных email
+    // чтобы не раскрывать список зарегистрированных email.
+    // sent = false — письмо не отправлено (аккаунта нет / уже подтверждён /
+    // не истёк кулдаун RESEND_CODE_COOLDOWN_SEC), retryAfterSec нужен
+    // фронтенду для таймера на кнопке «Отправить код повторно»
     res.json({
       message: 'Если аккаунт существует и email ещё не подтверждён, новое письмо отправлено',
+      sent: result.sent,
+      retryAfterSec: result.retryAfterSec,
     });
   } catch (err) {
     if (err.message.includes('Не удалось отправить письмо')) {

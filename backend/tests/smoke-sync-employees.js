@@ -8,6 +8,8 @@
  *   3. Уволенный, снова ЕСТЬ в Excel → восстановлен (is_fired = 0, role user → employee).
  *   4. admin отсутствует в Excel — НЕ увольняется.
  *   5. Пользователь с ролью 'user', появившись в Excel, становится сотрудником.
+ *   6. Гость (email не подтверждён), есть в Excel — НЕ восстанавливается
+ *      (остаётся is_fired = 1 / taking_orders = 0 до подтверждения).
  */
 
 // ВАЖНО: env нужно выставить ДО require database-модуля
@@ -47,6 +49,10 @@ async function createUser(username, email, role, extra = {}) {
     capacity: 1,
     earningsFactor: 1.0,
     role,
+    // Гость создаётся вне команды — как AuthService.register
+    // (undefined -> дефолты 0 / 1)
+    isFired: extra.isFired,
+    takingOrders: extra.takingOrders,
     tgUserId: extra.tgUserId || null,
   });
 }
@@ -70,6 +76,13 @@ async function createUser(username, email, role, extra = {}) {
     await User.update(fired.id, { is_fired: 1, taking_orders: 0 });
     // plainUser — обычный подтверждённый пользователь, будет в Excel (user → employee)
     const plainUser = await createUser('smoke_sync_user', 'user1@test.local', 'user', { tgUserId: '1004' });
+    // guest — НЕ подтвердил email (роль guest, вне команды), но есть в Excel:
+    // активность включать нельзя, пока не введёт код из письма
+    const guest = await createUser('smoke_sync_guest', 'guest1@test.local', 'guest', {
+      tgUserId: '1006',
+      isFired: 1,
+      takingOrders: 0,
+    });
     // admin — админ, НЕ будет в Excel (не должен быть уволен)
     const admin = await createUser('smoke_sync_admin', 'admin@test.local', 'admin', { tgUserId: '1005' });
 
@@ -87,6 +100,7 @@ async function createUser(username, email, role, extra = {}) {
       { name: 'Сотрудник Один', email: 'EMP1@TEST.LOCAL', tgUserId: '1001' },
       { name: 'Возвращенец', email: 'Fired@Test.Local', tgUserId: '1003' },
       { name: 'Новый Сотрудник', email: 'user1@test.local', tgUserId: '1004' },
+      { name: 'Не подтвердил', email: 'guest1@test.local', tgUserId: '1006' },
     ]);
 
     const result = await SyncService.syncFromExcel(XLSX_PATH, null);
@@ -132,19 +146,26 @@ async function createUser(username, email, role, extra = {}) {
       throw new Error('Пользователь из Excel должен стать сотрудником');
     }
 
-    // 6. Результат содержит fired = 1
+    // 6. guest (email не подтверждён): есть в Excel, но активность не включаем
+    const g = await fresh(guest.id);
+    console.log('5a/6. guest: role =', g.role, ', is_fired =', g.is_fired, ', taking_orders =', g.taking_orders);
+    if (g.role !== 'guest' || g.is_fired !== 1 || g.taking_orders !== 0) {
+      throw new Error('Гость из Excel должен оставаться вне команды до подтверждения email');
+    }
+
+    // 7. Результат содержит fired = 1
     if (result.fired !== 1) {
       throw new Error(`Ожидался fired = 1, получено ${result.fired}`);
     }
 
-    // 7. Серверный Excel перегенерирован под новое состояние БД:
+    // 8. Серверный Excel перегенерирован под новое состояние БД:
     //    emp2 (уволен) в team-info отсутствует, восстановленные — присутствуют
     // BOT_VERSION пуст → имя без версии (team-info.xlsx)
     const teamInfoPath = path.join(__dirname, '..', 'team-info.xlsx');
     const wb2 = XLSX.readFile(teamInfoPath);
     const rows2 = XLSX.utils.sheet_to_json(wb2.Sheets[wb2.SheetNames[0]], { header: 1, defval: '' });
     const excelNames = rows2.slice(2).map(r => String(r[0] || '').trim()).filter(Boolean);
-    console.log('7. team-info после перегенерации:', excelNames.join(', '));
+    console.log('8. team-info после перегенерации:', excelNames.join(', '));
     if (excelNames.some(n => n === 'smoke_sync_emp2')) {
       throw new Error('Уволенный emp2 не должен попасть в перегенерированный team-info');
     }
@@ -160,6 +181,11 @@ async function createUser(username, email, role, extra = {}) {
     process.exitCode = 1;
   } finally {
     // За собой убираем (включая перегенерированные тестом серверные Excel)
+    // Соединение с БД закрываем до удаления файлов — иначе SQLite держит
+    // временную БД открытой и файл не удаляется (Windows)
+    try {
+      await getDB().close();
+    } catch { /* БД могла не открыться — не критично */ }
     for (const f of [
       XLSX_PATH,
       path.join(__dirname, '..', 'team-info.xlsx'),

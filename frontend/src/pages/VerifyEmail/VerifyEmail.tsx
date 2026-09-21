@@ -37,6 +37,9 @@ export const VerifyEmail = () => {
   // Email приходит из query (?email=...) после регистрации или попытки входа
   const [searchParams] = useSearchParams();
   const initialEmail = searchParams.get("email") || "";
+  // ?resent=1 — вернулись с повторной регистрации: предыдущая неподтверждённая
+  // регистрация тем же логином/email заменена, код отправлен заново
+  const resentFromRegistration = searchParams.get("resent") === "1";
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +89,16 @@ export const VerifyEmail = () => {
     setResendMessage(null);
     try {
       const res = await dispatch(resendCode({ email })).unwrap();
-      setResendMessage(res.message);
-      setCooldown(RESEND_COOLDOWN_SECONDS);
+      // Кулдаун диктует сервер (RESEND_CODE_COOLDOWN_SEC): кнопка блокируется
+      // на retryAfterSec секунд. sent === false — письмо НЕ отправлено
+      // (кулдаун ещё идёт, аккаунта нет или email уже подтверждён)
+      const wait = res.retryAfterSec ?? RESEND_COOLDOWN_SECONDS;
+      setCooldown(wait);
+      setResendMessage(
+        res.sent === false
+          ? `Письмо уже отправлено — повторно можно через ${wait} с.`
+          : res.message,
+      );
     } catch (err: any) {
       setResendError(getServerMessage(err, "Ошибка отправки"));
     } finally {
@@ -125,8 +136,15 @@ export const VerifyEmail = () => {
           <CardTitle className="text-2xl">Подтверждение email</CardTitle>
           <CardDescription>
             Мы отправили 6-значный код на вашу почту. Введите его, чтобы
-            завершить регистрацию и получить роль «Пользователь».
+            завершить регистрацию и получить роль «Пользователь». Код
+            действителен 15 минут.
           </CardDescription>
+          {resentFromRegistration && (
+            <p className="text-sm pt-2 text-green-700">
+              Код отправлен повторно — предыдущая неподтверждённая регистрация
+              заменена.
+            </p>
+          )}
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">

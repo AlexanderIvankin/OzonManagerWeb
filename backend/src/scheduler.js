@@ -10,6 +10,7 @@ const StorageService = require('./services/StorageService');
 const OfferModel = require('./models/OfferModel');
 const Notification = require('./models/Notification');
 const NotificationService = require('./services/NotificationService');
+const AuthService = require('./services/AuthService');
 
 // ============================================================================
 // УСИЛЕННАЯ ЗАЩИТА ОТ ПРОПУСКОВ ПРОВЕРОК (единые правила для всех задач):
@@ -710,6 +711,58 @@ function stopModelsMaintenanceChecker() {
   isModelsMaintenanceRunning = false;
 }
 
+// ============================================================================
+// Очистка неподтверждённых аккаунтов (ежечасно, дешёвая идемпотентная операция):
+//   • гости (role = 'guest' — зарегистрировались, но не ввели код из письма)
+//     удаляются целиком вместе с кодами подтверждения, refresh-токенами и
+//     связями со складами, если не подтвердили email более GUEST_TTL_HOURS
+//     часов (по умолчанию 24) — AuthService.cleanupGuestAccounts();
+//   • заодно вычищаются все просроченные коды подтверждения.
+// Гость при регистрации создаётся как is_fired = 1 / taking_orders = 0
+// (в команде не числится), поэтому до удаления он нигде не виден.
+// Как и у обслуживания моделей, daily-gate здесь не нужен: операция лёгкая.
+// ============================================================================
+let guestCleanupInterval = null;
+let isGuestCleanupRunning = false;
+
+function startGuestCleanupChecker() {
+  if (guestCleanupInterval) clearInterval(guestCleanupInterval);
+  isGuestCleanupRunning = false;
+
+  const ttlHours = envInt('GUEST_TTL_HOURS', 24, 1, 24 * 30);
+
+  guestCleanupInterval = setInterval(async () => {
+    if (isGuestCleanupRunning) return;
+    isGuestCleanupRunning = true;
+    try {
+      const ttl = envInt('GUEST_TTL_HOURS', 24, 1, 24 * 30);
+      const result = await AuthService.cleanupGuestAccounts(ttl);
+      if (result.deletedUsers || result.deletedCodes) {
+        console.log(
+          `[SCHEDULER] Очистка неподтверждённых аккаунтов: удалено ${result.deletedUsers} аккаунт(ов), ${result.deletedCodes} просроченных код(ов)`
+        );
+      }
+    } catch (err) {
+      console.error('[SCHEDULER] Ошибка очистки неподтверждённых аккаунтов:', err.message);
+      NotificationService.logServerError('scheduler.guestCleanup', err);
+    } finally {
+      isGuestCleanupRunning = false;
+    }
+  }, 60 * 60 * 1000); // ежечасно
+
+  console.log(
+    `[SCHEDULER] Ежечасная очистка неподтверждённых аккаунтов запущена (TTL ${ttlHours} ч)`
+  );
+}
+
+function stopGuestCleanupChecker() {
+  if (guestCleanupInterval) {
+    clearInterval(guestCleanupInterval);
+    guestCleanupInterval = null;
+  }
+  isGuestCleanupRunning = false;
+}
+
 module.exports = {
   startOrderChecker,
   stopOrderChecker,
@@ -731,4 +784,6 @@ module.exports = {
   runAwaitingDeliverReminder,
   startModelsMaintenanceChecker,
   stopModelsMaintenanceChecker,
+  startGuestCleanupChecker,
+  stopGuestCleanupChecker,
 };

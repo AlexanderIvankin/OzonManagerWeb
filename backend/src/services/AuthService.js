@@ -122,7 +122,11 @@ class AuthService {
 
   static async register(data) {
     const { username, email, password, name, phone, capacity, earningsFactor } = data;
-    // Проверяем, что username и email уникальны (это делает User.create)
+    // Логин/email могли «зависнуть» на неподтверждённой регистрации
+    // (роль 'guest'). Это тот же человек — повторную регистрацию разрешаем:
+    // гостевые записи удаляются, код генерируется и отправляется заново.
+    // Подтверждённые аккаунты по-прежнему заняты (409 в контроллере).
+    const resent = await this.replacePendingGuests({ username, email });
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
     const user = await User.create({
@@ -137,9 +141,12 @@ class AuthService {
       phone: phone || '',
       capacity: capacity || 1,
       earningsFactor: earningsFactor || 1.0,
-      // До подтверждения email пользователь — 'guest'.
-      // Роль 'user' он получает после ввода кода из письма (см. verifyEmail).
+      // До подтверждения email пользователь — 'guest' и НЕ состоит в команде:
+      // is_fired = 1, приём заказов выключен. Роль 'user' и активность
+      // возвращаются только после ввода кода из письма (см. verifyEmail).
       role: 'guest',
+      isFired: 1,
+      takingOrders: 0,
     });
 
     // Генерируем код
@@ -159,7 +166,52 @@ class AuthService {
       throw new Error(`Не удалось отправить письмо с кодом подтверждения: ${err.message}`);
     }
 
-    return user; // роль 'guest' — ждём подтверждения email
+    // role 'guest' — ждём подтверждения email; resent — была ли заменена
+    // предыдущая неподтверждённая регистрация (контроллер покажет текст
+    // «код отправлен повторно»)
+    return { user, resent };
+  }
+
+  /**
+   * Освобождает логин/email от «зависших» неподтверждённых регистраций.
+   * Вызывается из register(): подтверждённые аккаунты (сотрудник, админ,
+   * создатель, обычный user) освобождать нельзя — для них ошибка
+   * 'username already taken' / 'email already taken' (контроллер → 409),
+   * как и раньше. Записи с ролью 'guest' удаляются вместе с кодами
+   * подтверждения, refresh-токенами и связями со складами (у гостя
+   * заказов/статистики быть не может).
+   *
+   * @returns {Promise<boolean>} true, если гостевые записи были заменены
+   */
+  static async replacePendingGuests({ username, email }) {
+    const byUsername = username ? await User.getByUsername(String(username).trim()) : null;
+    const byEmail = email ? await User.getByEmail(String(email).trim()) : null;
+
+    if (byUsername && byUsername.role !== 'guest') {
+      throw new Error('username already taken');
+    }
+    if (byEmail && byEmail.role !== 'guest') {
+      throw new Error('email already taken');
+    }
+
+    // Логин и email могут указывать на две разные неподтверждённые записи —
+    // дедуплицируем по id и освобождаем обе
+    const unique = [
+      ...new Map([byUsername, byEmail].filter(Boolean).map((u) => [u.id, u])).values(),
+    ];
+    if (unique.length === 0) return false;
+
+    const db = getDB();
+    for (const guest of unique) {
+      console.log(
+        `[Auth] Повторная регистрация: заменяем неподтверждённый аккаунт #${guest.id} (${guest.username} / ${guest.email})`
+      );
+      await EmailVerification.deleteByUserId(guest.id);
+      await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
+      await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
+      await User.deleteById(guest.id);
+    }
+    return true;
   }
 
   static async verifyEmail(code) {
@@ -174,6 +226,10 @@ class AuthService {
     const updates = { email_verified: 1 };
     if (user.role === 'guest') {
       updates.role = 'user';
+      // Гость не состоял в команде (is_fired = 1, приём заказов выключен) —
+      // после подтверждения возвращаем обычное состояние аккаунта
+      updates.is_fired = 0;
+      updates.taking_orders = 1;
     }
     const updated = await User.update(user.id, updates);
 
@@ -189,14 +245,63 @@ class AuthService {
    * чтобы не раскрывать факт регистрации по email.
    */
   static async resendCode(email) {
+    // Кулдаун повторной отправки (RESEND_CODE_COOLDOWN_SEC, по умолчанию 60 с)
+    const cooldownSec = config.resendCodeCooldownSec;
     const user = await User.getByEmail(email);
-    if (!user || user.role !== 'guest') return;
+    // Несуществующий или уже подтверждённый аккаунт — тихий no-op,
+    // чтобы не раскрывать факт регистрации по email
+    if (!user || user.role !== 'guest') {
+      return { sent: false, retryAfterSec: cooldownSec };
+    }
+
+    // Антифлуд: письмо уходит не чаще, чем раз в cooldownSec секунд
+    const last = await EmailVerification.getLatestByUserId(user.id);
+    if (last && last.created_at && cooldownSec > 0) {
+      const elapsedMs = Date.now() - last.created_at;
+      if (elapsedMs < cooldownSec * 1000) {
+        return {
+          sent: false,
+          retryAfterSec: Math.ceil((cooldownSec * 1000 - elapsedMs) / 1000),
+        };
+      }
+    }
 
     const code = this.generateVerificationCode();
     // Старые коды становятся недействительными
     await EmailVerification.deleteByUserId(user.id);
     await EmailVerification.create(user.id, code);
     await EmailService.sendVerificationEmail(user.email, user.name, code);
+    return { sent: true, retryAfterSec: cooldownSec };
+  }
+
+  /**
+   * Удаляет «зависшие» неподтверждённые аккаунты (роль 'guest') старше
+   * ttlHours вместе с их кодами подтверждения, refresh-токенами и связями
+   * со складами. Вызывается планировщиком (startGuestCleanupChecker,
+   * TTL — GUEST_TTL_HOURS, по умолчанию 24 ч).
+   * Заодно вычищает все просроченные коды подтверждения — в том числе
+   * «легаси»-строки аккаунтов, которые так и не подтвердили email.
+   *
+   * @param {number} ttlHours
+   * @returns {Promise<{deletedUsers: number, deletedCodes: number}>}
+   */
+  static async cleanupGuestAccounts(ttlHours = config.guestTtlHours) {
+    const db = getDB();
+    const cutoff = Date.now() - ttlHours * 60 * 60 * 1000;
+    const guests = await User.findGuestsOlderThan(cutoff);
+
+    for (const guest of guests) {
+      await EmailVerification.deleteByUserId(guest.id);
+      await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
+      await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
+      await User.deleteById(guest.id);
+      console.log(
+        `[Auth] Неподтверждённый аккаунт #${guest.id} (${guest.username} / ${guest.email}) удалён: email не подтверждён более ${ttlHours} ч`
+      );
+    }
+
+    const deletedCodes = await EmailVerification.deleteExpired();
+    return { deletedUsers: guests.length, deletedCodes };
   }
 
   static generateVerificationCode() {

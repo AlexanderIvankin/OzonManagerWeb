@@ -238,9 +238,18 @@ class SyncService {
           updateFields.tg_user_id = data.tgUserId;
         }
         // Пользователь есть в актуальном team-info.xlsx → он работает:
-        // восстанавливаем (is_fired = 0), включаем приём заказов
-        updateFields.is_fired = 0;
-        updateFields.taking_orders = 1;
+        // восстанавливаем (is_fired = 0), включаем приём заказов.
+        // Исключение — гость (email ещё не подтверждён): он остаётся
+        // невидимым (is_fired = 1, приём заказов выключен), пока не введёт
+        // код из письма (AuthService.verifyEmail).
+        if (user.role === 'guest') {
+          console.log(
+            `[SyncService] Пользователь #${user.id} есть в team-info.xlsx, но email не подтверждён — активность не включаем`
+          );
+        } else {
+          updateFields.is_fired = 0;
+          updateFields.taking_orders = 1;
+        }
         // Роль 'god' (Создатель) выдаётся ТОЛЬКО по идентификаторам из .env
         if (this.isGodIdentity(data)) {
           updateFields.role = 'god';
@@ -250,7 +259,7 @@ class SyncService {
           // admin/moderator не трогаем — их роли назначаются вручную.
           updateFields.role = 'employee';
         }
-        if (user.is_fired) {
+        if (user.is_fired && user.role !== 'guest') {
           console.log(`[SyncService] Пользователь #${user.id} (${user.name || data.name}) восстановлен — присутствует в актуальном team-info.xlsx`);
         }
         await User.update(user.id, updateFields);

@@ -251,7 +251,7 @@ exports.getStaffStats = async (req, res, next) => {
       FROM users u
       LEFT JOIN user_stats us ON us.user_id = u.id
       LEFT JOIN earnings_history eh ON eh.user_id = u.id
-      ${includeFired ? '' : 'WHERE u.is_fired = 0'}
+      ${includeFired ? '' : 'WHERE u.is_fired = 0 AND u.role <> \'guest\''}
       GROUP BY u.id
       ORDER BY u.id
       `

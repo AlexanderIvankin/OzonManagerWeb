@@ -10,6 +10,11 @@ class User {
       username, email, passwordHash, name,
       displayName = null,
       phone = '', capacity = 1, earningsFactor = 1.0, role = 'user',
+      // Гость (неподтверждённый email) не состоит в команде: сразу
+      // is_fired = 1, приём заказов выключен — он не попадает ни в один
+      // список активных сотрудников (подтверждение восстанавливает флаги,
+      // см. AuthService.verifyEmail).
+      isFired = 0, takingOrders = 1,
       tgUserId = null
     } = data;
 
@@ -24,9 +29,9 @@ class User {
     }
 
     const result = await db.run(
-      `INSERT INTO users (username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, tg_user_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      username, email, passwordHash, name, displayName, phone, capacity, earningsFactor, role, tgUserId || null, Date.now(), Date.now()
+      `INSERT INTO users (username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      username, email, passwordHash, name, displayName, phone, capacity, earningsFactor, role, isFired, takingOrders, tgUserId || null, Date.now(), Date.now()
     );
     const id = result.lastID;
     return this.getById(id);
@@ -98,6 +103,20 @@ class User {
     await db.run('DELETE FROM users WHERE id = ?', id);
   }
 
+  /**
+   * Гости (неподтверждённые аккаунты), созданные раньше cutoffMs —
+   * кандидаты на удаление планировщиком (GUEST_TTL_HOURS).
+   */
+  static async findGuestsOlderThan(cutoffMs) {
+    const db = getDB();
+    return db.all(
+      `SELECT id, username, email, created_at FROM users
+       WHERE role = 'guest' AND created_at < ?
+       ORDER BY id`,
+      cutoffMs
+    );
+  }
+
   static async setPasswordHash(id, hash) {
     const db = getDB();
     await db.run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
@@ -167,6 +186,12 @@ class User {
     let sql = `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at FROM users`;
     const conditions = [];
     const params = [];
+
+    // Гости (зарегистрировались, но не подтвердили email) не показываются
+    // в списках персонала НИКОГДА — даже с includeFired / includeAll:
+    // такой аккаунт не числится нигде (см. также startGuestCleanupChecker,
+    // который удаляет гостей через GUEST_TTL_HOURS).
+    conditions.push("role <> 'guest'");
 
     if (!includeFired) {
       conditions.push('is_fired = 0');
