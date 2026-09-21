@@ -140,7 +140,7 @@ export const VerifyEmail = () => {
             действителен 15 минут.
           </CardDescription>
           {resentFromRegistration && (
-            <p className="text-sm pt-2 text-green-700">
+            <p className="text-sm pt-2 mb-[8px] text-green-700">
               Код отправлен повторно — предыдущая неподтверждённая регистрация
               заменена.
             </p>
@@ -175,11 +175,15 @@ export const VerifyEmail = () => {
                 <p className="text-sm text-red-500">{errors.code.message}</p>
               )}
             </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
-            {resendMessage && (
-              <p className="text-sm text-green-700">{resendMessage}</p>
+            {error && (
+              <p className="text-sm mb-[8px] text-red-500">{error}</p>
             )}
-            {resendError && <p className="text-sm text-red-500">{resendError}</p>}
+            {resendMessage && (
+              <p className="text-sm mb-[8px] text-green-700">{resendMessage}</p>
+            )}
+            {resendError && (
+              <p className="text-sm mb-[8px] text-red-500">{resendError}</p>
+            )}
           </CardContent>
           <CardFooter className="flex flex-col space-y-2">
             <Button type="submit" className="w-full" disabled={loading}>

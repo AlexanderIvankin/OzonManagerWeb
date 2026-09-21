@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { Link, useNavigate } from 'react-router-dom';
 import { Controller, useForm } from 'react-hook-form';
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PhoneInput } from '@/components/PhoneInput';
-import { register, resendCode } from '../../store/authSlice';
+import { register } from '../../store/authSlice';
 import { AppDispatch } from '../../store';
 import {
   isValidPhone,
@@ -44,30 +44,16 @@ const registerSchema = z.object({
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
-// Кулдаун повторной отправки кода (сек) — как на странице ввода кода.
-// Фактический интервал диктует сервер (RESEND_CODE_COOLDOWN_SEC, по умолчанию 60)
-const RESEND_COOLDOWN_SECONDS = 60;
-
 export const Register = () => {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // === Повторная отправка кода подтверждения прямо со страницы регистрации ===
-  // (письмо с кодом не пришло: указываем email из формы — сервер пришлёт новый код)
-  const [resendLoading, setResendLoading] = useState(false);
-  const [resendMessage, setResendMessage] = useState<string | null>(null);
-  const [resendError, setResendError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(0);
-  // Email, на который код реально ушёл — для ссылки «Перейти к вводу кода»
-  const [resentEmail, setResentEmail] = useState<string | null>(null);
-
   const {
     register: registerField,
     control,
     handleSubmit,
-    getValues,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -105,52 +91,6 @@ export const Register = () => {
       setError(err?.response?.data?.error || err?.message || 'Ошибка регистрации');
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Таймер кулдауна повторной отправки (как на странице ввода кода)
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const timer = setInterval(() => {
-      setCooldown((s) => (s > 0 ? s - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [cooldown]);
-
-  // Повторная отправка кода на email, указанный в форме регистрации.
-  // Кулдаун (не чаще раза в минуту) диктует сервер: sent === false означает,
-  // что письмо не ушло — кулдаун ещё идёт, аккаунта нет или email уже подтверждён
-  const handleResendCode = async () => {
-    const email = getValues('email')?.trim();
-    setResendMessage(null);
-    setResendError(null);
-    setResentEmail(null);
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      setResendError('Укажите в поле Email адрес, указанный при регистрации');
-      return;
-    }
-
-    setResendLoading(true);
-    try {
-      const res = await dispatch(resendCode({ email })).unwrap();
-      const wait = res.retryAfterSec ?? RESEND_COOLDOWN_SECONDS;
-      setCooldown(wait);
-      if (res.sent === false) {
-        setResendMessage(
-          `Письмо уже отправлено — повторно можно через ${wait} с.`,
-        );
-      } else {
-        setResendMessage(
-          res.message || 'Код подтверждения отправлен повторно на указанный email',
-        );
-        setResentEmail(email);
-      }
-    } catch (err: any) {
-      setResendError(
-        err?.response?.data?.error || err?.message || 'Ошибка отправки',
-      );
-    } finally {
-      setResendLoading(false);
     }
   };
 
@@ -213,52 +153,14 @@ export const Register = () => {
                 </p>
               )}
             </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <p className="text-sm mb-[8px] text-red-500">{error}</p>}
           </CardContent>
           <CardFooter className="flex flex-col space-y-2">
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Загрузка...' : 'Зарегистрироваться'}
             </Button>
-            {/* Письмо с кодом не пришло: отправляем код повторно на email из формы.
-                Кулдаун (RESEND_CODE_COOLDOWN_SEC) диктует сервер — не чаще раза в минуту */}
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={resendLoading || cooldown > 0}
-              onClick={handleResendCode}
-            >
-              {cooldown > 0
-                ? `Отправить код повторно (${cooldown} с)`
-                : resendLoading
-                  ? 'Отправляем...'
-                  : 'Отправить код повторно'}
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Письмо с кодом не пришло? Укажите в поле Email адрес, который
-              использовали при регистрации, и отправьте код повторно — не чаще
-              одного раза в минуту.
-            </p>
-            {resendMessage && (
-              <p className="text-sm text-center text-green-700">
-                {resendMessage}
-              </p>
-            )}
-            {resendError && (
-              <p className="text-sm text-center text-red-500">{resendError}</p>
-            )}
-            {resentEmail && (
-              <p className="text-sm text-muted-foreground">
-                <Link
-                  to={`/verify-email?email=${encodeURIComponent(
-                    resentEmail,
-                  )}&resent=1`}
-                  className="text-blue-600 hover:underline"
-                >
-                  Перейти к вводу кода
-                </Link>
-              </p>
-            )}
+            {/* Повторная отправка кода доступна только на странице
+                ввода кода (/verify-email), а не здесь — на форме регистрации */}
             <p className="text-sm text-muted-foreground">
               Уже есть аккаунт? <Link to="/login" className="text-blue-600 hover:underline">Войти</Link>
             </p>

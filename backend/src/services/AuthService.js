@@ -121,7 +121,13 @@ class AuthService {
   }
 
   static async register(data) {
-    const { username, email, password, name, phone, capacity, earningsFactor } = data;
+    // Логин/email нормализуем trim'ом ДО проверки занятости и создания:
+    // replacePendingGuests ищет по trim-значениям, а resendCode и повторная
+    // регистрация ищут аккаунт по email из формы — в БД должны храниться
+    // те же значения, по которым ищем (иначе « a@b.ru » из формы не найдётся)
+    const username = String(data.username || '').trim();
+    const email = String(data.email || '').trim();
+    const { password, name, phone, capacity, earningsFactor } = data;
     // Логин/email могли «зависнуть» на неподтверждённой регистрации
     // (роль 'guest'). Это тот же человек — повторную регистрацию разрешаем:
     // гостевые записи удаляются, код генерируется и отправляется заново.
