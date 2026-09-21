@@ -396,7 +396,8 @@ export const Users = () => {
     const errors: Record<string, string> = {};
     if (!createForm.username.trim()) errors.username = "Укажите логин";
     if (!EMAIL_FORMAT_RE.test(createForm.email.trim()))
-      errors.email = "Некорректный email (только латиница, цифры и символы ._%+-)";
+      errors.email =
+        "Некорректный email (только латиница, цифры и символы ._%+-)";
     if (!createForm.password) errors.password = "Укажите пароль";
     if (createForm.capacity.trim() !== "") {
       const n = Number(createForm.capacity);
@@ -440,6 +441,7 @@ export const Users = () => {
 
   return (
     <div className="space-y-6">
+      {/* Верхний ряд: заголовок + остальные кнопки */}
       <div className="flex flex-col items-center justify-center gap-3 text-center lg:flex-row lg:justify-between">
         <h1 className="text-2xl font-bold">
           {" "}
@@ -448,25 +450,8 @@ export const Users = () => {
           </span>{" "}
           Пользователи
         </h1>
+
         <div className="flex flex-col items-center gap-2 sm:flex-row">
-          {/* Переключатель вида таблицы: «Сотрудники» (с уволенными по
-              галочке) или «Пользователи» (ещё не в команде) */}
-          <div className="flex items-center gap-1 rounded-lg border p-1">
-            <Button
-              size="sm"
-              variant={view === "staff" ? "default" : "ghost"}
-              onClick={() => setView("staff")}
-            >
-              👥 Сотрудники
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "users" ? "default" : "ghost"}
-              onClick={() => setView("users")}
-            >
-              🙋 Пользователи
-            </Button>
-          </div>
           {view === "staff" && (
             <label className="flex items-center gap-1 text-sm">
               <input
@@ -492,6 +477,45 @@ export const Users = () => {
         </div>
       </div>
 
+      {/* Переключатель вида таблицы — отдельным блоком ниже, по центру */}
+      <div className="flex justify-center mt-3 px-2">
+        <div
+          className="
+      flex flex-col sm:flex-row
+      items-stretch sm:items-center
+      gap-1
+      rounded-lg border p-1
+      w-full max-w-[10rem] sm:w-auto sm:max-w-none
+    "
+        >
+          <Button
+            size="sm"
+            variant={view === "staff" ? "default" : "ghost"}
+            onClick={() => setView("staff")}
+            className="justify-center"
+            title="Сотрудники"
+          >
+            <span aria-hidden="true">👷</span>
+            <span className="hidden sm:inline ml-1">Сотрудники</span>
+          </Button>
+          <Button
+            size="sm"
+            variant={view === "users" ? "default" : "ghost"}
+            onClick={() => setView("users")}
+            className="justify-center"
+            title="Пользователи"
+          >
+            <span
+              className="inline-block align-middle -translate-y-[1px]"
+              aria-hidden="true"
+            >
+              👥
+            </span>
+            <span className="hidden sm:inline ml-1">Пользователи</span>
+          </Button>
+        </div>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           {/* Два вида таблицы (переключатель в шапке): «Сотрудники» — прежняя
@@ -499,365 +523,365 @@ export const Users = () => {
               вавшиеся, ещё не ставшие сотрудниками. Адаптив (скрытые колонки
               на маленьких экранах) сохранён в обеих */}
           {view === "staff" ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-center hidden md:table-cell">
-                  ID
-                </TableHead>
-                <TableHead className="text-center">Имя</TableHead>
-                <TableHead className="text-center hidden md:table-cell">
-                  Логин
-                </TableHead>
-                <TableHead className="text-center hidden md:table-cell">
-                  Email
-                </TableHead>
-                <TableHead className="text-center">Роль</TableHead>
-                <TableHead className="text-center">Принтеры</TableHead>
-                <TableHead className="text-center">Коэф.</TableHead>
-                <TableHead className="text-center">Статус</TableHead>
-                <TableHead className="text-center">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center">
-                    Загрузка...
-                  </TableCell>
+                  <TableHead className="text-center hidden md:table-cell">
+                    ID
+                  </TableHead>
+                  <TableHead className="text-center">Имя</TableHead>
+                  <TableHead className="text-center hidden md:table-cell">
+                    Логин
+                  </TableHead>
+                  <TableHead className="text-center hidden md:table-cell">
+                    Email
+                  </TableHead>
+                  <TableHead className="text-center">Роль</TableHead>
+                  <TableHead className="text-center">Принтеры</TableHead>
+                  <TableHead className="text-center">Коэф.</TableHead>
+                  <TableHead className="text-center">Статус</TableHead>
+                  <TableHead className="text-center">Действия</TableHead>
                 </TableRow>
-              ) : users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center">
-                    Нет сотрудников
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((user) => (
-                  <TableRow
-                    key={user.id}
-                    className={user.is_fired ? "opacity-50" : ""}
-                  >
-                    <TableCell className="text-center hidden md:table-cell">
-                      <code>{user.id}</code>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center">
+                      Загрузка...
                     </TableCell>
-                    <TableCell className="text-center">
-                      <b>{user.name}</b>
+                  </TableRow>
+                ) : users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center">
+                      Нет сотрудников
                     </TableCell>
-                    <TableCell className="text-center hidden md:table-cell">
-                      {user.username}
-                    </TableCell>
-                    <TableCell className="text-center hidden md:table-cell">
-                      {user.email}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {/* Стили ролей — единый RoleBadge; персоналу добавляем жирность */}
-                      <RoleBadge
-                        role={user.role}
-                        className={`font-normal ${
-                          ["admin", "moderator", "god"].includes(user.role)
-                            ? "font-bold"
-                            : ""
-                        }`}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {user.capacity}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {user.earnings_factor}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {user.is_fired ? (
-                        <Badge variant="destructive">Уволен</Badge>
-                      ) : user.taking_orders ? (
-                        <Badge variant="default">Принимает</Badge>
-                      ) : (
-                        <Badge variant="secondary">Не принимает</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center space-x-1">
-                      {/* Создателя может редактировать только Создатель:
+                  </TableRow>
+                ) : (
+                  users.map((user) => (
+                    <TableRow
+                      key={user.id}
+                      className={user.is_fired ? "opacity-50" : ""}
+                    >
+                      <TableCell className="text-center hidden md:table-cell">
+                        <code>{user.id}</code>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <b>{user.name}</b>
+                      </TableCell>
+                      <TableCell className="text-center hidden md:table-cell">
+                        {user.username}
+                      </TableCell>
+                      <TableCell className="text-center hidden md:table-cell">
+                        {user.email}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {/* Стили ролей — единый RoleBadge; персоналу добавляем жирность */}
+                        <RoleBadge
+                          role={user.role}
+                          className={`font-normal ${
+                            ["admin", "moderator", "god"].includes(user.role)
+                              ? "font-bold"
+                              : ""
+                          }`}
+                        />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {user.capacity}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {user.earnings_factor}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {user.is_fired ? (
+                          <Badge variant="destructive">Уволен</Badge>
+                        ) : user.taking_orders ? (
+                          <Badge variant="default">Принимает</Badge>
+                        ) : (
+                          <Badge variant="secondary">Не принимает</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center space-x-1">
+                        {/* Создателя может редактировать только Создатель:
                           остальным ролям кнопки не показываются */}
-                      {user.role !== "god" || viewer?.role === "god" ? (
-                        <>
-                          <Dialog
-                            open={editingUser?.id === user.id}
-                            onOpenChange={(open) => {
-                              if (!open) {
-                                setFactorError("");
-                                setCapacityError("");
-                                setEditingUser(null);
-                              }
-                            }}
-                          >
-                            <DialogTrigger
-                              render={
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setFactorInput(
-                                      String(user.earnings_factor),
-                                    );
-                                    setFactorError("");
-                                    setCapacityInput(
-                                      user.capacity == null
-                                        ? ""
-                                        : String(user.capacity),
-                                    );
-                                    setCapacityError("");
-                                    setEditingUser(user);
-                                  }}
-                                />
-                              }
+                        {user.role !== "god" || viewer?.role === "god" ? (
+                          <>
+                            <Dialog
+                              open={editingUser?.id === user.id}
+                              onOpenChange={(open) => {
+                                if (!open) {
+                                  setFactorError("");
+                                  setCapacityError("");
+                                  setEditingUser(null);
+                                }
+                              }}
                             >
-                              ✏️
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>
-                                  Редактировать пользователя
-                                </DialogTitle>
-                              </DialogHeader>
-                              {editingUser && (
-                                <div className="space-y-4 py-4">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                      <Label>Имя</Label>
-                                      <Input
-                                        value={editingUser.name}
-                                        onChange={(e) =>
-                                          setEditingUser({
-                                            ...editingUser,
-                                            name: e.target.value,
-                                          })
-                                        }
-                                      />
-                                    </div>
-                                    <div className="space-y-2">
-                                      <Label>Телефон</Label>
-                                      <PhoneInput
-                                        placeholder="+7 (999) 999-99-99"
-                                        value={editingUser.phone || ""}
-                                        onValueChange={(formatted) =>
-                                          setEditingUser({
-                                            ...editingUser,
-                                            phone: formatted,
-                                          })
-                                        }
-                                      />
-                                      <p className="text-xs text-muted-foreground">
-                                        {PHONE_FORMAT_HINT}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                      <Label>Принтеры</Label>
-                                      <Input
-                                        type="text"
-                                        inputMode="numeric"
-                                        placeholder="Например: 2"
-                                        value={capacityInput}
-                                        onChange={(e) =>
-                                          handleCapacityChange(e.target.value)
-                                        }
-                                      />
-                                      {capacityError ? (
-                                        <p className="text-sm text-red-500">
-                                          {capacityError}
-                                        </p>
-                                      ) : (
-                                        <p className="text-xs text-muted-foreground">
-                                          Целое положительное число принтеров
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div className="space-y-2">
-                                      <Label>Коэффициент</Label>
-                                      <Input
-                                        type="text"
-                                        inputMode="decimal"
-                                        placeholder="Например: 1.5 или 1,5"
-                                        value={factorInput}
-                                        onChange={(e) =>
-                                          handleFactorChange(e.target.value)
-                                        }
-                                      />
-                                      {factorError ? (
-                                        <p className="text-sm text-red-500">
-                                          {factorError}
-                                        </p>
-                                      ) : (
-                                        <p className="text-xs text-muted-foreground">
-                                          Положительное число, до 2 знаков после
-                                          запятой: 1.5 или 1,5
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                      <Label>Роль</Label>
-                                      {/* Роль Создателя нельзя изменить вручную —
-                                      только синхронизацией из Excel */}
-                                      {editingUser.role === "god" ? (
+                              <DialogTrigger
+                                render={
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setFactorInput(
+                                        String(user.earnings_factor),
+                                      );
+                                      setFactorError("");
+                                      setCapacityInput(
+                                        user.capacity == null
+                                          ? ""
+                                          : String(user.capacity),
+                                      );
+                                      setCapacityError("");
+                                      setEditingUser(user);
+                                    }}
+                                  />
+                                }
+                              >
+                                ✏️
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>
+                                    Редактировать пользователя
+                                  </DialogTitle>
+                                </DialogHeader>
+                                {editingUser && (
+                                  <div className="space-y-4 py-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                      <div className="space-y-2">
+                                        <Label>Имя</Label>
                                         <Input
-                                          value="👻 Создатель (изменение недоступно)"
-                                          disabled
+                                          value={editingUser.name}
+                                          onChange={(e) =>
+                                            setEditingUser({
+                                              ...editingUser,
+                                              name: e.target.value,
+                                            })
+                                          }
                                         />
-                                      ) : (
-                                        <Select
-                                          value={editingUser.role}
-                                          onValueChange={(val) => {
-                                            const role = val as User["role"];
-                                            setEditingUser((prev) => {
-                                              if (!prev) return prev;
-                                              // Роль «Пользователь» = вывод из активного состава:
-                                              // автоматически помечаем уволенным и выключаем
-                                              // приём заказов (аналог кнопки «🗑️ Уволить»)
-                                              if (role === "user") {
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Телефон</Label>
+                                        <PhoneInput
+                                          placeholder="+7 (999) 999-99-99"
+                                          value={editingUser.phone || ""}
+                                          onValueChange={(formatted) =>
+                                            setEditingUser({
+                                              ...editingUser,
+                                              phone: formatted,
+                                            })
+                                          }
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                          {PHONE_FORMAT_HINT}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                      <div className="space-y-2">
+                                        <Label>Принтеры</Label>
+                                        <Input
+                                          type="text"
+                                          inputMode="numeric"
+                                          placeholder="Например: 2"
+                                          value={capacityInput}
+                                          onChange={(e) =>
+                                            handleCapacityChange(e.target.value)
+                                          }
+                                        />
+                                        {capacityError ? (
+                                          <p className="text-sm text-red-500">
+                                            {capacityError}
+                                          </p>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            Целое положительное число принтеров
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Коэффициент</Label>
+                                        <Input
+                                          type="text"
+                                          inputMode="decimal"
+                                          placeholder="Например: 1.5 или 1,5"
+                                          value={factorInput}
+                                          onChange={(e) =>
+                                            handleFactorChange(e.target.value)
+                                          }
+                                        />
+                                        {factorError ? (
+                                          <p className="text-sm text-red-500">
+                                            {factorError}
+                                          </p>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            Положительное число, до 2 знаков
+                                            после запятой: 1.5 или 1,5
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                      <div className="space-y-2">
+                                        <Label>Роль</Label>
+                                        {/* Роль Создателя нельзя изменить вручную —
+                                      только синхронизацией из Excel */}
+                                        {editingUser.role === "god" ? (
+                                          <Input
+                                            value="👻 Создатель (изменение недоступно)"
+                                            disabled
+                                          />
+                                        ) : (
+                                          <Select
+                                            value={editingUser.role}
+                                            onValueChange={(val) => {
+                                              const role = val as User["role"];
+                                              setEditingUser((prev) => {
+                                                if (!prev) return prev;
+                                                // Роль «Пользователь» = вывод из активного состава:
+                                                // автоматически помечаем уволенным и выключаем
+                                                // приём заказов (аналог кнопки «🗑️ Уволить»)
+                                                if (role === "user") {
+                                                  return {
+                                                    ...prev,
+                                                    role,
+                                                    is_fired: true,
+                                                    taking_orders: false,
+                                                  };
+                                                }
+                                                // Обратно: сотрудник/модератор/админ —
+                                                // автоматически восстанавливаем, если был уволен
                                                 return {
                                                   ...prev,
                                                   role,
-                                                  is_fired: true,
-                                                  taking_orders: false,
+                                                  is_fired: false,
+                                                  taking_orders: true,
                                                 };
-                                              }
-                                              // Обратно: сотрудник/модератор/админ —
-                                              // автоматически восстанавливаем, если был уволен
-                                              return {
-                                                ...prev,
-                                                role,
-                                                is_fired: false,
-                                                taking_orders: true,
-                                              };
-                                            });
-                                          }}
+                                              });
+                                            }}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue>
+                                                {(val) =>
+                                                  ROLE_LABELS[String(val)] ??
+                                                  String(val)
+                                                }
+                                              </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="user">
+                                                Пользователь
+                                              </SelectItem>
+                                              <SelectItem value="employee">
+                                                Сотрудник
+                                              </SelectItem>
+                                              <SelectItem value="moderator">
+                                                Модератор
+                                              </SelectItem>
+                                              <SelectItem value="admin">
+                                                Администратор
+                                              </SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                        {/* Связка роли и статуса: Пользователь = уволен */}
+                                        {editingUser.role === "user" ? (
+                                          <p className="text-xs text-red-500">
+                                            Роль «Пользователь» = сотрудник
+                                            выведен из состава: статус станет
+                                            «Уволен»
+                                          </p>
+                                        ) : (
+                                          <p className="text-xs text-muted-foreground">
+                                            При выборе этой роли сотрудник
+                                            автоматически восстанавливается из
+                                            уволенных
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label>Приём заказов</Label>
+                                        <Select
+                                          value={
+                                            editingUser.taking_orders
+                                              ? "true"
+                                              : "false"
+                                          }
+                                          onValueChange={(val) =>
+                                            setEditingUser({
+                                              ...editingUser,
+                                              taking_orders: val === "true",
+                                            })
+                                          }
                                         >
                                           <SelectTrigger>
                                             <SelectValue>
                                               {(val) =>
-                                                ROLE_LABELS[String(val)] ??
-                                                String(val)
+                                                String(val) === "true"
+                                                  ? "Принимает"
+                                                  : "Не принимает"
                                               }
                                             </SelectValue>
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="user">
-                                              Пользователь
+                                            <SelectItem value="true">
+                                              Принимает
                                             </SelectItem>
-                                            <SelectItem value="employee">
-                                              Сотрудник
-                                            </SelectItem>
-                                            <SelectItem value="moderator">
-                                              Модератор
-                                            </SelectItem>
-                                            <SelectItem value="admin">
-                                              Администратор
+                                            <SelectItem value="false">
+                                              Не принимает
                                             </SelectItem>
                                           </SelectContent>
                                         </Select>
-                                      )}
-                                      {/* Связка роли и статуса: Пользователь = уволен */}
-                                      {editingUser.role === "user" ? (
-                                        <p className="text-xs text-red-500">
-                                          Роль «Пользователь» = сотрудник
-                                          выведен из состава: статус станет
-                                          «Уволен»
-                                        </p>
-                                      ) : (
-                                        <p className="text-xs text-muted-foreground">
-                                          При выборе этой роли сотрудник
-                                          автоматически восстанавливается из
-                                          уволенных
-                                        </p>
-                                      )}
+                                      </div>
                                     </div>
-                                    <div className="space-y-2">
-                                      <Label>Приём заказов</Label>
-                                      <Select
-                                        value={
-                                          editingUser.taking_orders
-                                            ? "true"
-                                            : "false"
-                                        }
-                                        onValueChange={(val) =>
-                                          setEditingUser({
-                                            ...editingUser,
-                                            taking_orders: val === "true",
-                                          })
+                                    <div className="flex justify-end gap-2 pt-4">
+                                      <Button
+                                        variant="outline"
+                                        onClick={() => setEditingUser(null)}
+                                      >
+                                        Отмена
+                                      </Button>
+                                      <Button
+                                        onClick={() =>
+                                          handleUpdateUser(editingUser)
                                         }
                                       >
-                                        <SelectTrigger>
-                                          <SelectValue>
-                                            {(val) =>
-                                              String(val) === "true"
-                                                ? "Принимает"
-                                                : "Не принимает"
-                                            }
-                                          </SelectValue>
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="true">
-                                            Принимает
-                                          </SelectItem>
-                                          <SelectItem value="false">
-                                            Не принимает
-                                          </SelectItem>
-                                        </SelectContent>
-                                      </Select>
+                                        Сохранить
+                                      </Button>
                                     </div>
                                   </div>
-                                  <div className="flex justify-end gap-2 pt-4">
-                                    <Button
-                                      variant="outline"
-                                      onClick={() => setEditingUser(null)}
-                                    >
-                                      Отмена
-                                    </Button>
-                                    <Button
-                                      onClick={() =>
-                                        handleUpdateUser(editingUser)
-                                      }
-                                    >
-                                      Сохранить
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
-                          {user.is_fired ? (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => handleRestoreUser(user)}
-                            >
-                              🔄 Восстановить
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => handleFireUser(user.id)}
-                            >
-                              🗑️
-                            </Button>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-xs text-halloween-text">
-                          👻 Только Создатель
-                        </span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                                )}
+                              </DialogContent>
+                            </Dialog>
+                            {user.is_fired ? (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleRestoreUser(user)}
+                              >
+                                🔄 Восстановить
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleFireUser(user.id)}
+                              >
+                                🗑️
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-halloween-text">
+                            👻 Только Создатель
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           ) : (
             <Table>
               <TableHeader>
@@ -943,9 +967,7 @@ export const Users = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setFactorInput(
-                                    String(user.earnings_factor),
-                                  );
+                                  setFactorInput(String(user.earnings_factor));
                                   setFactorError("");
                                   setCapacityInput(
                                     user.capacity == null
@@ -1056,7 +1078,9 @@ export const Users = () => {
                                     Отмена
                                   </Button>
                                   <Button
-                                    onClick={() => handleUpdateUser(editingUser)}
+                                    onClick={() =>
+                                      handleUpdateUser(editingUser)
+                                    }
                                   >
                                     Сохранить
                                   </Button>
