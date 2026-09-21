@@ -254,10 +254,13 @@ async function migrateUsers(botDb, webDb, opts, logger, report) {
       if (resolved.matchedBy === 'tg_user_id') report.counts.users.byTg++;
       else report.counts.users.byEmail++;
 
-      if (opts.updateExisting && !opts.dryRun) {
-        const updates = buildFromMap(USER_FIELD_MAP, emp, { skipNull: false });
+      if (!opts.dryRun) {
+        const updates = { was_employee: 1 };
+        if (opts.updateExisting) {
+          Object.assign(updates, buildFromMap(USER_FIELD_MAP, emp, { skipNull: false }));
+          report.counts.users.updated++;
+        }
         await updateWebUser(webDb, resolved.userId, updates);
-        report.counts.users.updated++;
       }
       continue;
     }
@@ -359,6 +362,7 @@ async function createWebUser(webDb, botEmp, opts, logger) {
     password_hash: passwordHash,
     role: 'employee',
     email_verified: 1,
+    was_employee: 1,
     created_at: now,
     updated_at: now,
     ...fields,

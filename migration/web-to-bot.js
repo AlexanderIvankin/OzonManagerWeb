@@ -225,7 +225,7 @@ async function main() {
 // ============================================================================
 async function migrateUsers(webDb, botDb, opts, logger, report) {
   logger.info('\n--- Миграция пользователей ---');
-  const users = await webDb.all('SELECT * FROM users');
+  const users = await webDb.all('SELECT * FROM users WHERE was_employee = 1');
   logger.info(`В web.users: ${users.length}`);
 
   const idMap = new Map(); // webUserId → botEmployeeId
