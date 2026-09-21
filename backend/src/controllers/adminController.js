@@ -13,7 +13,14 @@ const AuthService = require('../services/AuthService');
 const NotificationService = require('../services/NotificationService');
 const scheduler = require('../scheduler');
 const { getDB, getDBPath } = require('../config/database')
-const { getLocalTimestamp, getDbBaseName, getVersionedFileName } = require('../utils');
+const {
+  getLocalTimestamp,
+  getDbBaseName,
+  getVersionedFileName,
+  parseCapacity,
+  parseEarningsFactor,
+  formatPhonePretty,
+} = require('../utils');
 
 /**
  * Перегенерирует Excel-файлы сотрудников на сервере (team-info.xlsx и employees-db.xlsx),
@@ -130,11 +137,47 @@ exports.updateUser = async (req, res, next) => {
     if (target.role === 'god' && (is_fired === true || is_fired === 1)) {
       return res.status(403).json({ error: 'Создателя нельзя уволить' });
     }
+    // --- Валидация/нормализация телефона и числовых полей ---
+    // Телефон храним в едином красивом формате +7 (999) 999-99-99; число
+    // принтеров — целое >= 1; коэффициент — положительное число с максимум
+    // 2 знаками после запятой ('99,99' и '99.99'). Проверяются ТОЛЬКО явно
+    // переданные поля (частичные обновления — например, восстановление —
+    // телефон/числа не трогают).
+    let normalizedPhone = phone;
+    if (phone !== undefined && phone !== null && String(phone).trim() !== '') {
+      const pretty = formatPhonePretty(phone);
+      if (!pretty) {
+        return res.status(400).json({
+          error: 'Некорректный телефон: укажите номер в формате +7 (999) 999-99-99 (11 цифр)',
+        });
+      }
+      normalizedPhone = pretty;
+    }
+    let normalizedCapacity = capacity;
+    if (capacity !== undefined && capacity !== null && capacity !== '') {
+      const parsed = parseCapacity(capacity);
+      if (parsed === null) {
+        return res.status(400).json({
+          error: 'Количество принтеров должно быть целым числом >= 1',
+        });
+      }
+      normalizedCapacity = parsed;
+    }
+    let normalizedFactor = earnings_factor;
+    if (earnings_factor !== undefined && earnings_factor !== null && earnings_factor !== '') {
+      const parsed = parseEarningsFactor(earnings_factor);
+      if (parsed === null) {
+        return res.status(400).json({
+          error: 'Коэффициент заработка: положительное число с максимум 2 знаками после запятой (например, 1.5 или 99,99)',
+        });
+      }
+      normalizedFactor = parsed;
+    }
     const user = await User.update(userId, {
       name,
-      phone,
-      capacity,
-      earnings_factor,
+      phone: normalizedPhone,
+      capacity: normalizedCapacity,
+      earnings_factor: normalizedFactor,
       role,
       is_fired,
       taking_orders
@@ -189,7 +232,7 @@ exports.createUserByAdmin = async (req, res, next) => {
   try {
     const { username, email, password, name, phone, capacity, earningsFactor, role } = req.body;
     const validationErrors = AuthService.validateAdminRegisterData({
-      username, email, password, capacity, role,
+      username, email, password, capacity, role, phone, earningsFactor,
     });
     if (validationErrors.length > 0) {
       // error — текст для показа, errors — массив по полям (структурированно)

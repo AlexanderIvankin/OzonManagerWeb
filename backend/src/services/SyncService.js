@@ -6,7 +6,15 @@ const { User, Warehouse } = require('../models');
 const { getDB } = require('../config/database');
 const bcrypt = require('bcrypt');
 const OzonService = require('./OzonService');
-const { getVersionedFileName } = require('../utils');
+const NotificationService = require('./NotificationService');
+const {
+  getVersionedFileName,
+  formatPhonePretty,
+  parseEmail,
+  parseTgUserId,
+  parseCapacity,
+  parseEarningsFactor,
+} = require('../utils');
 const config = require('../config');
 
 /**
@@ -145,21 +153,91 @@ class SyncService {
     }
 
     // --- Парсим данные сотрудников (начиная со строки 2) ---
+    // Все поля проходят парсинг/валидацию (см. ../utils):
+    //   • email      — латиница/цифры/._%+- (кириллица и пробелы ломают
+    //                  матчинг сотрудника по email);
+    //   • tg_user_id — только последовательность цифр;
+    //   • телефон    — '+7 (999) 123-45-67' / '79991234567' / '89991234567' /
+    //                  '9991234567' (10 цифр) → единый красивый формат;
+    //   • capacity   — целое число >= 1;
+    //   • factor     — положительное число, максимум 2 знака ('99,99' и '99.99').
+    // При ошибке парсинга значение заменяется на дефолт (телефон/Telegram ID —
+    // '', число принтеров — 1, коэффициент — 1.0), а проблема уходит в
+    // агрегированное оповещение персоналу (sync_data_invalid, в конце синха).
     const usersData = [];
+    const problemRows = []; // { name, problems: [{ field, raw, note }] }
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length < 6) continue; // минимум 6 колонок (A–F)
 
       const name = String(row[0] || '').trim();
-      const email = String(row[1] || '').trim().toLowerCase();
-      const tgUserId = String(row[2] || '').trim();
-      const phone = String(row[3] || '').trim();
-      const capacity = parseInt(row[4]) || 1;
-      let earningsFactor = parseFloat(String(row[5]).replace(',', '.'));
-      if (isNaN(earningsFactor) || earningsFactor <= 0) earningsFactor = 1.0;
+      const emailRaw = String(row[1] || '').trim();
+      const tgRaw = String(row[2] || '').trim();
+      const phoneRaw = String(row[3] || '').trim();
+      const capacityRaw = row[4];
+      const factorRaw = row[5];
+
+      const email = parseEmail(emailRaw);          // null, если пусто/невалидно
+      const tgUserId = parseTgUserId(tgRaw);       // только цифры
+      const phonePretty = phoneRaw ? formatPhonePretty(phoneRaw) : '';
+      const capacity = parseCapacity(capacityRaw); // null, если пусто/невалидно
+      const earningsFactor = parseEarningsFactor(factorRaw);
+      const hasCapacityValue = String(capacityRaw ?? '').trim() !== '';
+      const hasFactorValue = String(factorRaw ?? '').trim() !== '';
+
+      // Проблемы строки. Пустые строки-«хвосты» (без имени) игнорируем молча —
+      // это обычное заполнение файла, а не ошибка данных.
+      const rowProblems = [];
+      if (name) {
+        if (emailRaw && !email) {
+          rowProblems.push({
+            field: 'email',
+            raw: emailRaw,
+            note: 'не распознан (кириллица/пробелы/неверный формат) — синхронизация по нему невозможна',
+          });
+        }
+        if (tgRaw && !tgUserId) {
+          rowProblems.push({
+            field: 'tg_user_id',
+            raw: tgRaw,
+            note: 'ожидается последовательность цифр — Telegram ID очищен',
+          });
+        }
+        if (phoneRaw && !phonePretty) {
+          rowProblems.push({
+            field: 'phone',
+            raw: phoneRaw,
+            note: 'не распознан (нужно 11 цифр: +7/7/8… или 10 цифр без кода страны) — телефон очищен',
+          });
+        }
+        if (hasCapacityValue && capacity === null) {
+          rowProblems.push({
+            field: 'capacity',
+            raw: String(capacityRaw).trim(),
+            note: 'ожидается целое число >= 1 — заменено на 1',
+          });
+        }
+        if (hasFactorValue && earningsFactor === null) {
+          rowProblems.push({
+            field: 'earnings_factor',
+            raw: String(factorRaw).trim(),
+            note: 'ожидается положительное число с максимум 2 знаками после запятой (99,99 или 99.99) — заменено на 1.0',
+          });
+        }
+      }
 
       if (!name || (!email && !tgUserId)) {
-        // Пропускаем строки без имени и без идентификатора
+        // Пропускаем строки без имени и без идентификатора. Если имя есть,
+        // но нет НИ ОДНОГО корректного идентификатора — сотрудника нечем
+        // синхронизировать: сообщаем персоналу.
+        if (name && !email && !tgUserId) {
+          rowProblems.push({
+            field: 'identifiers',
+            raw: [emailRaw, tgRaw].filter(Boolean).join(' / '),
+            note: 'нет корректных E-mail и Telegram ID — строка пропущена',
+          });
+          problemRows.push({ name, problems: rowProblems });
+        }
         continue;
       }
 
@@ -172,7 +250,18 @@ class SyncService {
         }
       }
 
-      usersData.push({ name, email, tgUserId, phone, capacity, earningsFactor, warehouses });
+      usersData.push({
+        name,
+        email,
+        tgUserId,
+        tgRaw,
+        phoneRaw,
+        phonePretty,
+        capacity: capacity ?? 1,
+        earningsFactor: earningsFactor ?? 1.0,
+        warehouses,
+      });
+      if (rowProblems.length) problemRows.push({ name, problems: rowProblems });
     }
 
     const db = getDB();
@@ -229,13 +318,20 @@ class SyncService {
         // Обновляем существующего
         const updateFields = {
           name: data.name,
-          phone: data.phone || user.phone,
-          capacity: data.capacity || user.capacity,
-          earnings_factor: data.earningsFactor || user.earnings_factor,
+          // Телефон: в Excel пусто — оставляем прежний; некорректный — очищаем;
+          // корректный — канонический красивый формат +7 (999) 123-45-67
+          phone: data.phoneRaw === '' ? (user.phone || '') : (data.phonePretty || ''),
+          // Число принтеров и коэффициент: некорректные/пустые значения уже
+          // заменены на дефолты при парсинге (1 и 1.0)
+          capacity: data.capacity,
+          earnings_factor: data.earningsFactor,
         };
-        // Если tgUserId указан и отличается – обновляем
+        // Telegram ID: корректный и изменившийся — обновляем; указан в Excel,
+        // но не распознан (не последовательность цифр) — очищаем (дефолт '')
         if (data.tgUserId && user.tg_user_id !== data.tgUserId) {
           updateFields.tg_user_id = data.tgUserId;
+        } else if (!data.tgUserId && data.tgRaw) {
+          updateFields.tg_user_id = '';
         }
         // Пользователь есть в актуальном team-info.xlsx → он работает:
         // восстанавливаем (is_fired = 0), включаем приём заказов.
@@ -296,7 +392,8 @@ class SyncService {
           email: data.email || `user_${Date.now()}@temp.local`,
           passwordHash,
           name: data.name,
-          phone: data.phone,
+          // Телефон храним в едином красивом формате; некорректный — ''
+          phone: data.phonePretty || '',
           capacity: data.capacity,
           earningsFactor: data.earningsFactor,
           // Создатель создаётся сразу с ролью 'god', остальные — 'employee'
@@ -331,6 +428,25 @@ class SyncService {
           );
         }
       }
+    }
+
+    // --- Оповещение персонала о проблемных данных в Excel ---
+    if (problemRows.length) {
+      const admin = adminUserId ? await User.getById(adminUserId) : null;
+      const adminName = (admin && admin.name) || 'Система';
+      const flat = problemRows.flatMap((p) =>
+        p.problems.map((pr) => ({ name: p.name, field: pr.field, raw: pr.raw, note: pr.note }))
+      );
+      console.warn(`[SyncService] В Excel найдено проблемных значений: ${flat.length}`);
+      for (const pr of flat) {
+        console.warn(`[SyncService]   • ${pr.name || '(без имени)'}: ${pr.field} «${pr.raw}» — ${pr.note}`);
+      }
+      await NotificationService.notifyStaff('sync_data_invalid', {
+        fileName: path.basename(filePath),
+        adminName,
+        problems: flat,
+        userName: flat.map((pr) => pr.name).filter(Boolean).slice(0, 3).join(', ') || null,
+      });
     }
 
     // --- Увольнение сотрудников, отсутствующих в актуальном team-info.xlsx ---
@@ -452,7 +568,9 @@ class SyncService {
         user.name,
         user.email || '',
         user.tg_user_id || '',
-        user.phone || '',
+        // Телефон ВСЕГДА в красивом виде +7 (999) 123-45-67 (какой бы формат
+        // ни хранился в БД); нераспознаваемое значение выводим как есть
+        formatPhonePretty(user.phone) || user.phone || '',
         user.capacity,
         user.earnings_factor || 1.0,
         '',

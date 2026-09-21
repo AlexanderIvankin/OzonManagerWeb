@@ -7,7 +7,9 @@ exports.register = async (req, res, next) => {
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    const validationErrors = AuthService.validateRegisterData({ username, email, password, capacity });
+    const validationErrors = AuthService.validateRegisterData({
+      username, email, password, capacity, phone, earningsFactor,
+    });
     if (validationErrors.length > 0) {
       // error — текст для показа в интерфейсе, errors — массив по полям (структурированно)
       return res.status(400).json({

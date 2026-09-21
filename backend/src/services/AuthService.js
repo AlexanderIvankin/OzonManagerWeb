@@ -7,6 +7,12 @@ const { getDB } = require('../config/database');
 const crypto = require('crypto');
 const EmailVerification = require('../models/EmailVerification');
 const EmailService = require('./EmailService');
+const {
+  parsePhone,
+  formatPhonePretty,
+  parseEmail,
+  parseEarningsFactor,
+} = require('../utils');
 
 class AuthService {
   /**
@@ -15,15 +21,16 @@ class AuthService {
    */
   static validateRegisterData(data) {
     const errors = [];
-    const { username, email, password, capacity } = data;
+    const { username, email, password, capacity, phone, earningsFactor } = data;
 
     // Логин: минимум 6 символов (уникальность проверяет User.create)
     if (!username || typeof username !== 'string' || username.trim().length < 6) {
       errors.push('Логин должен содержать минимум 6 символов');
     }
-    // Email: простая проверка формата *@*.*
-    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-      errors.push('Некорректный email');
+    // Email: только латиница/цифры/._%+- (кириллица и пробелы ломают
+    // синхронизацию сотрудника по email — матчинг никогда не совпадёт)
+    if (!email || typeof email !== 'string' || !parseEmail(email)) {
+      errors.push('Некорректный email (допустимы только латиница, цифры и символы ._%+-)');
     }
     // Пароль: минимум 6 символов
     if (!password || typeof password !== 'string' || password.length < 6) {
@@ -35,6 +42,20 @@ class AuthService {
       if (!Number.isInteger(n) || n < 1 || n > 99) {
         errors.push(
           'Количество принтеров должно быть целым числом от 1 до 99 (или оставьте поле пустым — тогда будет 1)'
+        );
+      }
+    }
+    // Телефон (опционален): если указан — должен распознаваться
+    // ('+7 (999) 999-99-99', '79991234567', '89991234567', '9991234567')
+    if (phone !== undefined && phone !== null && String(phone).trim() !== '' && !parsePhone(phone)) {
+      errors.push('Некорректный телефон: укажите номер в формате +7 (999) 999-99-99 (11 цифр)');
+    }
+    // Коэффициент заработка (опционален): положительное число, максимум
+    // 2 знака после запятой, оба формата — '99.99' и '99,99'
+    if (earningsFactor !== undefined && earningsFactor !== null && earningsFactor !== '') {
+      if (parseEarningsFactor(earningsFactor) === null) {
+        errors.push(
+          'Коэффициент заработка: положительное число с максимум 2 знаками после запятой (например, 1.5 или 99,99)'
         );
       }
     }
@@ -52,13 +73,15 @@ class AuthService {
    */
   static validateAdminRegisterData(data) {
     const errors = [];
-    const { username, email, password, capacity, role } = data;
+    const { username, email, password, capacity, role, phone, earningsFactor } = data;
 
     if (!username || typeof username !== 'string' || username.trim().length < 1) {
       errors.push('Укажите логин (минимум 1 символ)');
     }
-    if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-      errors.push('Некорректный email');
+    // Email: только латиница/цифры/._%+- (кириллица и пробелы ломают
+    // синхронизацию сотрудника по email)
+    if (!email || typeof email !== 'string' || !parseEmail(email)) {
+      errors.push('Некорректный email (допустимы только латиница, цифры и символы ._%+-)');
     }
     if (!password || typeof password !== 'string' || password.length < 1) {
       errors.push('Укажите пароль (минимум 1 символ)');
@@ -70,6 +93,20 @@ class AuthService {
       if (!Number.isInteger(n) || n < 1) {
         errors.push(
           'Количество принтеров должно быть положительным целым числом (пусто — тогда будет 1)'
+        );
+      }
+    }
+    // Телефон (опционален): если указан — должен распознаваться
+    // ('+7 (999) 999-99-99', '79991234567', '89991234567', '9991234567')
+    if (phone !== undefined && phone !== null && String(phone).trim() !== '' && !parsePhone(phone)) {
+      errors.push('Некорректный телефон: укажите номер в формате +7 (999) 999-99-99 (11 цифр)');
+    }
+    // Коэффициент заработка (опционален): положительное число, максимум
+    // 2 знака после запятой, оба формата — '99.99' и '99,99'
+    if (earningsFactor !== undefined && earningsFactor !== null && earningsFactor !== '') {
+      if (parseEarningsFactor(earningsFactor) === null) {
+        errors.push(
+          'Коэффициент заработка: положительное число с максимум 2 знаками после запятой (например, 1.5 или 99,99)'
         );
       }
     }
@@ -102,14 +139,18 @@ class AuthService {
       // Отображаемое имя для самого пользователя: по умолчанию логин,
       // он сам сможет поменять его в Профиле
       displayName: String(username).trim(),
-      phone: phone || '',
+      // Телефон храним в едином красивом формате +7 (999) 123-45-67;
+      // пусто/невалидно → ''
+      phone: formatPhonePretty(phone) || '',
       // Положительность capacity проверена в validateAdminRegisterData;
       // пустое -> дефолт 1
       capacity:
         capacity === undefined || capacity === null || capacity === ''
           ? 1
           : Number(capacity),
-      earningsFactor: earningsFactor || 1.0,
+      // Коэффициент: положительное число, максимум 2 знака ('99,99' и '99.99');
+      // пустое/невалидное → 1.0
+      earningsFactor: parseEarningsFactor(earningsFactor) ?? 1.0,
       // 'god' не входит в белый список — роль по умолчанию 'employee'
       role: role && ['user', 'employee', 'moderator', 'admin'].includes(role)
         ? role
@@ -144,9 +185,11 @@ class AuthService {
       // name (имя для Персонала) пока ставим из логина — позже его поправит Персонал.
       name: String(username).trim(),
       displayName: name && String(name).trim() ? String(name).trim() : String(username).trim(),
-      phone: phone || '',
+      phone: formatPhonePretty(phone) || '',
       capacity: capacity || 1,
-      earningsFactor: earningsFactor || 1.0,
+      // Коэффициент: положительное число, максимум 2 знака ('99,99' и '99.99');
+      // пустое/невалидное → 1.0
+      earningsFactor: parseEarningsFactor(earningsFactor) ?? 1.0,
       // До подтверждения email пользователь — 'guest' и НЕ состоит в команде:
       // is_fired = 1, приём заказов выключен. Роль 'user' и активность
       // возвращаются только после ввода кода из письма (см. verifyEmail).

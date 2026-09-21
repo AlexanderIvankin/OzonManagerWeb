@@ -356,6 +356,48 @@ const TEMPLATES = {
     },
     staff: null,
   }),
+
+  // ==========================================================================
+  // Синхронизация сотрудников из Excel: некорректные данные в строках
+  // (телефон, e-mail, Telegram ID, число принтеров, коэффициент заработка).
+  // Проблемные значения заменяются на дефолты (телефон/Telegram ID — очищены,
+  // число принтеров — 1, коэффициент — 1.0) либо строка пропускается;
+  // персоналу нужно исправить Excel и повторить синхронизацию.
+  // ==========================================================================
+  sync_data_invalid: (p) => {
+    const FIELD_LABELS = {
+      email: 'E-mail',
+      tg_user_id: 'Telegram ID',
+      phone: 'телефон',
+      capacity: 'число принтеров',
+      earnings_factor: 'коэффициент заработка',
+      identifiers: 'E-mail/Telegram ID',
+    };
+    const problems = Array.isArray(p.problems) ? p.problems : [];
+    const shown = problems.slice(0, 10);
+    const lines = shown
+      .map((pr) => {
+        const label = FIELD_LABELS[pr.field] || pr.field || 'поле';
+        const raw =
+          pr.raw != null && String(pr.raw).trim() !== '' ? ` «${String(pr.raw).trim()}»` : '';
+        return `• ${pr.name || '(без имени)'}: ${label}${raw} — ${pr.note || 'не распознано'}`;
+      })
+      .join('\n');
+    const hidden = problems.length - shown.length;
+    const moreLine = hidden > 0 ? `\n… и ещё ${hidden} — подробнее в логе сервера.` : '';
+    return {
+      user: null,
+      staff: {
+        title: `⚠️ Синхронизация: проблемные данные в ${p.fileName || 'team-info.xlsx'}`,
+        message:
+          `При синхронизации из ${p.fileName || 'team-info.xlsx'} найдено проблемных значений: ${problems.length}.\n` +
+          `Некорректные значения заменены на дефолты (телефон/Telegram ID — очищены, число принтеров — 1, ` +
+          `коэффициент — 1.0), строки без корректных идентификаторов пропущены.\n` +
+          `Исправьте файл и повторите синхронизацию:\n${lines}${moreLine}` +
+          (p.adminName ? `\nСинхронизацию запустил: ${p.adminName}.` : ''),
+      },
+    };
+  },
 };
 
 /**

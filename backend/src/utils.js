@@ -168,6 +168,98 @@ function getVersionedDatedFileName(base, ext, datePart) {
   return version ? `${base}-${version}_${datePart}.${ext}` : `${base}_${datePart}.${ext}`;
 }
 
+// ============================================================================
+// Валидация/парсинг полей сотрудников (телефон, e-mail, Telegram ID, числа).
+// Одни и те же правила применяются при регистрации (AuthService), редактировании
+// (adminController) и синхронизации из Excel (SyncService) — чтобы в БД всё
+// хранилось в едином формате.
+// ============================================================================
+
+/**
+ * Парсит телефон в любом из принятых форматов и приводит к 11 цифрам вида
+ * '7XXXXXXXXXX'. Поддерживает: '+7 (999) 123-45-67', '79991234567',
+ * '89991234567' (ведущая «8» → «7»), '9991234567' (10 цифр без кода страны).
+ * @param {string|number} raw
+ * @returns {string|null} '7XXXXXXXXXX' или null, если распознать не удалось
+ */
+function parsePhone(raw) {
+  let digits = String(raw ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+  // Ведущая «8» — российский транк-префикс, приводим к «7»
+  if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+  // 10 цифр без кода страны → дописываем 7
+  if (digits.length === 10) digits = '7' + digits;
+  if (digits.length !== 11 || digits[0] !== '7') return null;
+  return digits;
+}
+
+/**
+ * Красивый формат телефона «+7 (999) 123-45-67» из любого распознаваемого
+ * формата (см. parsePhone).
+ * @param {string|number} raw
+ * @returns {string|null} '+7 (999) 123-45-67' или null
+ */
+function formatPhonePretty(raw) {
+  const digits = parsePhone(raw);
+  if (!digits) return null;
+  return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 9)}-${digits.slice(9)}`;
+}
+
+// Базовая проверка email: только латиница, цифры и символы ._%+- в локальной
+// части. Кириллица/пробелы/прочие символы не допускаются — такой email никогда
+// не совпадёт с БД при синхронизации (ломает матчинг сотрудника по email).
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+$/;
+
+/**
+ * Парсит email: trim + нижний регистр; null, если пусто или формат невалиден
+ * (например, кириллица, пробелы внутри).
+ * @param {string} raw
+ * @returns {string|null}
+ */
+function parseEmail(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (!s) return null;
+  return EMAIL_RE.test(s) ? s : null;
+}
+
+/**
+ * Парсит Telegram ID: ТОЛЬКО непустая последовательность цифр.
+ * @param {string|number} raw
+ * @returns {string|null}
+ */
+function parseTgUserId(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return null;
+  return /^\d+$/.test(s) ? s : null;
+}
+
+/**
+ * Парсит число принтеров: целое число >= 1.
+ * null — если пусто или невалидно (дробные, 0, буквы и т.п.).
+ * @param {string|number} raw
+ * @returns {number|null}
+ */
+function parseCapacity(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s || !/^\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/**
+ * Парсит коэффициент заработка: положительное число с максимум 2 знаками
+ * после запятой; принимает оба формата — '99.99' и '99,99'.
+ * null — если пусто или невалидно (отрицательные, >2 знаков, буквы и т.п.).
+ * @param {string|number} raw
+ * @returns {number|null}
+ */
+function parseEarningsFactor(raw) {
+  if (raw === null || raw === undefined) return null;
+  const s = String(raw).trim().replace(/,/g, '.');
+  if (!s || !/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 // Функция для формирования вывода в HTML parse mode
 function escapeHtml(text) {
@@ -190,4 +282,10 @@ module.exports = {
   getDbBaseName,
   getVersionedFileName,
   getVersionedDatedFileName,
+  parsePhone,
+  formatPhonePretty,
+  parseEmail,
+  parseTgUserId,
+  parseCapacity,
+  parseEarningsFactor,
 };

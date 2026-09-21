@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isValidPhone, PHONE_FORMAT_HINT } from "@/lib/utils";
+import { isValidPhone, PHONE_FORMAT_HINT, EMAIL_FORMAT_RE } from "@/lib/utils";
 import { PhoneInput } from "@/components/PhoneInput";
 
 // Роли, доступные при создании аккаунта (god выдаётся только синхронизацией).
@@ -368,8 +368,8 @@ export const Users = () => {
     // логин/пароль от 1 символа, email — формат, capacity — целое >= 1
     const errors: Record<string, string> = {};
     if (!createForm.username.trim()) errors.username = "Укажите логин";
-    if (!/^\S+@\S+\.\S+$/.test(createForm.email.trim()))
-      errors.email = "Некорректный email";
+    if (!EMAIL_FORMAT_RE.test(createForm.email.trim()))
+      errors.email = "Некорректный email (только латиница, цифры и символы ._%+-)";
     if (!createForm.password) errors.password = "Укажите пароль";
     if (createForm.capacity.trim() !== "") {
       const n = Number(createForm.capacity);

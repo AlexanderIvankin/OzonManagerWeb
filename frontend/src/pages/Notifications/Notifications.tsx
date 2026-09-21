@@ -44,6 +44,15 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   models_parent_used: { icon: "🧩", label: "Модель по родительскому артикулу" },
   // Отказ загрузки: файл не .zip (только live-тост, в истории не сохраняется)
   model_upload_rejected: { icon: "⛔", label: "Модель не загружена" },
+  // Напоминания о неотправленных заказах (планировщик, раз в сутки)
+  deliver_reminder: { icon: "⏰", label: "Заказ не отправлен" },
+  deliver_reminder_summary: { icon: "📋", label: "Проверка «ожидает отправки»" },
+  // Автоматический ежемесячный экспорт заработка (планировщик)
+  monthly_export_done: { icon: "📊", label: "Экспорт заработка" },
+  // Синхронизация сотрудников из Excel: проблемные данные (некорректные
+  // телефон/e-mail/Telegram ID/числа, строки без идентификаторов пропущены) —
+  // журнал персонала
+  sync_data_invalid: { icon: "⚠️", label: "Проблемные данные в Excel" },
 };
 
 const formatDateTime = (ts: number) =>
