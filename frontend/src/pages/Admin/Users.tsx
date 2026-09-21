@@ -506,7 +506,7 @@ export const Users = () => {
             title="Пользователи"
           >
             <span
-              className="inline-block align-middle -translate-y-[2px]"
+              className="inline-block align-middle -translate-y-[1px]"
               aria-hidden="true"
             >
               👥
