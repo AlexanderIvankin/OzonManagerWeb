@@ -55,11 +55,21 @@ class Warehouse {
    */
   static async addUserWarehouse(userId, warehouseId) {
     const db = getDB();
+    // Пропускаем склады, которых нет в БД (защита от FK-ошибок при
+    // рассинхронизации Excel и Ozon)
+    const exists = await db.get(
+      'SELECT 1 FROM warehouses WHERE warehouse_id = ?', warehouseId
+    );
+    if (!exists) {
+      console.warn(`[Warehouse] Склад ${warehouseId} отсутствует в БД, пропускаем связь с пользователем ${userId}`);
+      return false;
+    }
     await db.run(
       `INSERT OR IGNORE INTO user_warehouses (user_id, warehouse_id)
-       VALUES (?, ?)`,
+     VALUES (?, ?)`,
       userId, warehouseId
     );
+    return true;
   }
 
   /**

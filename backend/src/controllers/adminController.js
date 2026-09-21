@@ -377,6 +377,20 @@ exports.syncEmployees = async (req, res, next) => {
         error: `Неверное имя файла: "${req.file.originalname}". Ожидается "${expectedName}" (актуальная версия файла сотрудников)`,
       });
     }
+
+    // 1. Синхронизируем склады из Ozon перед синхронизацией сотрудников,
+    //    чтобы все warehouse_id из Excel уже были в БД.
+    try {
+      const warehousesFromOzon = await OzonService.fetchWarehouses();
+      if (warehousesFromOzon.length) {
+        await Warehouse.syncAll(warehousesFromOzon);
+        console.log(`[syncEmployees] Синхронизировано ${warehousesFromOzon.length} складов перед Excel-sync`);
+      }
+    } catch (err) {
+      console.warn('[syncEmployees] Не удалось синхронизировать склады:', err.message);
+      // Продолжаем — если склад из Excel уже есть, FK не упадёт
+    }
+
     // Файл загружен персоналом ВРУЧНУЮ → повышение user → employee разрешено
     const result = await SyncService.syncFromExcel(req.file.path, req.user.id, { allowPromotion: true });
     // Временный файл multer больше не нужен
