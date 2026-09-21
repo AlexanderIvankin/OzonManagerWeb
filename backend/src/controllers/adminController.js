@@ -376,7 +376,8 @@ exports.syncEmployees = async (req, res, next) => {
         error: `Неверное имя файла: "${req.file.originalname}". Ожидается "${expectedName}" (актуальная версия файла сотрудников)`,
       });
     }
-    const result = await SyncService.syncFromExcel(req.file.path, req.user.id);
+    // Файл загружен персоналом ВРУЧНУЮ → повышение user → employee разрешено
+    const result = await SyncService.syncFromExcel(req.file.path, req.user.id, { allowPromotion: true });
     // Временный файл multer больше не нужен
     try {
       fs.unlinkSync(req.file.path);
@@ -426,7 +427,10 @@ exports.syncEmployeesServerFile = async (req, res, next) => {
         error: `Файл ${fileName} не найден на сервере. Сначала выгрузите его через «Экспорт данных».`,
       });
     }
-    const result = await SyncService.syncFromExcel(filePath, req.user.id);
+    // Файл сгенерирован самим сервером (экспорт из БД) → роли НЕ повышаем:
+    // иначе подтверждённый 'user', попавший в файл, автоматически становился
+    // бы сотрудником при каждом нажатии «Обновить»
+    const result = await SyncService.syncFromExcel(filePath, req.user.id, { allowPromotion: false });
     res.json({ message: 'Sync completed', ...result });
   } catch (err) {
     next(err);

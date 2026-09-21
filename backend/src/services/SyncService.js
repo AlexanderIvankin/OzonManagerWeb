@@ -115,10 +115,18 @@ class SyncService {
    * Синхронизация из файла team-info.xlsx
    * @param {string} filePath - путь к файлу
    * @param {number} adminUserId - ID администратора (для лога)
-   * @param {Object} options - { createMissing: boolean, syncBy: 'email' | 'tg' }
-   * @returns {Promise<{ updated: number, created: number, skipped: number }>}
+   * @param {Object} options - { createMissing: boolean, syncBy: 'email' | 'tg',
+   *   allowPromotion: boolean }
+   *   allowPromotion — разрешено ли повышение user → employee. true (по
+   *   умолчанию) — файл загружен персоналом ВРУЧНУЮ: добавление email в
+   *   team-info.xlsx осознанное действие. false — файл сгенерирован самим
+   *   сервером (кнопка «Обновить» читает серверный team-info.xlsx): такой
+   *   файл лишь отражает состояние БД и НЕ вправе менять роли, иначе
+   *   подтверждённый 'user', случайно попавший в файл, автоматически
+   *   становился бы сотрудником.
+   * @returns {Promise<{ updated: number, created: number, skipped: number, fired: number }>}
    */
-  static async syncFromExcel(filePath, adminUserId, options = { createMissing: false, syncBy: 'email' }) {
+  static async syncFromExcel(filePath, adminUserId, options = { createMissing: false, syncBy: 'email', allowPromotion: true }) {
     console.log(`[SyncService] Синхронизация из Excel (запустил админ #${adminUserId ?? 'система'})`);
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
@@ -350,10 +358,20 @@ class SyncService {
         if (this.isGodIdentity(data)) {
           updateFields.role = 'god';
         } else if (user.role === 'user') {
-          // Пользователь прошёл синхронизацию из Excel → он сотрудник.
-          // Апгрейд user → employee при попадании в team-info.xlsx.
-          // admin/moderator не трогаем — их роли назначаются вручную.
-          updateFields.role = 'employee';
+          // Повышение user → employee — ТОЛЬКО по инициативе персонала:
+          // email добавлен в team-info.xlsx вручную и файл загружен вручную
+          // (allowPromotion = true). Серверный файл (allowPromotion = false)
+          // роли не повышает: он сгенерирован экспортом из БД, и обычный
+          // подтверждённый 'user' не должен становиться сотрудником только
+          // потому, что его email оказался в файле. admin/moderator не
+          // трогаем — их роли назначаются вручную.
+          if (options.allowPromotion === false) {
+            console.log(
+              `[SyncService] Пользователь #${user.id} (${data.name}) есть в файле, но роль не меняется: серверный team-info.xlsx не повышает user → employee`
+            );
+          } else {
+            updateFields.role = 'employee';
+          }
         }
         if (user.is_fired && user.role !== 'guest') {
           console.log(`[SyncService] Пользователь #${user.id} (${user.name || data.name}) восстановлен — присутствует в актуальном team-info.xlsx`);
@@ -507,8 +525,19 @@ class SyncService {
       }
     }
 
-    // 2. Получаем пользователей
-    const users = await User.getAll({ includeFired, includeAll: true });
+    // 2. Получаем пользователей. В Excel попадают только сотрудники и
+    //    staff-роли (admin/moderator/god). Обычные пользователи (role = 'user'
+    //    — подтвердили email, но ещё НЕ сотрудники) в файл НЕ включаются:
+    //    иначе следующая синхронизация находила бы их по email в этом же
+    //    файле и автоматически повышала до 'employee' без ведома персонала.
+    //    Гостей User.getAll исключает всегда. Исключение из фильтра —
+    //    employees-db.xlsx (includeFired = true): уволенный сотрудник должен
+    //    остаться в файле, даже если при увольнении его роль была понижена
+    //    до 'user' (так делают fireUser и синхронизация).
+    const allUsers = await User.getAll({ includeFired, includeAll: true });
+    const users = allUsers.filter(
+      (u) => u.role !== 'user' || (includeFired && u.is_fired)
+    );
     const warehouses = await Warehouse.getAll();
 
     // 3. Получаем связи пользователь-склад
