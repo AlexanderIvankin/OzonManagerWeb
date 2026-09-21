@@ -185,6 +185,7 @@ async function main() {
           columns: ['employee_id', 'total_orders', 'total_amount', 'canceled_orders'],
           values: (row, eid) => [eid, row.total_orders, row.total_amount, row.canceled_orders || 0],
           counter: 'employee_stats',
+          idColumn: 'employee_id',
           updateExisting: opts.updateExisting,
           updateColumns: ['total_orders', 'total_amount', 'canceled_orders'],
         });
@@ -352,7 +353,7 @@ async function migrateTable(webDb, botDb, webTable, botTable, cfg) {
       if (!targetId) { report.counts[counter].skipped++; continue; }
 
       const exists = await botDb.get(
-        `SELECT id FROM ${botTable} WHERE ${cfg.uniqueWhere}`,
+        `SELECT ${cfg.idColumn || 'id'} FROM ${botTable} WHERE ${cfg.uniqueWhere}`,
         cfg.uniqueArgs(row, targetId)
       );
       if (exists) {

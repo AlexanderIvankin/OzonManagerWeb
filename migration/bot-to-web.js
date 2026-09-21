@@ -12,8 +12,8 @@ const { normalizeEmail, normalizeTgId, timestamp } = require('./lib/helpers');
 //  КОНФИГУРАЦИЯ
 // ============================================================================
 const CONFIG = {
-  botDbPath: process.env.BOT_DB || path.join(__dirname, 'input', 'bot.db'),
-  webDbPath: process.env.WEB_DB || path.join(__dirname, 'output', 'bot_web.db'),
+  botDbPath: process.env.BOT_DB || path.join(__dirname, 'input', 'bot-1.db'),
+  webDbPath: process.env.WEB_DB || path.join(__dirname, 'output', 'bot_web-1.db'),
   backupDir: path.join(__dirname, 'backups'),
   logsDir: path.join(__dirname, 'logs'),
 };
@@ -200,6 +200,7 @@ async function main() {
           columns: ['user_id', 'total_orders', 'total_amount', 'canceled_orders'],
           values: (row, uid) => [uid, row.total_orders, row.total_amount, row.canceled_orders || 0],
           counter: 'user_stats',
+          idColumn: 'user_id',
           updateExisting: opts.updateExisting,
           updateColumns: ['total_orders', 'total_amount', 'canceled_orders'],
         });
@@ -396,7 +397,7 @@ async function migrateTable(botDb, webDb, botTable, webTable, cfg) {
       if (!targetId) { report.counts[counter].skipped++; continue; }
 
       const exists = await webDb.get(
-        `SELECT id FROM ${webTable} WHERE ${cfg.uniqueWhere}`,
+        `SELECT ${cfg.idColumn || 'id'} FROM ${webTable} WHERE ${cfg.uniqueWhere}`,
         cfg.uniqueArgs(row, targetId)
       );
 
