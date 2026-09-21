@@ -79,6 +79,7 @@ async function createTables(db) {
       taking_orders INTEGER DEFAULT 1,
       tg_user_id TEXT UNIQUE,
       email_verified INTEGER DEFAULT 0,
+      was_employee INTEGER NOT NULL DEFAULT 0,
       display_name TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -137,10 +138,35 @@ async function createTables(db) {
     )
   `);
 
+  // Миграция users: was_employee — «когда-либо был сотрудником/staff».
+  // Различает обычного пользователя (role='user', подтвердил email, но ещё
+  // НЕ сотрудник — was_employee=0) от уволенного ex-сотрудника (роль
+  // понижена до 'user', но was_employee=1). Клиент НЕ может менять флаг
+  // напрямую — он выставляется автоматически:
+  //   • при создании со staff-ролью (adminRegister и т.п.);
+  //   • при любом обновлении, где в fields есть staff-роль
+  //     (User.update → _forceWasEmployee, см. models/User.js).
+  // Бэкфилл существующих данных:
+  //   • все текущие staff-роли (employee/moderator/admin/god);
+  //   • исторические уволенные (role='user' AND is_fired=1);
+  //   • активные 'user' остаются 0 → попадут во вкладку «Пользователи».
+  const usersInfo = await db.all('PRAGMA table_info(users)');
+  if (!usersInfo.some((col) => col.name === 'was_employee')) {
+    await db.run('ALTER TABLE users ADD COLUMN was_employee INTEGER NOT NULL DEFAULT 0');
+    console.log('[DB] Добавлена колонка was_employee в users');
+  }
+  // Бэкфилл — идемпотентный (при уже заполненном флаге ничего не меняет)
+  await db.run(
+    "UPDATE users SET was_employee = 1 WHERE role IN ('employee', 'moderator', 'admin', 'god') AND was_employee = 0"
+  );
+  await db.run(
+    "UPDATE users SET was_employee = 1 WHERE role = 'user' AND is_fired = 1 AND was_employee = 0"
+  );
+
   // Миграция users: display_name — имя, которое пользователь видит и меняет
   // сам в Профиле (name редактирует только Персонал). Добавляется безопасно.
-  const usersInfo = await db.all('PRAGMA table_info(users)');
-  if (!usersInfo.some((col) => col.name === 'display_name')) {
+  const usersInfo2 = await db.all('PRAGMA table_info(users)');
+  if (!usersInfo2.some((col) => col.name === 'display_name')) {
     await db.run('ALTER TABLE users ADD COLUMN display_name TEXT');
     console.log('[DB] Добавлена колонка display_name в users');
   }

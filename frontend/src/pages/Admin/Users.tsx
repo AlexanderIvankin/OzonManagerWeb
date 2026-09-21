@@ -120,6 +120,10 @@ export const Users = () => {
   const [capacityInput, setCapacityInput] = useState("");
   const [capacityError, setCapacityError] = useState("");
   const [showFired, setShowFired] = useState(false);
+  // Вид таблицы: «staff» — сотрудники и уволенные ex-сотрудники (прежняя
+  // таблица), «users» — зарегистрировавшиеся, но ещё НИКОГДА не бывшие
+  // сотрудниками (разделены через was_employee на сервере)
+  const [view, setView] = useState<"staff" | "users">("staff");
 
   // === Создание аккаунта администратором (без email-подтверждения) ===
   const [showCreate, setShowCreate] = useState(false);
@@ -142,8 +146,12 @@ export const Users = () => {
     setLoading(true);
     try {
       const data = await adminApi.getUsers({
-        includeFired: showFired,
+        // Вкладка «Пользователи»: только зарегистрированные, ещё НИКОГДА не
+        // бывшие сотрудниками (cohort='users'). «Показывать уволенных»
+        // имеет смысл только для вкладки «Сотрудники» (cohort='staff')
+        includeFired: view === "staff" ? showFired : false,
         includeAll: true,
+        cohort: view,
       });
       setUsers(data);
     } catch (err: any) {
@@ -155,7 +163,7 @@ export const Users = () => {
 
   useEffect(() => {
     loadUsers();
-  }, [showFired]);
+  }, [view, showFired]);
 
   // Кнопка «Обновить»: сначала синхронизация из серверного team-info.xlsx
   // (подтягивает данные сотрудников из Excel и выдаёт роль 👻 Создателя по
@@ -363,6 +371,25 @@ export const Users = () => {
     }
   };
 
+  // Принять «обычного пользователя» (вкладка «Пользователи») в сотрудники —
+  // ручное подтверждение: роль employee + активность, как при восстановлении.
+  // На сервере это выставляет was_employee = 1 — пользователь переходит
+  // из вкладки «Пользователи» во вкладку «Сотрудники»
+  const handlePromoteUser = async (user: User) => {
+    if (!confirm(`Принять ${user.name} в сотрудники?`)) return;
+    try {
+      await adminApi.updateUser(user.id, {
+        role: "employee",
+        is_fired: false,
+        taking_orders: true,
+      });
+      toast.success(`${user.name} принят(а) в сотрудники`);
+      loadUsers();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка принятия в сотрудники");
+    }
+  };
+
   const handleCreateUser = async () => {
     // Клиентская валидация (мягкие правила админ-регистрации):
     // логин/пароль от 1 символа, email — формат, capacity — целое >= 1
@@ -422,6 +449,34 @@ export const Users = () => {
           Пользователи
         </h1>
         <div className="flex flex-col items-center gap-2 sm:flex-row">
+          {/* Переключатель вида таблицы: «Сотрудники» (с уволенными по
+              галочке) или «Пользователи» (ещё не в команде) */}
+          <div className="flex items-center gap-1 rounded-lg border p-1">
+            <Button
+              size="sm"
+              variant={view === "staff" ? "default" : "ghost"}
+              onClick={() => setView("staff")}
+            >
+              👥 Сотрудники
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "users" ? "default" : "ghost"}
+              onClick={() => setView("users")}
+            >
+              🙋 Пользователи
+            </Button>
+          </div>
+          {view === "staff" && (
+            <label className="flex items-center gap-1 text-sm">
+              <input
+                type="checkbox"
+                checked={showFired}
+                onChange={(e) => setShowFired(e.target.checked)}
+              />
+              Показывать уволенных
+            </label>
+          )}
           <Button
             size="sm"
             onClick={() => {
@@ -431,14 +486,6 @@ export const Users = () => {
           >
             ➕ Создать аккаунт
           </Button>
-          <label className="flex items-center gap-1 text-sm">
-            <input
-              type="checkbox"
-              checked={showFired}
-              onChange={(e) => setShowFired(e.target.checked)}
-            />
-            Показывать уволенных
-          </label>
           <Button onClick={handleRefresh} disabled={loading || syncing}>
             {syncing ? "🔄 Синхронизация..." : "🔄 Обновить"}
           </Button>
@@ -447,6 +494,11 @@ export const Users = () => {
 
       <Card>
         <CardContent className="p-0">
+          {/* Два вида таблицы (переключатель в шапке): «Сотрудники» — прежняя
+              таблица (уволенные по галочке); «Пользователи» — зарегистриро-
+              вавшиеся, ещё не ставшие сотрудниками. Адаптив (скрытые колонки
+              на маленьких экранах) сохранён в обеих */}
+          {view === "staff" ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -477,7 +529,7 @@ export const Users = () => {
               ) : users.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center">
-                    Нет пользователей
+                    Нет сотрудников
                   </TableCell>
                 </TableRow>
               ) : (
@@ -806,6 +858,220 @@ export const Users = () => {
               )}
             </TableBody>
           </Table>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-center hidden md:table-cell">
+                    ID
+                  </TableHead>
+                  <TableHead className="text-center">Имя</TableHead>
+                  <TableHead className="text-center hidden md:table-cell">
+                    Логин
+                  </TableHead>
+                  <TableHead className="text-center">Email</TableHead>
+                  <TableHead className="text-center">Статус</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">
+                    Регистрация
+                  </TableHead>
+                  <TableHead className="text-center">Действия</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center">
+                      Загрузка...
+                    </TableCell>
+                  </TableRow>
+                ) : users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center">
+                      Пока нет зарегистрированных пользователей
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell className="text-center hidden md:table-cell">
+                        <code>{user.id}</code>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <b>{user.name}</b>
+                      </TableCell>
+                      <TableCell className="text-center hidden md:table-cell">
+                        {user.username}
+                      </TableCell>
+                      <TableCell className="text-center break-all">
+                        {user.email}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {user.email_verified ? (
+                          <Badge variant="secondary">
+                            ✅ Email подтверждён
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">⏳ Не подтверждён</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center hidden lg:table-cell">
+                        {new Date(user.created_at).toLocaleDateString("ru-RU")}
+                      </TableCell>
+                      <TableCell className="text-center space-x-1">
+                        {/* Ручное подтверждение в сотрудники: сервер выставит
+                            was_employee — пользователь перейдёт во вкладку
+                            «Сотрудники» */}
+                        <Button
+                          size="sm"
+                          onClick={() => handlePromoteUser(user)}
+                        >
+                          ✅ В сотрудники
+                        </Button>
+                        <Dialog
+                          open={editingUser?.id === user.id}
+                          onOpenChange={(open) => {
+                            if (!open) {
+                              setFactorError("");
+                              setCapacityError("");
+                              setEditingUser(null);
+                            }
+                          }}
+                        >
+                          <DialogTrigger
+                            render={
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setFactorInput(
+                                    String(user.earnings_factor),
+                                  );
+                                  setFactorError("");
+                                  setCapacityInput(
+                                    user.capacity == null
+                                      ? ""
+                                      : String(user.capacity),
+                                  );
+                                  setCapacityError("");
+                                  setEditingUser(user);
+                                }}
+                              />
+                            }
+                          >
+                            ✏️
+                          </DialogTrigger>
+                          <DialogContent>
+                            <DialogHeader>
+                              <DialogTitle>
+                                Редактировать пользователя
+                              </DialogTitle>
+                            </DialogHeader>
+                            {editingUser && (
+                              <div className="space-y-4 py-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label>Имя</Label>
+                                    <Input
+                                      value={editingUser.name}
+                                      onChange={(e) =>
+                                        setEditingUser({
+                                          ...editingUser,
+                                          name: e.target.value,
+                                        })
+                                      }
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Телефон</Label>
+                                    <PhoneInput
+                                      placeholder="+7 (999) 999-99-99"
+                                      value={editingUser.phone || ""}
+                                      onValueChange={(formatted) =>
+                                        setEditingUser({
+                                          ...editingUser,
+                                          phone: formatted,
+                                        })
+                                      }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                      {PHONE_FORMAT_HINT}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="space-y-2">
+                                    <Label>Принтеры</Label>
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      placeholder="Например: 2"
+                                      value={capacityInput}
+                                      onChange={(e) =>
+                                        handleCapacityChange(e.target.value)
+                                      }
+                                    />
+                                    {capacityError ? (
+                                      <p className="text-sm text-red-500">
+                                        {capacityError}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-muted-foreground">
+                                        Целое положительное число принтеров
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="space-y-2">
+                                    <Label>Коэффициент</Label>
+                                    <Input
+                                      type="text"
+                                      inputMode="decimal"
+                                      placeholder="Например: 1.5 или 1,5"
+                                      value={factorInput}
+                                      onChange={(e) =>
+                                        handleFactorChange(e.target.value)
+                                      }
+                                    />
+                                    {factorError ? (
+                                      <p className="text-sm text-red-500">
+                                        {factorError}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-muted-foreground">
+                                        Положительное число, до 2 знаков после
+                                        запятой: 1.5 или 1,5
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Роль меняется кнопкой «✅ В сотрудники» —
+                                  пользователь станет сотрудником и появится во
+                                  вкладке «Сотрудники».
+                                </p>
+                                <div className="flex justify-end gap-2 pt-4">
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => setEditingUser(null)}
+                                  >
+                                    Отмена
+                                  </Button>
+                                  <Button
+                                    onClick={() => handleUpdateUser(editingUser)}
+                                  >
+                                    Сохранить
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </DialogContent>
+                        </Dialog>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

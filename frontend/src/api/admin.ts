@@ -14,6 +14,16 @@ export interface User {
   role: "guest" | "user" | "employee" | "moderator" | "admin" | "god";
   is_fired: boolean;
   taking_orders: boolean;
+  /** 0/1 из SQLite — подтверждён ли email (код из письма / создание админом) */
+  email_verified?: number;
+  /**
+   * «Когда-либо был сотрудником/staff» (0/1 из SQLite). Выставляется
+   * сервером автоматически: при создании со staff-ролью или при выдаче
+   * staff-роли через updateUser. Клиентом НЕ меняется.
+   * Уволенный ex-сотрудник (роль понижена до 'user') имеет was_employee = 1,
+   * а зарегистрировавшийся, но ещё не принятый в команду — 0.
+   */
+  was_employee?: number;
   tg_user_id: string | null;
   created_at: number;
   updated_at: number;
@@ -133,6 +143,12 @@ export const adminApi = {
     includeFired?: boolean;
     includeAll?: boolean;
     role?: string;
+    // Когорта списка:
+    //   'staff' — сотрудники и ex-сотрудники (в т.ч. уволенные с пониженной
+    //   до 'user' ролью, был сотрудником: was_employee = 1);
+    //   'users' — зарегистрированные, ещё НИКОГДА не бывшие сотрудниками
+    //   (was_employee = 0). Без параметра — прежнее поведение (все, кроме гостей)
+    cohort?: "staff" | "users";
     // Добавить к каждому пользователю склады (приоритеты) и active_count
     withWarehouses?: boolean;
   }) => api.get<User[]>("/admin/users", { params }).then((res) => res.data),

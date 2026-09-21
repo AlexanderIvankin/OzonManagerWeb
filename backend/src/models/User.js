@@ -29,9 +29,12 @@ class User {
     }
 
     const result = await db.run(
-      `INSERT INTO users (username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      username, email, passwordHash, name, displayName, phone, capacity, earningsFactor, role, isFired, takingOrders, tgUserId || null, Date.now(), Date.now()
+      `INSERT INTO users (username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, was_employee, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      username, email, passwordHash, name, displayName, phone, capacity, earningsFactor, role, isFired, takingOrders, tgUserId || null,
+      // Staff-роль (employee/moderator/admin/god) — сразу был сотрудником
+      ['employee', 'moderator', 'admin', 'god'].includes(role) ? 1 : 0,
+      Date.now(), Date.now()
     );
     const id = result.lastID;
     return this.getById(id);
@@ -40,7 +43,7 @@ class User {
   static async getById(id) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at
+      `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, was_employee, created_at, updated_at
        FROM users WHERE id = ?`,
       id
     );
@@ -50,7 +53,7 @@ class User {
   static async getByUsername(username) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
+      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, was_employee
        FROM users WHERE username = ?`,
       username
     );
@@ -60,7 +63,7 @@ class User {
   static async getByEmail(email) {
     const db = getDB();
     const user = await db.get(
-      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified
+      `SELECT id, username, email, password_hash, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, was_employee
        FROM users WHERE email = ?`,
       email
     );
@@ -83,6 +86,13 @@ class User {
         setClauses.push(`${key} = ?`);
         values.push(val);
       }
+    }
+    // was_employee выставляется АВТОМАТИЧЕСКИ: выдача staff-роли
+    // (employee/moderator/admin/god) означает «стал сотрудником».
+    // Флаг НЕ входит в allowed — клиент не может менять его напрямую.
+    if (['employee', 'moderator', 'admin', 'god'].includes(fields.role)) {
+      setClauses.push('was_employee = ?');
+      values.push(1);
     }
     if (setClauses.length === 0) return;
     values.push(Date.now()); // updated_at
@@ -179,11 +189,21 @@ class User {
   }
 
   /**
-   * Получить всех пользователей с фильтрацией (для админа)
+   * Получить всех пользователей с фильтрацией (для админа).
+   * @param {Object} opts
+   * @param {boolean} opts.includeFired - включать уволенных
+   * @param {boolean} opts.includeAll - не фильтровать по taking_orders
+   * @param {string|null} opts.role - фильтр по роли
+   * @param {string|null} opts.cohort - когорта пользователей:
+   *   'staff' — только сотрудники и ex-сотрудники (в т.ч. уволенные с
+   *   пониженной до 'user' ролью) + все staff-роли;
+   *   'users' — только «обычные пользователи» (role='user', ещё НИКОГДА не
+   *   были сотрудниками — was_employee=0); гости исключаются всегда.
+   *   null/не задан — прежнее поведение (все, кроме гостей).
    */
-  static async getAll({ includeFired = false, includeAll = false, role = null } = {}) {
+  static async getAll({ includeFired = false, includeAll = false, role = null, cohort = null } = {}) {
     const db = getDB();
-    let sql = `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, created_at, updated_at FROM users`;
+    let sql = `SELECT id, username, email, name, display_name, phone, capacity, earnings_factor, role, is_fired, taking_orders, tg_user_id, email_verified, was_employee, created_at, updated_at FROM users`;
     const conditions = [];
     const params = [];
 
@@ -192,6 +212,15 @@ class User {
     // такой аккаунт не числится нигде (см. также startGuestCleanupChecker,
     // который удаляет гостей через GUEST_TTL_HOURS).
     conditions.push("role <> 'guest'");
+
+    if (cohort === 'staff') {
+      // Сотрудники и ex-сотрудники: текущие staff-роли + пониженные до 'user'
+      // (уволенные/выведенные из состава — у них was_employee=1)
+      conditions.push("(role <> 'user' OR was_employee = 1)");
+    } else if (cohort === 'users') {
+      // Только никогда-не-сотрудники: роль 'user' и флаг не выставлен
+      conditions.push("role = 'user' AND was_employee = 0");
+    }
 
     if (!includeFired) {
       conditions.push('is_fired = 0');

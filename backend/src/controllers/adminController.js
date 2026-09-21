@@ -40,11 +40,12 @@ async function refreshServerExports() {
  */
 exports.getUsers = async (req, res, next) => {
   try {
-    const { includeFired, includeAll, role, withWarehouses } = req.query;
+    const { includeFired, includeAll, role, withWarehouses, cohort } = req.query;
     const users = await User.getAll({
       includeFired: includeFired === 'true',
       includeAll: includeAll === 'true',
-      role
+      role,
+      cohort: cohort || null,
     });
     // Дополнительно: склады (приоритеты) и количество активных заказов
     // для каждого пользователя — используется при назначении заказов,
