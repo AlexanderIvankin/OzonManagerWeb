@@ -90,7 +90,14 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        handleUnauthorized();
+        // 429 — сработал rate-limit, а не «мёртвая» сессия: токены ещё валидны.
+        // Разлогинивать нельзя, иначе временное выгорание лимита превращается в
+        // logout-шторм (все вылетают и заходят заново, долбя лимиты ещё сильнее).
+        const status = (refreshError as { response?: { status?: number } })?.response
+          ?.status;
+        if (status !== 429) {
+          handleUnauthorized();
+        }
         return Promise.reject(refreshError);
       }
     }

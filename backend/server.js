@@ -23,7 +23,6 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 
 const { initDB } = require('./src/config/database');
 const { initNotificationsDB } = require('./src/config/notificationsDatabase');
@@ -36,6 +35,7 @@ const notificationsRoutes = require('./src/routes/notifications');
 const modelsRoutes = require('./src/routes/models');
 const NotificationService = require('./src/services/NotificationService');
 const { initSocket } = require('./src/socket');
+const { apiLimiter, authLimiter } = require('./src/middlewares/rateLimiters');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -46,6 +46,19 @@ const PORT = process.env.PORT || 5000;
 if (process.env.TRUST_PROXY) {
   app.set('trust proxy', parseInt(process.env.TRUST_PROXY, 10) || 1);
 }
+
+// Страховка от прод-мисконфига: за reverse proxy без trust proxy все клиенты
+// получают req.ip прокси (127.0.0.1) и делят ОДНУ корзину rate-limit ->
+// массовые 429 и принудительные логауты. nginx при этом обязан передавать
+// X-Forwarded-For (см. ServerFiles/DEPLOY-NOTE.md).
+if (process.env.NODE_ENV === 'production' && !process.env.TRUST_PROXY) {
+  console.warn(
+    '⚠️  [PROD] TRUST_PROXY не задан: за reverse proxy все пользователи будут ' +
+      'делить одну корзину rate-limit (массовые 429). Добавьте TRUST_PROXY=1 ' +
+      'в .env (см. ServerFiles/DEPLOY-NOTE.md).'
+  );
+}
+console.log(`[RATE LIMIT] trust proxy = ${app.get('trust proxy')}`);
 
 // Security middleware
 app.use(helmet());
@@ -76,36 +89,18 @@ app.use(cors(corsOptions));
 app.use(express.static('public'));
 app.use(express.json());
 
-// Rate limiting.
-// Было: 100 запросов на ВСЁ /api за 15 минут на IP.
-// Этого слишком мало: одна страница панели делает 2-6 запросов,
-// а в dev React.StrictMode дублирует эффекты -> лимит выгорал за минуты,
-// и приложение начинало сыпать 429.
-//
-// Теперь:
-//  1) Общий лимит на /api выше и НЕ тратится успешными запросами
-//     (skipSuccessfulRequests) — обычная работа никогда не блокируется,
-//     а вот ошибочные циклы (401->refresh->повтор) купируются.
-//  2) На /api/auth отдельный и более строгий лимит — защита от перебора паролей.
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
-  max: 300, // до 300 неуспешных запросов за окно
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true, // успешные ответы лимит не тратят
-  message: { error: 'Too many requests, please try again later.' },
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
-  max: 30, // до 30 попыток логина/регистрации/рефреша за окно
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many auth attempts, please try again later.' },
-});
-
+// Rate limiting — конфигурация лимитеров в src/middlewares/rateLimiters.js.
+// Общий apiLimiter — на весь /api. Строгий authLimiter — ТОЛЬКО на
+// брутфорсимые auth-эндпоинты (логин, регистрация, код из письма).
+// /auth/refresh и /auth/me под него НЕ подпадают: это легитимный трафик
+// каждой активной сессии (при ACCESS_TOKEN_EXPIRY=15m — ~2 запроса в окно
+// на пользователя), раньше они выжигали лимит /api/auth и пользователи
+// массово получали 429 с принудительным логаутом (refresh-интерцептор фронта).
 app.use('/api', apiLimiter);
-app.use('/api/auth', authLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/verify-email', authLimiter);
+app.use('/api/auth/resend-code', authLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
