@@ -354,8 +354,14 @@ class Notification {
 
   /**
    * Список ошибок сервера с пагинацией (для админов/модераторов).
+   * @param {object} opts - level: 'error'|'warn'|null, unreadOnly, limit, offset
    */
-  static async getErrors({ level = null, limit = 30, offset = 0 } = {}) {
+  static async getErrors({
+    level = null,
+    unreadOnly = false,
+    limit = 30,
+    offset = 0,
+  } = {}) {
     const db = getNotificationsDB();
 
     const where = [];
@@ -363,6 +369,9 @@ class Notification {
     if (level) {
       where.push('level = ?');
       params.push(level);
+    }
+    if (unreadOnly) {
+      where.push('is_read = 0');
     }
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -417,6 +426,52 @@ class Notification {
       ...ids
     );
     return result.changes;
+  }
+
+  /**
+   * Отметить выбранные ошибки сервера прочитанными.
+   * @param {number[]} ids
+   * @returns {Promise<number>} число изменённых строк.
+   */
+  static async markErrorsRead(ids) {
+    if (!Array.isArray(ids) || !ids.length) return 0;
+    const db = getNotificationsDB();
+    const result = await db.run(
+      `UPDATE server_errors SET is_read = 1
+       WHERE is_read = 0 AND id IN (${placeholders(ids)})`,
+      ...ids
+    );
+    return result.changes;
+  }
+
+  /**
+   * Отметить ВСЕ ошибки сервера прочитанными.
+   * @returns {Promise<number>} число изменённых строк.
+   */
+  static async markAllErrorsRead() {
+    const db = getNotificationsDB();
+    const result = await db.run(
+      'UPDATE server_errors SET is_read = 1 WHERE is_read = 0'
+    );
+    return result.changes;
+  }
+
+  /**
+   * Количество непрочитанных ошибок сервера (опционально по уровню).
+   */
+  static async getUnreadErrorsCount({ level = null } = {}) {
+    const db = getNotificationsDB();
+    const where = ['is_read = 0'];
+    const params = [];
+    if (level) {
+      where.push('level = ?');
+      params.push(level);
+    }
+    const row = await db.get(
+      `SELECT COUNT(*) as count FROM server_errors WHERE ${where.join(' AND ')}`,
+      ...params
+    );
+    return row ? row.count : 0;
   }
 
   /**

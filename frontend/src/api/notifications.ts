@@ -27,6 +27,7 @@ export interface ServerErrorItem {
   message: string;
   stack: string | null;
   context: Record<string, unknown> | null;
+  is_read?: number | boolean;
   created_at: number;
 }
 
@@ -94,7 +95,12 @@ export const notificationsApi = {
       .then((res) => res.data),
 
   // === Ошибки сервера (admin/moderator) ===
-  errors: (params?: { level?: "error" | "warn"; limit?: number; offset?: number }) =>
+  errors: (params?: {
+    level?: "error" | "warn";
+    unread?: boolean;
+    limit?: number;
+    offset?: number;
+  }) =>
     api
       .get<ServerErrorListResponse>("/notifications/errors", { params })
       .then((res) => res.data),
@@ -104,6 +110,25 @@ export const notificationsApi = {
       .get<{ count: number }>("/notifications/errors/count", {
         params: level ? { level } : undefined,
       })
+      .then((res) => res.data),
+
+  // Непрочитанные ошибки (для кнопки «Прочитать всё» на вкладке ошибок)
+  errorsUnreadCount: (level?: "error" | "warn") =>
+    api
+      .get<{ count: number }>("/notifications/errors/unread-count", {
+        params: level ? { level } : undefined,
+      })
+      .then((res) => res.data),
+
+  // Отметить прочитанными выбранные ошибки (или все через all: true)
+  markErrorsRead: (ids: number[]) =>
+    api
+      .post<{ changed: number }>("/notifications/errors/read", { ids })
+      .then((res) => res.data),
+
+  markAllErrorsRead: () =>
+    api
+      .post<{ changed: number }>("/notifications/errors/read", { all: true })
       .then((res) => res.data),
 
   deleteErrors: (ids: number[]) =>

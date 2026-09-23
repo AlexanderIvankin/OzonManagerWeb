@@ -54,8 +54,8 @@ if (process.env.TRUST_PROXY) {
 if (process.env.NODE_ENV === 'production' && !process.env.TRUST_PROXY) {
   console.warn(
     '⚠️  [PROD] TRUST_PROXY не задан: за reverse proxy все пользователи будут ' +
-      'делить одну корзину rate-limit (массовые 429). Добавьте TRUST_PROXY=1 ' +
-      'в .env (см. ServerFiles/DEPLOY-NOTE.md).'
+    'делить одну корзину rate-limit (массовые 429). Добавьте TRUST_PROXY=1 ' +
+    'в .env (см. ServerFiles/DEPLOY-NOTE.md).'
   );
 }
 console.log(`[RATE LIMIT] trust proxy = ${app.get('trust proxy')}`);
@@ -64,18 +64,23 @@ console.log(`[RATE LIMIT] trust proxy = ${app.get('trust proxy')}`);
 app.use(helmet());
 const corsOptions = {
   origin: function (origin, callback) {
-    // Разрешаем запросы без origin (например, из Postman) или с localhost
-    const allowedOrigins = [
+    // Запросы без Origin (curl, серверные вызовы, Postman) — пропускаем
+    if (!origin) return callback(null, true);
+
+    const allowed = [
       'http://localhost:3000',
       'http://localhost:5173',
-      process.env.CLIENT_ORIGIN, // если указан в .env
-    ];
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log(`[CORS] Блокируем origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
+      process.env.CLIENT_ORIGIN,
+    ].filter(Boolean);
+
+    if (allowed.includes(origin)) {
+      return callback(null, true);
     }
+
+    // Мягкая блокировка: без CORS-заголовков, без 500.
+    // Браузер сам заблокирует ответ, сервер продолжит работу спокойно.
+    console.warn(`[CORS] Отклонён origin: ${origin}`);
+    return callback(null, false);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

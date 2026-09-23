@@ -66,6 +66,9 @@ const formatDateTime = (ts: number) =>
 
 const isRead = (n: NotificationItem) => Boolean(n.is_read);
 
+// Прочитанность ошибки сервера (колонка is_read, добавлена миграцией)
+const isErrorRead = (e: ServerErrorItem) => Boolean(e.is_read);
+
 // ----------------------------------------------------------------------------
 // Детали из payload: состав заказа (OrderDetails при назначении),
 // missingStats и детализация заработка (при завершении).
@@ -169,6 +172,8 @@ export const Notifications = () => {
   const [errors, setErrors] = useState<ServerErrorItem[]>([]);
   const [errorsTotal, setErrorsTotal] = useState(0);
   const [errorsLimit, setErrorsLimit] = useState(PAGE_SIZE);
+  const [errorsUnread, setErrorsUnread] = useState(0);
+  const [errorsUnreadOnly, setErrorsUnreadOnly] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Выбранные элементы (отдельные наборы: id таблиц пересекаются)
@@ -188,10 +193,9 @@ export const Notifications = () => {
   const [appliedNameQuery, setAppliedNameQuery] = useState("");
   const [appliedOfferQuery, setAppliedOfferQuery] = useState("");
 
-  // Счётчики для бейджей вкладок
+  // Счётчики для бейджей вкладок (бейдж «Ошибки сервера» = непрочитанные)
   const [mineUnread, setMineUnread] = useState(0);
   const [staffUnread, setStaffUnread] = useState(0);
-  const [errorsCount, setErrorsCount] = useState(0);
 
   const activeBox: NotificationBox = tab === "staff" ? "staff" : "mine";
   const activeUnread = tab === "staff" ? staffUnread : mineUnread;
@@ -224,21 +228,27 @@ export const Notifications = () => {
   );
 
   // --- Загрузка списка ошибок сервера ---
-  const loadErrors = useCallback(async (limit: number) => {
-    setLoading(true);
-    try {
-      const data = await notificationsApi.errors({ limit });
-      setErrors(data.items);
-      setErrorsTotal(data.total);
-      setSelectedErrorIds(new Set());
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.error || "Не удалось загрузить журнал ошибок",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadErrors = useCallback(
+    async (limit: number) => {
+      setLoading(true);
+      try {
+        const data = await notificationsApi.errors({
+          unread: errorsUnreadOnly || undefined,
+          limit,
+        });
+        setErrors(data.items);
+        setErrorsTotal(data.total);
+        setSelectedErrorIds(new Set());
+      } catch (err: any) {
+        toast.error(
+          err.response?.data?.error || "Не удалось загрузить журнал ошибок",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [errorsUnreadOnly],
+  );
 
   // --- Счётчики вкладок ---
   const loadCounters = useCallback(async () => {
@@ -248,8 +258,8 @@ export const Notifications = () => {
       if (isStaff) {
         const staff = await notificationsApi.unreadCount("staff");
         setStaffUnread(staff.count);
-        const errs = await notificationsApi.errorsCount();
-        setErrorsCount(errs.count);
+        const errsUnread = await notificationsApi.errorsUnreadCount();
+        setErrorsUnread(errsUnread.count);
       }
     } catch {
       // счётчики некритичны
@@ -315,7 +325,7 @@ export const Notifications = () => {
       if (!isStaff) return;
       if (e.level === "error") toast.error(`🐞 ${e.source}: ${e.message}`);
       else toast.warning(`🐞 ${e.source}: ${e.message}`);
-      setErrorsCount((c) => c + 1);
+      setErrorsUnread((c) => c + 1);
       if (tab === "errors") loadErrors(errorsLimit);
     });
 
@@ -494,6 +504,67 @@ export const Notifications = () => {
     );
   };
 
+  const unreadErrorsSelectedCount = errors.filter(
+    (e) => selectedErrorIds.has(e.id) && !isErrorRead(e),
+  ).length;
+
+  const handleMarkSelectedErrorsRead = async () => {
+    const ids = errors
+      .filter((e) => selectedErrorIds.has(e.id) && !isErrorRead(e))
+      .map((e) => e.id);
+    if (!ids.length) return;
+    try {
+      await notificationsApi.markErrorsRead(ids);
+      toast.success(`Отмечено прочитанным: ${ids.length}`);
+      await loadErrors(errorsLimit);
+      loadCounters();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error || "Не удалось отметить прочитанным",
+      );
+    }
+  };
+
+  const handleMarkAllErrorsRead = async () => {
+    try {
+      const { changed } = await notificationsApi.markAllErrorsRead();
+      toast.success(
+        changed ? `Отмечено прочитанным: ${changed}` : "Нет непрочитанных",
+      );
+      await loadErrors(errorsLimit);
+      loadCounters();
+    } catch (err: any) {
+      toast.error(
+        err.response?.data?.error || "Не удалось отметить прочитанным",
+      );
+    }
+  };
+
+  // Клик по ошибке — отметить прочитанной (если ещё не прочитана).
+  // Для уже прочитанных клик ничего не делает.
+  // Журнал общий для персонала: «прочитано» — общий флаг «разобрано».
+  const handleErrorClick = async (err: ServerErrorItem) => {
+    if (isErrorRead(err)) return;
+    try {
+      await notificationsApi.markErrorsRead([err.id]);
+      if (errorsUnreadOnly) {
+        // при фильтре «только непрочитанные» строка исчезает сразу
+        setErrors((prev) => prev.filter((item) => item.id !== err.id));
+        setErrorsTotal((t) => Math.max(0, t - 1));
+      } else {
+        // локально гасим строку без перезагрузки списка
+        setErrors((prev) =>
+          prev.map((item) =>
+            item.id === err.id ? { ...item, is_read: 1 } : item,
+          ),
+        );
+      }
+      loadCounters();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error || "Не удалось отметить прочитанным");
+    }
+  };
+
   const handleDeleteSelectedErrors = async () => {
     const ids = [...selectedErrorIds];
     if (!ids.length) return;
@@ -553,7 +624,7 @@ export const Notifications = () => {
       <div className="mb-4 flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {tabButton("mine", "Личные", mineUnread)}
         {isStaff && tabButton("staff", "Действия сотрудников", staffUnread)}
-        {isStaff && tabButton("errors", "Ошибки сервера", errorsCount)}
+        {isStaff && tabButton("errors", "Ошибки сервера", errorsUnread)}
       </div>
 
       {tab === "errors" ? (
@@ -572,6 +643,25 @@ export const Notifications = () => {
             </label>
             <Button
               size="sm"
+              variant="outline"
+              disabled={!unreadErrorsSelectedCount}
+              onClick={handleMarkSelectedErrorsRead}
+            >
+              ✓ Прочитать выбранные
+              {unreadErrorsSelectedCount
+                ? ` (${unreadErrorsSelectedCount})`
+                : ""}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={errorsUnread === 0}
+              onClick={handleMarkAllErrorsRead}
+            >
+              ✓ Прочитать всё
+            </Button>
+            <Button
+              size="sm"
               variant="destructive"
               disabled={!selectedErrorIds.size}
               onClick={handleDeleteSelectedErrors}
@@ -582,6 +672,15 @@ export const Notifications = () => {
             <Button size="sm" variant="destructive" onClick={handleClearErrors}>
               ⚠️ Очистить весь журнал
             </Button>
+            <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-muted-foreground sm:ml-auto">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-primary"
+                checked={errorsUnreadOnly}
+                onChange={(e) => setErrorsUnreadOnly(e.target.checked)}
+              />
+              Только непрочитанные
+            </label>
           </div>
 
           {/* Список ошибок */}
@@ -592,23 +691,42 @@ export const Notifications = () => {
             {!loading && !errors.length && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground">
-                  Журнал ошибок пуст 🎉
+                  {errorsUnreadOnly
+                    ? "Нет непрочитанных ошибок"
+                    : "Журнал ошибок пуст 🎉"}
                 </CardContent>
               </Card>
             )}
             {errors.map((e) => (
               <div
                 key={e.id}
-                className="flex items-start gap-3 rounded-md border p-3"
+                onClick={() => handleErrorClick(e)}
+                title={
+                  isErrorRead(e)
+                    ? undefined
+                    : "Нажмите, чтобы отметить прочитанным"
+                }
+                className={`flex items-center gap-3 rounded-md border p-3 transition-colors ${
+                  isErrorRead(e)
+                    ? "opacity-70"
+                    : "cursor-pointer bg-accent/40 hover:bg-accent/70"
+                }`}
               >
                 <input
                   type="checkbox"
                   className="mt-1 h-4 w-4 accent-primary"
                   checked={selectedErrorIds.has(e.id)}
                   onChange={() => toggleSelectError(e.id)}
+                  onClick={(ev) => ev.stopPropagation()}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
+                    {!isErrorRead(e) && (
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full bg-blue-500"
+                        title="Непрочитано"
+                      />
+                    )}
                     <Badge
                       variant={
                         e.level === "error" ? "destructive" : "secondary"
@@ -623,7 +741,10 @@ export const Notifications = () => {
                   </div>
                   <p className="mt-1 break-words text-sm">{e.message}</p>
                   {(e.stack || e.context) && (
-                    <details className="mt-1">
+                    <details
+                      className="mt-1"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
                       <summary className="cursor-pointer text-xs text-muted-foreground">
                         Подробности
                       </summary>
@@ -644,7 +765,10 @@ export const Notifications = () => {
                   size="sm"
                   variant="ghost"
                   title="Удалить"
-                  onClick={() => handleDeleteOneError(e.id)}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    handleDeleteOneError(e.id);
+                  }}
                 >
                   ✕
                 </Button>

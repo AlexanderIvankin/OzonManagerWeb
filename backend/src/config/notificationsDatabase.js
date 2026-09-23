@@ -101,6 +101,7 @@ async function createTables(db) {
       message TEXT NOT NULL,
       stack TEXT,
       context TEXT,
+      is_read INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL
     )
   `);
@@ -129,6 +130,15 @@ async function ensureSearchColumns(db) {
   if (!names.includes('offer_ids')) {
     await db.exec('ALTER TABLE notifications ADD COLUMN offer_ids TEXT');
     console.log('✅ notifications: добавлена колонка offer_ids (поиск по артикулу)');
+  }
+
+  // Колонка «прочитано» в журнале ошибок сервера (для вкладки «Ошибки сервера»:
+  // «Прочитать выбранные / всё», фильтр «Только непрочитанные»).
+  const errColumns = await db.all('PRAGMA table_info(server_errors)');
+  const errNames = errColumns.map((c) => c.name);
+  if (!errNames.includes('is_read')) {
+    await db.exec('ALTER TABLE server_errors ADD COLUMN is_read INTEGER DEFAULT 0');
+    console.log('✅ server_errors: добавлена колонка is_read (отметка прочитанности)');
   }
 }
 

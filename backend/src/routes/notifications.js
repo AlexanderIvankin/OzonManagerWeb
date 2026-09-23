@@ -162,7 +162,7 @@ router.post('/clear-read', async (req, res) => {
 // ОШИБКИ СЕРВЕРА (только admin/moderator)
 // ===========================================================================
 
-// Список ошибок сервера
+// Список ошибок сервера (с фильтром «только непрочитанные»)
 router.get('/errors', authorize(...STAFF_ROLES), async (req, res) => {
   try {
     const { limit, offset } = parseLimitOffset(req.query);
@@ -170,8 +170,14 @@ router.get('/errors', authorize(...STAFF_ROLES), async (req, res) => {
       req.query.level === 'error' || req.query.level === 'warn'
         ? req.query.level
         : null;
+    const unreadOnly = req.query.unread === '1' || req.query.unread === 'true';
 
-    const result = await Notification.getErrors({ level, limit, offset });
+    const result = await Notification.getErrors({
+      level,
+      unreadOnly,
+      limit,
+      offset,
+    });
     res.json(result);
   } catch (err) {
     console.error('[notifications] errors:', err);
@@ -190,6 +196,42 @@ router.get('/errors/count', authorize(...STAFF_ROLES), async (req, res) => {
     res.json({ count });
   } catch (err) {
     console.error('[notifications] errors/count:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Количество непрочитанных ошибок (для кнопки «Прочитать всё»)
+router.get(
+  '/errors/unread-count',
+  authorize(...STAFF_ROLES),
+  async (req, res) => {
+    try {
+      const level =
+        req.query.level === 'error' || req.query.level === 'warn'
+          ? req.query.level
+          : null;
+      const count = await Notification.getUnreadErrorsCount({ level });
+      res.json({ count });
+    } catch (err) {
+      console.error('[notifications] errors/unread-count:', err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// Отметить прочитанными выбранные ошибки: { ids: number[] }
+// или все: { all: true }
+router.post('/errors/read', authorize(...STAFF_ROLES), async (req, res) => {
+  try {
+    let changed;
+    if (req.body.all) {
+      changed = await Notification.markAllErrorsRead();
+    } else {
+      changed = await Notification.markErrorsRead(parseIds(req.body.ids));
+    }
+    res.json({ changed });
+  } catch (err) {
+    console.error('[notifications] errors/read:', err);
     res.status(500).json({ error: err.message });
   }
 });

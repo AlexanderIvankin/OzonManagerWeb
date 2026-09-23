@@ -9,7 +9,13 @@ let io;
 function initSocket(server) {
   io = new Server(server, {
     cors: {
-      origin: process.env.CLIENT_URL || 'http://localhost:3000',
+      // Единый источник истины для разрешённого origin — CLIENT_ORIGIN
+      // (тот же, что использует cors в server.js). CLIENT_URL оставлен
+      // как fallback для совместимости со старыми .env.
+      origin:
+        process.env.CLIENT_ORIGIN ||
+        process.env.CLIENT_URL ||
+        'http://localhost:3000',
       methods: ['GET', 'POST'],
       credentials: true,
     },
