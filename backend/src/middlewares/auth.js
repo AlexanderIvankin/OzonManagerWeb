@@ -1,5 +1,10 @@
 const AuthService = require('../services/AuthService');
 const User = require('../models/User');
+// Роли персонала живут в отдельном модуле без зависимостей — иначе socket.js
+// (который берёт отсюда STAFF_ROLES) тянул бы AuthService и замыкал цикл
+// require: NotificationService -> socket -> middlewares/auth -> AuthService ->
+// NotificationService (AuthService получал пустой exports NotificationService).
+const { STAFF_ROLES } = require('../config/staffRoles');
 
 async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -19,10 +24,9 @@ async function authenticate(req, res, next) {
   next();
 }
 
-// Роли персонала с полным доступом к админке.
-// Модератор = Администратор по правам; 'god' — Создатель: те же права,
-// но его профиль защищён от редактирования/увольнения (см. adminController).
-const STAFF_ROLES = ['admin', 'moderator', 'god'];
+// Роли персонала (STAFF_ROLES) импортированы выше из src/config/staffRoles.js —
+// единый источник истины; здесь только реэкспорт для роутов
+// (routes/admin.js, routes/notifications.js) без изменения их импортов.
 
 function requireEmployee(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Unauthorized' });

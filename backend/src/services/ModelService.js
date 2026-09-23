@@ -4,6 +4,8 @@ const StorageService = require('./StorageService');
 const NotificationService = require('./NotificationService');
 const OzonService = require('./OzonService');
 const { getDB } = require('../config/database');
+// Единый источник истины по ролям персонала (модуль без зависимостей).
+const { STAFF_ROLES } = require('../config/staffRoles');
 
 // ============================================================================
 // ModelService — единая точка работы с 3D-моделями: обёртка над StorageService
@@ -548,7 +550,6 @@ class ModelService {
    */
   static async checkAccess(offerId, user) {
     if (!user) return { allowed: false, matchedOfferId: null, source: null };
-    const STAFF_ROLES = ['admin', 'moderator', 'god'];
     if (STAFF_ROLES.includes(user.role)) {
       return { allowed: true, matchedOfferId: offerId, source: 'staff' };
     }

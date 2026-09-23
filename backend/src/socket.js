@@ -2,7 +2,11 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
 const { User } = require('./models');
-const { STAFF_ROLES } = require('./middlewares/auth');
+// Роли персонала берём из модуля БЕЗ зависимостей: импорт из middlewares/auth
+// утаскивал за собой AuthService и создавал цикл require
+// (NotificationService -> socket -> middlewares/auth -> AuthService ->
+// NotificationService), ломавший журналирование ошибок в AuthService.
+const { STAFF_ROLES } = require('./config/staffRoles');
 
 let io;
 
