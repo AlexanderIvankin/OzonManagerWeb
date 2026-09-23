@@ -7,6 +7,7 @@ const { getDB } = require('../config/database');
 const crypto = require('crypto');
 const EmailVerification = require('../models/EmailVerification');
 const EmailService = require('./EmailService');
+const NotificationService = require('./NotificationService');
 const {
   parsePhone,
   formatPhonePretty,
@@ -255,10 +256,29 @@ class AuthService {
       console.log(
         `[Auth] Повторная регистрация: заменяем неподтверждённый аккаунт #${guest.id} (${guest.username} / ${guest.email})`
       );
-      await EmailVerification.deleteByUserId(guest.id);
-      await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
-      await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
-      await User.deleteById(guest.id);
+      // Полная очистка ссылающихся таблиц — иначе DELETE FROM users может
+      // упасть с SQLITE_CONSTRAINT: FOREIGN KEY constraint failed.
+      try {
+        await db.run('BEGIN IMMEDIATE');
+        await EmailVerification.deleteByUserId(guest.id);
+        await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM assignments WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM user_stats WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_history WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_adjustments WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_adjustments_active WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM issued_models WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM model_download_tokens WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM offer_models WHERE uploaded_by = ?', guest.id);
+        await db.run('UPDATE product_stats SET user_id = NULL WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM users WHERE id = ?', guest.id);
+        await db.run('COMMIT');
+      } catch (err) {
+        try { await db.run('ROLLBACK'); } catch (e) { /* не был в транзакции */ }
+        console.error(`[Auth] Не удалось заменить неподтверждённый аккаунт #${guest.id}:`, err.message);
+        throw err;
+      }
     }
     return true;
   }
@@ -339,18 +359,47 @@ class AuthService {
     const cutoff = Date.now() - ttlHours * 60 * 60 * 1000;
     const guests = await User.findGuestsOlderThan(cutoff);
 
+    // Таблицы без ON DELETE CASCADE, ссылающиеся на users(id).
+    // Если у «гостя» остались строки в любой из них (легаси-данные, выданные
+    // модели и т.п.), DELETE FROM users падает с SQLITE_CONSTRAINT: FOREIGN KEY
+    // constraint failed — поэтому перед удалением вычищаем/обнуляем их все.
+    const deletedUsers = [];
+
     for (const guest of guests) {
-      await EmailVerification.deleteByUserId(guest.id);
-      await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
-      await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
-      await User.deleteById(guest.id);
-      console.log(
-        `[Auth] Неподтверждённый аккаунт #${guest.id} (${guest.username} / ${guest.email}) удалён: email не подтверждён более ${ttlHours} ч`
-      );
+      try {
+        await db.run('BEGIN IMMEDIATE');
+        // Коды подтверждения и refresh-токены имеют ON DELETE CASCADE,
+        // но чистим явно — надёжнее для легаси-БД, где каскад мог не примениться.
+        await EmailVerification.deleteByUserId(guest.id);
+        await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
+        // Прочие ссылающиеся таблицы (у гостя их быть не должно, но чистим):
+        await db.run('DELETE FROM assignments WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM user_stats WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_history WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_adjustments WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM earnings_adjustments_active WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM issued_models WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM model_download_tokens WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM offer_models WHERE uploaded_by = ?', guest.id);
+        await db.run('UPDATE product_stats SET user_id = NULL WHERE user_id = ?', guest.id);
+        await db.run('DELETE FROM users WHERE id = ?', guest.id);
+        await db.run('COMMIT');
+        deletedUsers.push(guest.id);
+        console.log(
+          `[Auth] Неподтверждённый аккаунт #${guest.id} (${guest.username} / ${guest.email}) удалён: email не подтверждён более ${ttlHours} ч`
+        );
+      } catch (err) {
+        // Один проблемный гость не должен валиль всю очистку — откатываем
+        // его транзакцию и переходим к следующему, сбой журналируется.
+        try { await db.run('ROLLBACK'); } catch (e) { /* не был в транзакции */ }
+        console.error(`[Auth] Не удалось удалить неподтверждённый аккаунт #${guest.id}:`, err.message);
+        NotificationService.logServerError('auth.cleanupGuestAccounts', err);
+      }
     }
 
     const deletedCodes = await EmailVerification.deleteExpired();
-    return { deletedUsers: guests.length, deletedCodes };
+    return { deletedUsers: deletedUsers.length, deletedCodes };
   }
 
   static generateVerificationCode() {
