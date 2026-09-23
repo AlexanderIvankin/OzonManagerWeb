@@ -896,6 +896,7 @@ export const Users = () => {
                     Логин
                   </TableHead>
                   <TableHead className="text-center">Email</TableHead>
+                  <TableHead className="text-center">Роль</TableHead>
                   <TableHead className="text-center">Статус</TableHead>
                   <TableHead className="text-center hidden lg:table-cell">
                     Регистрация
@@ -906,13 +907,13 @@ export const Users = () => {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center">
+                    <TableCell colSpan={8} className="text-center">
                       Загрузка...
                     </TableCell>
                   </TableRow>
                 ) : users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center">
+                    <TableCell colSpan={8} className="text-center">
                       Пока нет зарегистрированных пользователей
                     </TableCell>
                   </TableRow>
@@ -930,6 +931,10 @@ export const Users = () => {
                       </TableCell>
                       <TableCell className="text-center break-all">
                         {user.email}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {/* Стили ролей — единый RoleBadge (guest → «⏳ Гость») */}
+                        <RoleBadge role={user.role} className="font-normal" />
                       </TableCell>
                       <TableCell className="text-center">
                         {/* Гость — регистрация не завершена (email не подтверждён,
