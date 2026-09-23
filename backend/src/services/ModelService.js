@@ -27,6 +27,12 @@ const { STAFF_ROLES } = require('../config/staffRoles');
 //     Если по прямому артикулу модели не было, а выдали из родительского —
 //     персоналу уходит отдельное оповещение (models_parent_used) с обоими
 //     артикулами для идентификации.
+//   • источник истины по СУЩЕСТВОВАНИЮ — S3, БД — по метаданным: если артикула
+//     нет в offer_models (zip залит в бакет мимо приложения), поиск делает
+//     HeadObject и лениво регистрирует запись (resolveForOffers); плюс
+//     scheduler ежечасно синхронизирует ListObjectsV2 -> offer_models
+//     (syncFromStorage). Так модели из S3 выдаются по артикулу, даже если
+//     upload через админку не вызывался.
 //
 // Валидация при загрузке (персонал):
 //   • ЖЁСТКО: загружаемый файл обязан быть .zip (по расширению и magic-байтам) —
@@ -47,6 +53,13 @@ const MAX_UPLOAD_MB = parseInt(process.env.MODELS_MAX_UPLOAD_MB, 10) || 1024;
 // TTL одноразового токена скачивания (минуты) — MODELS_TOKEN_TTL_MIN
 const TOKEN_TTL_MIN = parseInt(process.env.MODELS_TOKEN_TTL_MIN, 10) || 15;
 const TOKEN_TTL_MS = TOKEN_TTL_MIN * 60 * 1000;
+
+// Негативный кэш fallback-проверок S3 (артикул -> истекшее время, мс): чтобы
+// списки заказов/таблицы без моделей не отправляли HeadObject на каждый рендер.
+// Успешная проверка сразу регистрируется в offer_models и дальше читается из БД,
+// поэтому записи в кэше не «залипают» после появления модели в S3.
+const S3_MISS_TTL_MS = 60 * 1000;
+const s3MissCache = new Map();
 
 // Допустимые символы артикула: буквы/цифры/точка/дефис/подчёркивание.
 // Защита от path traversal в ключе S3 и в имени файла.
@@ -241,18 +254,24 @@ class ModelService {
 
   /**
    * Найти модель для offer_id с учётом родительского артикула (-NR/-NL -> -N).
+   * Делегирует resolveForOffers: БД, затем fallback в S3 (zip, залитый мимо
+   * приложения, находится и лениво регистрируется в offer_models).
    * @returns {{ model: object, matchedOfferId: string }|null}
    */
   static async resolveModel(offerId) {
-    for (const candidate of offerCandidates(offerId)) {
-      const model = await OfferModel.get(candidate);
-      if (model) return { model, matchedOfferId: candidate };
-    }
-    return null;
+    const resolved = await this.resolveForOffers([offerId]);
+    return resolved.get(String(offerId)) || null;
   }
 
   /**
-   * Пакетный поиск моделей для списка offer_id (один запрос в БД).
+   * Пакетный поиск моделей для списка offer_id:
+   *   1) один запрос в БД (offer_models, артикул + родитель);
+   *   2) fallback в S3: по кандидатам без записи в БД выполняется HeadObject —
+   *      zip мог быть залит мимо приложения (вручную/скриптом в бакет). При
+   *      успехе запись лениво регистрируется в offer_models (file_hash и
+   *      uploaded_by остаются NULL — признак модели из хранилища). Промахи
+   *      кэшируются на S3_MISS_TTL_MS; ошибки S3 не прерывают поиск (артикул
+   *      просто уйдёт в missing, назначение заказа не страдает).
    * @returns {Promise<Map<string, {model: object, matchedOfferId: string}>>}
    */
   static async resolveForOffers(offerIds) {
@@ -270,16 +289,131 @@ class ModelService {
     }
     const rows = await OfferModel.getBatch(Array.from(allCandidates));
 
+    // 1) Что нашлось в БД
+    const unresolved = [];
     for (const [offerId, candidates] of candidateLists) {
+      let found = null;
       for (const candidate of candidates) {
         const model = rows.get(candidate);
         if (model) {
-          result.set(offerId, { model, matchedOfferId: candidate });
+          found = { model, matchedOfferId: candidate };
           break;
         }
       }
+      if (found) result.set(offerId, found);
+      else unresolved.push(offerId);
+    }
+    if (!unresolved.length) return result;
+
+    // 2) Fallback: непроверенные кандидаты -> HeadObject (параллельно)
+    const toCheck = new Set();
+    for (const offerId of unresolved) {
+      for (const candidate of candidateLists.get(offerId)) {
+        if (rows.has(candidate)) continue;
+        const missUntil = s3MissCache.get(candidate);
+        if (missUntil && missUntil > Date.now()) continue;
+        toCheck.add(candidate);
+      }
+    }
+    const foundInS3 = new Map(); // offer_id -> { size, lastModified }
+    await Promise.all(Array.from(toCheck).map(async (candidate) => {
+      try {
+        const stat = await StorageService.statZip(candidate);
+        if (stat) foundInS3.set(candidate, stat);
+        else s3MissCache.set(candidate, Date.now() + S3_MISS_TTL_MS);
+      } catch (err) {
+        console.error(`[MODELS] Fallback-проверка S3 не удалась (${candidate}):`, err.message);
+      }
+    }));
+
+    // 3) Решение по неразрешённым: БД (на случай гонки), затем S3
+    const registeredNow = new Set();
+    for (const offerId of unresolved) {
+      for (const candidate of candidateLists.get(offerId)) {
+        const dbModel = rows.get(candidate);
+        if (dbModel) {
+          result.set(offerId, { model: dbModel, matchedOfferId: candidate });
+          break;
+        }
+        const stat = foundInS3.get(candidate);
+        if (!stat) continue;
+        const model = {
+          offer_id: candidate,
+          s3_key: StorageService.keyFor(candidate),
+          file_name: StorageService.fileNameFor(candidate),
+          file_hash: null,
+          file_size: stat.size,
+          uploaded_at: stat.lastModified,
+          uploaded_by: null,
+          from_storage: true, // не колонка БД: модель найдена fallback'ом в S3
+        };
+        // Ленивая регистрация: следующий поиск пойдёт уже по БД. Сбой записи
+        // не ломает выдачу — модель найдена и готова к скачиванию.
+        if (!registeredNow.has(candidate)) {
+          registeredNow.add(candidate);
+          try {
+            await OfferModel.insertIfMissing(candidate, {
+              s3Key: model.s3_key,
+              fileName: model.file_name,
+              fileSize: model.file_size,
+              uploadedAt: model.uploaded_at,
+            });
+            s3MissCache.delete(candidate);
+          } catch (err) {
+            console.error(`[MODELS] Не удалось зарегистрировать ${candidate} в offer_models:`, err.message);
+          }
+        }
+        result.set(offerId, { model, matchedOfferId: candidate });
+        break;
+      }
     }
     return result;
+  }
+
+  /**
+   * Синхронизация S3 -> offer_models (вызывается из scheduler ежечасно):
+   * перечисляет все zip-архивы в бакете (ListObjectsV2, с пагинацией) и
+   * регистрирует отсутствующие в БД записи (insert-if-missing). Существующие
+   * метаданные из uploadModel (file_hash, uploaded_by, uploaded_at) не трогаются.
+   * Благодаря этому модели, залитые в S3 вручную/скриптом, становятся видны
+   * в админке и выдаются при назначении заказа, даже если upload не вызывался.
+   * @returns {Promise<{found: number, registered: number, invalid: number}>}
+   *   found — zip-файлов в бакете; registered — создано записей;
+   *   invalid — ключей, не похожих на артикул (пропущены).
+   */
+  static async syncFromStorage() {
+    const objects = await StorageService.listZipKeys();
+    let registered = 0;
+    let invalid = 0;
+
+    for (const obj of objects) {
+      if (!obj.offerId || !OFFER_ID_RE.test(obj.offerId)) {
+        invalid++;
+        continue;
+      }
+      try {
+        const created = await OfferModel.insertIfMissing(obj.offerId, {
+          s3Key: obj.key,
+          fileName: StorageService.fileNameFor(obj.offerId),
+          fileSize: obj.size,
+          uploadedAt: obj.lastModified,
+        });
+        if (created) {
+          registered++;
+          s3MissCache.delete(obj.offerId);
+          console.log(`[MODELS] Синхронизация S3: зарегистрирована модель ${obj.offerId} (${obj.key})`);
+        }
+      } catch (err) {
+        console.error(`[MODELS] Синхронизация S3: ошибка записи ${obj.offerId}:`, err.message);
+      }
+    }
+
+    if (registered) {
+      console.log(
+        `[MODELS] Синхронизация S3: +${registered} модел(ей), всего zip в бакете: ${objects.length}`
+      );
+    }
+    return { found: objects.length, registered, invalid };
   }
 
   // =====================================================================

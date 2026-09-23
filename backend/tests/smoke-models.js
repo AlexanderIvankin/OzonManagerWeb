@@ -53,7 +53,14 @@ s3.send = async (cmd) => {
       err.name = 'NotFound';
       throw err;
     }
-    return { ContentLength: fakeS3Objects.get(key).length };
+    return { ContentLength: fakeS3Objects.get(key).length, LastModified: new Date() };
+  }
+  if (kind === 'ListObjectsV2Command') {
+    const prefix = cmd.input?.Prefix || '';
+    const contents = Array.from(fakeS3Objects.entries())
+      .filter(([k]) => k.startsWith(prefix))
+      .map(([k, buf]) => ({ Key: k, Size: buf.length, LastModified: new Date() }));
+    return { Contents: contents, IsTruncated: false };
   }
   if (kind === 'DeleteObjectCommand') {
     fakeS3Objects.delete(key);
@@ -337,6 +344,61 @@ function assert(cond, label) {
     ]);
     assert(products[0].model && products[0].model.offerId === TEST_OFFER, 'attachToProducts: p.model проставлен (через родителя)');
     assert(products[1].model === null, 'attachToProducts: p.model = null, если модели нет');
+
+    // 10. Fallback в S3: zip залит в бакет НАПРЯМУЮ (без uploadModel) —
+    // артикула нет в offer_models, но модель должна находиться и выдаваться.
+    const orphOffer = `${TEST_MARK}-ORPH`;
+    const orphZip = buildZip([{ name: `${orphOffer}.stl`, content: 'orphan model' }]);
+    fakeS3Objects.set(`${orphOffer}.zip`, orphZip);
+    const orphBefore = await db.get('SELECT 1 AS x FROM offer_models WHERE offer_id = ?', orphOffer);
+    assert(!orphBefore, 'fallback: в offer_models записи нет (zip залит мимо приложения)');
+    const orphResolved = await ModelService.resolveModel(orphOffer);
+    assert(
+      !!orphResolved && orphResolved.matchedOfferId === orphOffer,
+      'resolveModel: orphan-модель найдена через fallback в S3'
+    );
+    assert(orphResolved.model.file_size === orphZip.length, 'fallback: file_size взят из HeadObject');
+    assert(orphResolved.model.from_storage === true, 'fallback: запись помечена as-from_storage');
+    const orphRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', orphOffer);
+    assert(
+      !!orphRow && orphRow.file_hash === null && orphRow.uploaded_by === null,
+      'fallback: ленивая регистрация в offer_models (без file_hash/uploaded_by)'
+    );
+    const orphSummary = await ModelService.issueForAssignment(
+      `SMOKE-ORPH-${stamp}`, emp.id, emp,
+      { products: [{ name: 'Товар с orphan-моделью', offer_id: orphOffer, quantity: 1 }] }
+    );
+    assert(
+      orphSummary.available.length === 1 && orphSummary.missing.length === 0,
+      'issueForAssignment: orphan-модель из S3 выдана по артикулу'
+    );
+    const orphGrant = await ModelService.requestToken(orphOffer, emp);
+    assert(!!orphGrant.token, 'requestToken: токен выдан для orphan-модели (emp — уже выдана)');
+    // Повторный resolve идемпотентен (запись уже в БД, HeadObject не нужен)
+    const orphAgain = await ModelService.resolveModel(orphOffer);
+    assert(!!orphAgain && orphAgain.model.file_hash === null, 'fallback: повторный поиск стабилен');
+
+    // 11. Периодическая синхронизация S3 -> offer_models (scheduler, ежечасно)
+    const syncOffer = `${TEST_MARK}-SYNC`;
+    fakeS3Objects.set(`${syncOffer}.zip`, buildZip([{ name: 'sync.stl', content: 'x' }]));
+    await db.run('DELETE FROM offer_models WHERE offer_id = ?', syncOffer);
+    const syncRes = await ModelService.syncFromStorage();
+    assert(syncRes.found >= 3, `syncFromStorage: zip перечислены (найдено ${syncRes.found})`);
+    const syncRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', syncOffer);
+    assert(
+      !!syncRow && syncRow.file_hash === null && syncRow.s3_key === `${syncOffer}.zip`,
+      'syncFromStorage: недостающая модель зарегистрирована из S3'
+    );
+    const syncUploadRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', TEST_OFFER);
+    assert(
+      !!syncUploadRow && !!syncUploadRow.file_hash,
+      'syncFromStorage: метаданные uploadModel не затёрты'
+    );
+    await ModelService.syncFromStorage(); // повторный прогон
+    const syncCnt = await db.get(
+      'SELECT COUNT(*) AS c FROM offer_models WHERE offer_id = ?', syncOffer
+    );
+    assert(syncCnt.c === 1, 'syncFromStorage: повторный запуск идемпотентен');
 
     console.log(`\n=== Smoke-тест пройден ✅ (проверок: ${assertCount}) ===`);
   } catch (err) {

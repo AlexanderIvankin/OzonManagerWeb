@@ -7,19 +7,44 @@ class Warehouse {
   // -------------------- СКЛАДЫ --------------------
 
   /**
-   * Синхронизировать список складов из Ozon (заменяет все)
+   * Синхронизировать список складов из Ozon.
+   * - Существующие склады обновляем (name/address/is_rfbs/last_synced_at).
+   * - Новые добавляем.
+   * - Склады, которых больше нет в Ozon, удаляем вместе со связями
+   *   user_warehouses (иначе FK-констрейнт).
+   *
+   * Полный DELETE FROM warehouses больше не делаем: на склады ссылаются
+   * user_warehouses, и при включённых foreign_keys это падало с
+   * SQLITE_CONSTRAINT.
    */
   static async syncAll(warehouses) {
     const db = getDB();
-    await db.run('DELETE FROM warehouses');
     const now = Date.now();
+    const incomingIds = new Set(warehouses.map((w) => String(w.warehouse_id)));
+
+    // 1. Удаляем связи и склады, которых больше нет в Ozon.
+    //    Сначала связи (user_warehouses), потом сам склад — иначе FK.
+    const existing = await db.all('SELECT warehouse_id FROM warehouses');
+    for (const row of existing) {
+      if (incomingIds.has(String(row.warehouse_id))) continue;
+      await db.run('DELETE FROM user_warehouses WHERE warehouse_id = ?', row.warehouse_id);
+      await db.run('DELETE FROM warehouses WHERE warehouse_id = ?', row.warehouse_id);
+    }
+
+    // 2. Upsert актуальных складов.
     for (const wh of warehouses) {
       await db.run(
         `INSERT INTO warehouses (warehouse_id, name, address, is_rfbs, last_synced_at)
-         VALUES (?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(warehouse_id) DO UPDATE SET
+         name = excluded.name,
+         address = excluded.address,
+         is_rfbs = excluded.is_rfbs,
+         last_synced_at = excluded.last_synced_at`,
         wh.warehouse_id, wh.name, wh.address || null, wh.is_rfbs ? 1 : 0, now
       );
     }
+
     console.log(`[Warehouse] Синхронизировано ${warehouses.length} складов`);
   }
 

@@ -40,6 +40,25 @@ class OfferModel {
   }
 
   /**
+   * Зарегистрировать модель, обнаруженную в S3 напрямую (lazy-fallback или
+   * периодическая синхронизация): INSERT только если записи ещё нет —
+   * метаданные из uploadModel (file_hash, uploaded_by, uploaded_at)
+   * НЕ перезаписываются. file_hash/uploaded_by остаются NULL — признак
+   * «модель из хранилища, а не через upload».
+   * @returns {Promise<boolean>} true — запись создана
+   */
+  static async insertIfMissing(offerId, { s3Key, fileName, fileSize = null, uploadedAt = null }) {
+    const db = getDB();
+    const res = await db.run(
+      `INSERT INTO offer_models (offer_id, s3_key, file_name, file_hash, file_size, uploaded_at, uploaded_by)
+       VALUES (?, ?, ?, NULL, ?, ?, NULL)
+       ON CONFLICT(offer_id) DO NOTHING`,
+      offerId, s3Key, fileName || `${offerId}.zip`, fileSize, uploadedAt
+    );
+    return (res.changes || 0) > 0;
+  }
+
+  /**
    * Удалить модель (метаданные; сам zip из S3 удаляет StorageService)
    */
   static async delete(offerId) {

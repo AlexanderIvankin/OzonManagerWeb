@@ -7,6 +7,7 @@ const {
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
 } = require('@aws-sdk/client-s3');
 
 const CACHE_DIR = path.join(__dirname, '../../models-cache');
@@ -83,6 +84,59 @@ class StorageService {
       await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: this.keyFor(offerId) }));
       return true;
     } catch { return false; }
+  }
+
+  /**
+   * HeadObject: existence + метаданные без скачивания.
+   * @returns {Promise<{size: number|null, lastModified: number|null}|null>}
+   *   null — объекта нет (404/NoSuchKey); прочие ошибки пробрасываются.
+   */
+  static async statZip(offerId) {
+    try {
+      const st = await s3.send(new HeadObjectCommand({
+        Bucket: BUCKET,
+        Key: this.keyFor(offerId),
+      }));
+      return {
+        size: typeof st.ContentLength === 'number' ? st.ContentLength : null,
+        lastModified: st.LastModified ? new Date(st.LastModified).getTime() : null,
+      };
+    } catch (err) {
+      const status = err && err.$metadata && err.$metadata.httpStatusCode;
+      if (err.name === 'NotFound' || err.name === 'NoSuchKey' || status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * ListObjectsV2: все zip-архивы в бакете (с пагинацией по ContinuationToken).
+   * Возвращает и ключ, и offer_id (без MODELS_PREFIX и '.zip') — для
+   * периодической синхронизации S3 -> offer_models (ModelService.syncFromStorage).
+   * @returns {Promise<Array<{key: string, offerId: string, size: number|null, lastModified: number|null}>>}
+   */
+  static async listZipKeys() {
+    const out = [];
+    let token;
+    do {
+      const resp = await s3.send(new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: MODELS_PREFIX,
+        ContinuationToken: token,
+      }));
+      for (const obj of resp.Contents || []) {
+        const key = obj.Key;
+        if (!key || !key.toLowerCase().endsWith('.zip')) continue;
+        const offerId = key.slice(MODELS_PREFIX.length, -4); // strip prefix + '.zip'
+        out.push({
+          key,
+          offerId,
+          size: typeof obj.Size === 'number' ? obj.Size : null,
+          lastModified: obj.LastModified ? new Date(obj.LastModified).getTime() : null,
+        });
+      }
+      token = resp.IsTruncated ? resp.NextContinuationToken : undefined;
+    } while (token);
+    return out;
   }
 
   static async deleteZip(offerId) {

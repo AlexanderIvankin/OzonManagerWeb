@@ -7,6 +7,7 @@ const OzonService = require('./services/OzonService');
 const EarningsService = require('./services/EarningsService');
 const BackupService = require('./services/BackupService');
 const StorageService = require('./services/StorageService');
+const ModelService = require('./services/ModelService');
 const OfferModel = require('./models/OfferModel');
 const Notification = require('./models/Notification');
 const NotificationService = require('./services/NotificationService');
@@ -670,7 +671,11 @@ function stopAwaitingDeliverReminderChecker() {
 //   • чистка просроченного локального кэша zip (models-cache/, TTL —
 //     MODELS_CACHE_TTL_MIN, по умолчанию 1 час) — StorageService.cleanCache();
 //   • удаление использованных и просроченных одноразовых токенов скачивания —
-//     OfferModel.pruneExpiredTokens().
+//     OfferModel.pruneExpiredTokens();
+//   • синхронизация S3 -> offer_models: zip, залитые в бакет мимо приложения
+//     (вручную/скриптом), регистрируются в БД и становятся доступны при выдаче —
+//     ModelService.syncFromStorage() (ListObjectsV2 + insert-if-missing).
+//     Сбой S3 не отменяет чистку кэша/токенов (отдельный try).
 // В отличие от суточных задач здесь не нужен daily-gate: операция лёгкая,
 // и пропуск тика не является проблемой (кэш просто живёт дольше на час).
 // ============================================================================
@@ -692,6 +697,19 @@ function startModelsMaintenanceChecker() {
           `[SCHEDULER] Обслуживание моделей: удалено ${removed} файл(ов) кэша, ${pruned} токен(ов)`
         );
       }
+      // Синхронизация S3 -> offer_models (отдельный try: недоступность S3
+      // не должна маскировать результат чистки кэша/токенов выше).
+      try {
+        const sync = await ModelService.syncFromStorage();
+        if (sync.registered) {
+          console.log(
+            `[SCHEDULER] Синхронизация моделей из S3: +${sync.registered} запис(ей) из ${sync.found} zip`
+          );
+        }
+      } catch (syncErr) {
+        console.error('[SCHEDULER] Ошибка синхронизации моделей из S3:', syncErr.message);
+        NotificationService.logServerError('scheduler.modelsSync', syncErr);
+      }
     } catch (err) {
       console.error('[SCHEDULER] Ошибка обслуживания моделей:', err.message);
       NotificationService.logServerError('scheduler.modelsMaintenance', err);
@@ -700,7 +718,7 @@ function startModelsMaintenanceChecker() {
     }
   }, 60 * 60 * 1000); // ежечасно
 
-  console.log('[SCHEDULER] Ежечасное обслуживание моделей запущено (кэш + токены)');
+  console.log('[SCHEDULER] Ежечасное обслуживание моделей запущено (кэш + токены + синхронизация S3)');
 }
 
 function stopModelsMaintenanceChecker() {
