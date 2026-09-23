@@ -275,6 +275,10 @@ let godFakeStats = {
 
 /**
  * Статистика команды для вкладки «Статистика» (только персонал).
+ * Показываются ТОЛЬКО «когда-либо бывшие сотрудниками» (was_employee = 1):
+ * текущие staff-роли и уволенные ex-сотрудники. Обычные пользователи
+ * (role='user', was_employee=0) и гости (role='guest') исключены всегда —
+ * даже при «Показывать уволенных».
  * Агрегируется на лету из двух таблиц:
  *   • user_stats      — total_orders, canceled_orders, total_amount
  *   • earnings_history — SUM(amount) = заработок сотрудника за всё время
@@ -295,7 +299,7 @@ exports.getStaffStats = async (req, res, next) => {
       FROM users u
       LEFT JOIN user_stats us ON us.user_id = u.id
       LEFT JOIN earnings_history eh ON eh.user_id = u.id
-      ${includeFired ? '' : 'WHERE u.is_fired = 0 AND u.role <> \'guest\''}
+      ${includeFired ? '' : 'WHERE u.is_fired = 0'} AND u.was_employee = 1 AND u.role <> 'guest'
       GROUP BY u.id
       ORDER BY u.id
       `
