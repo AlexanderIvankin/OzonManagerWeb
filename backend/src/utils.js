@@ -270,6 +270,35 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;');
 }
 
+// ============================================================================
+// Бэкапы/отдача файлов: SQL-литералы и запрет кэширования
+// ============================================================================
+
+/**
+ * Готовит строковый литерал SQLite для подстановки в SQL. Нужен там, где
+ * SQLite требует именно текстовый литерал (например, путь в `VACUUM INTO '...'`):
+ * одинарные кавычки удваиваются, обратные слэши заменяются на прямые — иначе
+ * путь Windows ('C:\...\outputs\x.db') вёл бы себя непредсказуемо.
+ * @param {string} value - путь или другое строковое значение
+ * @returns {string} готовый литерал вместе с обрамляющими кавычками
+ */
+function toSqliteLiteral(value) {
+  return `'${String(value).replace(/\\/g, '/').replace(/'/g, "''")}'`;
+}
+
+/**
+ * Запрещает кэширование приватной бинарной отдачи (снимок БД, Excel, PDF,
+ * zip-модель). Без этих заголовков ответ 200 с Last-Modified формально
+ * кэшируем эвристически — браузер или прокси вправе отдать старую копию
+ * файла, а для «скачать свежий снимок БД» это недопустимо.
+ * @param {import('express').Response} res
+ */
+function disableCache(res) {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
+
 module.exports = {
   mergePdfs,
   formatLocalTimestamp,
@@ -288,4 +317,6 @@ module.exports = {
   parseTgUserId,
   parseCapacity,
   parseEarningsFactor,
+  toSqliteLiteral,
+  disableCache,
 };

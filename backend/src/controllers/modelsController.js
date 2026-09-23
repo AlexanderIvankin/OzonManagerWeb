@@ -1,5 +1,6 @@
 const fs = require('fs');
 const ModelService = require('../services/ModelService');
+const { disableCache } = require('../utils');
 
 /**
  * Контроллер 3D-моделей (zip-архивы в S3).
@@ -63,6 +64,7 @@ exports.downloadByToken = async (req, res) => {
       return res.status(404).json({ error: 'Файл модели не найден в хранилище' });
     }
 
+    disableCache(res);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader(
       'Content-Disposition',

@@ -87,12 +87,15 @@ class Assignment {
   }
 
   /**
-   * Получить активные заказы пользователя
+   * Получить активные заказы пользователя.
+   * ORDER BY обязателен: порядок строк без него формально не определён, а
+   * после восстановления БД из сжатого VACUUM-снимка физическая раскладка
+   * страниц может отличаться — сортируем по времени назначения.
    */
   static async getActiveOrders(userId) {
     const db = getDB();
     return db.all(
-      'SELECT order_id, assigned_at FROM assignments WHERE user_id = ? AND status = "assigned"',
+      'SELECT order_id, assigned_at FROM assignments WHERE user_id = ? AND status = "assigned" ORDER BY assigned_at',
       userId
     );
   }
@@ -122,7 +125,10 @@ class Assignment {
   }
 
   /**
-   * Получить все активные назначения (для админа)
+   * Получить все активные назначения (для админа).
+   * ORDER BY обязателен: без сортировки порядок строк зависит от физической
+   * раскладки страниц (после восстановления БД из сжатого VACUUM-снимка она
+   * может отличаться), а список показывается персоналу.
    */
   static async getAllActive() {
     const db = getDB();
@@ -130,7 +136,8 @@ class Assignment {
       `SELECT a.order_id, a.user_id, u.name as user_name, a.assigned_at
        FROM assignments a
        JOIN users u ON a.user_id = u.id
-       WHERE a.status = 'assigned'`
+       WHERE a.status = 'assigned'
+       ORDER BY a.assigned_at`
     );
   }
 

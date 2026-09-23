@@ -56,6 +56,10 @@ async function initDB() {
   });
 
   await dbInstance.exec('PRAGMA foreign_keys = ON');
+  // Ждать до 5 секунд снятия чужой блокировки вместо мгновенного SQLITE_BUSY:
+  // VACUUM INTO (снимок БД для скачивания и бэкапов) берёт блокировку на
+  // запись и конкурирует с обычными запросами API.
+  await dbInstance.exec('PRAGMA busy_timeout = 5000');
   await createTables(dbInstance);
 
   console.log(`✅ База данных инициализирована: ${DB_PATH}`);

@@ -4,7 +4,7 @@ const OrderService = require('../services/OrderService');
 const ModelService = require('../services/ModelService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
-const { getLocalDate } = require('../utils');
+const { getLocalDate, disableCache } = require('../utils');
 const fs = require('fs');
 const path = require('path');
 
@@ -140,6 +140,7 @@ exports.getLabel = async (req, res, next) => {
     if (!labelBuffer) {
       return res.status(404).json({ error: 'Label not available' });
     }
+    disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
     res.send(labelBuffer);
@@ -159,6 +160,7 @@ exports.getAllLabels = async (req, res, next) => {
     if (!pdfBuffer) {
       return res.status(404).json({ error: 'No labels available' });
     }
+    disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=all_labels.pdf');
     res.send(pdfBuffer);
@@ -196,6 +198,7 @@ exports.getSentLabel = async (req, res, next) => {
         error: 'Файл этикетки не найден на сервере. Попросите администратора отправить её заново.',
       });
     }
+    disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
     res.send(fs.readFileSync(filePath));

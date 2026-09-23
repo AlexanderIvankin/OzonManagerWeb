@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { User, Assignment, UserStats, Earnings, Warehouse, ProductStat } = require('../models');
 const SyncService = require('../services/SyncService');
 const OzonService = require('../services/OzonService');
@@ -20,6 +21,8 @@ const {
   parseCapacity,
   parseEarningsFactor,
   formatPhonePretty,
+  toSqliteLiteral,
+  disableCache,
 } = require('../utils');
 
 /**
@@ -467,6 +470,7 @@ exports.exportTeamInfo = async (req, res, next) => {
     // и это же имя уходит в Content-Disposition для фронта.
     const outputFileName = includeFired ? 'employees-db.xlsx' : 'team-info.xlsx';
     const filePath = await SyncService.exportTeamInfoXlsx(req.user.id, includeFired, outputFileName);
+    disableCache(res);
     res.download(filePath);
   } catch (err) {
     console.error('[exportTeamInfo] Ошибка:', err);
@@ -721,6 +725,7 @@ exports.exportMonthlyEarnings = async (req, res, next) => {
       return res.status(400).json({ error: 'Неверный формат месяца. Используйте YYYY-MM' });
     }
     const filePath = await EarningsService.exportMonthlyEarnings(month);
+    disableCache(res);
     res.download(filePath);
   } catch (err) {
     console.error('[exportMonthlyEarnings] Ошибка:', err);
@@ -738,6 +743,7 @@ exports.exportProductStats = async (req, res, next) => {
   try {
     const filePath = await ProductStatsService.exportProductStatsXlsx();
     // product-stats-1.xlsx | product-stats.xlsx
+    disableCache(res);
     res.download(filePath, getVersionedFileName('product-stats', 'xlsx'));
   } catch (err) {
     console.error('[exportProductStats] Ошибка:', err);
@@ -749,29 +755,63 @@ exports.exportProductStats = async (req, res, next) => {
 };
 
 /**
- * Скачать копию файла базы данных (только админ).
- * Используется VACUUM INTO — консистентный снимок БД на момент запроса.
+ * Скачать копию базы данных (персонал).
+ *
+ * Отдаётся НЕ живой файл, а консистентный снимок `VACUUM INTO`: SQLite
+ * пересобирает БД в новый файл на момент запроса (все актуальные данные,
+ * без freelist и фрагментации, удалённое содержимое вычищено). Живая БД при
+ * этом не изменяется вообще, поэтому размер снимка обычно МЕНЬШЕ файла на
+ * сервере и всегда кратен page_size — это нормальное поведение, а не признак
+ * старого кэша. Байт-в-байт копию даёт только «Бэкап на сервере».
+ *
+ * Имя временного файла уникально (время + случайный суффикс): VACUUM INTO
+ * требует, чтобы файла назначения ещё не существовало, а два админа могут
+ * нажать кнопку в одну миллисекунду.
  */
 exports.downloadDatabase = async (req, res, next) => {
+  let snapshotPath = null;
   try {
     const db = getDB();
     const outputDir = path.join(__dirname, '../../outputs');
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
-    const backupPath = path.join(outputDir, `db_backup_${Date.now()}.db`);
-    // VACUUM INTO требует литерал пути в SQL — экранируем слэши и кавычки
-    const sqlPath = backupPath.replace(/\\/g, '/').replace(/'/g, "''");
-    await db.exec(`VACUUM INTO '${sqlPath}'`);
+    snapshotPath = path.join(
+      outputDir,
+      `db_backup_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.db`
+    );
+    // VACUUM INTO требует литерал пути в SQL — toSqliteLiteral экранирует
+    // слэши и кавычки (путь Windows с обратными слэшами не сломает SQL)
+    await db.exec(`VACUUM INTO ${toSqliteLiteral(snapshotPath)}`);
+
+    // Диагностика в лог сервера: видно, что отдаётся свежий снимок живого
+    // файла и насколько он компактнее (VACUUM убирает freelist/фрагментацию)
+    const livePath = getDBPath();
+    const liveSize = fs.existsSync(livePath) ? fs.statSync(livePath).size : null;
+    const snapshotSize = fs.statSync(snapshotPath).size;
+    const pages = await db.get('PRAGMA page_count');
+    const freelist = await db.get('PRAGMA freelist_count');
+    console.log(
+      `[downloadDatabase] ${path.resolve(livePath)}: живой файл=${liveSize} Б, ` +
+      `снимок=${snapshotSize} Б (занято страниц ${pages ? Object.values(pages)[0] : '?'}, ` +
+      `freelist ${freelist ? Object.values(freelist)[0] : '?'})`
+    );
+
+    // Запрет кэширования: снимок не должен осесть ни в браузере, ни в прокси
+    disableCache(res);
     // bot_web-1.db | bot_web.db (базовое имя берётся из DB_PATH)
-    res.download(backupPath, getVersionedFileName(getDbBaseName(), 'db'), (downloadErr) => {
+    res.download(snapshotPath, getVersionedFileName(getDbBaseName(), 'db'), (downloadErr) => {
       // Временный снимок больше не нужен
-      fs.unlink(backupPath, () => { });
+      fs.unlink(snapshotPath, () => { });
       if (downloadErr) {
         console.error('[downloadDatabase] Ошибка отправки файла:', downloadErr);
       }
     });
   } catch (err) {
+    // Снимок не отправлен — не оставляем копию БД в папке outputs
+    if (snapshotPath) {
+      try { fs.unlinkSync(snapshotPath); } catch { /* файла может не быть */ }
+    }
     console.error('[downloadDatabase] Ошибка:', err);
     next(err);
   }
@@ -860,6 +900,7 @@ exports.deleteProductStats = async (req, res, next) => {
 exports.downloadMaterials = async (req, res, next) => {
   try {
     // materials-prices-1.json | materials-prices.json
+    disableCache(res);
     res.download(MaterialsService.getFilePath(), getVersionedFileName('materials-prices', 'json'));
   } catch (err) {
     console.error('[downloadMaterials] Ошибка:', err);
@@ -1095,6 +1136,7 @@ exports.downloadOrderLabel = async (req, res, next) => {
       return res.status(404).json({ error: `Не удалось получить этикетку для заказа ${orderId}` });
     }
     console.log(`[ADMIN] ${req.user?.name || req.user?.id} скачал этикетку заказа ${orderId} себе (/admin_send_label)`);
+    disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
     res.send(labelBuffer);
@@ -1272,6 +1314,7 @@ exports.downloadModel = async (req, res, next) => {
     if (!fs.existsSync(info.path)) {
       return res.status(404).json({ error: 'Файл модели не найден в хранилище' });
     }
+    disableCache(res);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${info.fileName}"`);
     if (info.size) res.setHeader('Content-Length', String(info.size));
