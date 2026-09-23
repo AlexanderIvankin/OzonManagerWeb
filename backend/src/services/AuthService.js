@@ -15,6 +15,69 @@ const {
   parseEarningsFactor,
 } = require('../utils');
 
+// ============================================================================
+// Ссылки на users(id) — очистка «хвостов» при удалении аккаунта.
+// ============================================================================
+
+/**
+ * Таблицы, строки которых при удалении пользователя СОХРАНЯЮТСЯ: ссылка
+ * просто обнуляется. product_stats — статистика товара (материал/цвет/вес),
+ * она нужна и без автора записи (колонка user_id у неё nullable).
+ * Все остальные таблицы, ссылающиеся на users(id), чистятся удалением строк.
+ */
+const KEEP_ROWS_ON_USER_DELETE = new Set(['product_stats']);
+
+/** Имя таблицы/колонки SQLite в двойных кавычках (значения приходят из sqlite_master). */
+function quoteIdent(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
+/**
+ * Все пары { table, column } текущей БД, ссылающиеся на users(id).
+ * Источник — сама схема (sqlite_master + PRAGMA foreign_key_list), поэтому
+ * список не может «отстать» от неё, в отличие от ручного перечня таблиц:
+ * когда-то в нём забыли earnings_active, и DELETE FROM users падал с
+ * SQLITE_CONSTRAINT: FOREIGN KEY constraint failed (у «легаси»-гостя
+ * с заказами и заработком там оставались строки).
+ *
+ * @param {object} db - открытая БД (sqlite)
+ * @returns {Promise<Array<{table: string, column: string}>>}
+ */
+async function findUserReferences(db) {
+  const tables = await db.all(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+  );
+  const refs = [];
+  for (const { name } of tables) {
+    const fks = await db.all(`PRAGMA foreign_key_list(${quoteIdent(name)})`);
+    for (const fk of fks) {
+      if (fk.table === 'users') refs.push({ table: name, column: fk.from });
+    }
+  }
+  return refs;
+}
+
+/**
+ * Диагностика: какие из найденных ссылок реально содержат строки этого
+ * пользователя. SQLite в ошибке FK не называет виновника — показываем сами,
+ * чтобы сбой в журнале ошибок был сразу понятен. Никогда не бросает.
+ *
+ * @returns {Promise<string[]>} например ['earnings_active.user_id (44)']
+ */
+async function describeUserReferences(db, refs, userId) {
+  const found = [];
+  for (const ref of refs) {
+    try {
+      const row = await db.get(
+        `SELECT COUNT(*) AS c FROM ${quoteIdent(ref.table)} WHERE ${quoteIdent(ref.column)} = ?`,
+        userId
+      );
+      if (row && row.c) found.push(`${ref.table}.${ref.column} (${row.c})`);
+    } catch (e) { /* таблицы могло уже не стать — не критично */ }
+  }
+  return found;
+}
+
 class AuthService {
   /**
    * Минимальная валидация данных регистрации.
@@ -345,11 +408,17 @@ class AuthService {
 
   /**
    * Удаляет «зависшие» неподтверждённые аккаунты (роль 'guest') старше
-   * ttlHours вместе с их кодами подтверждения, refresh-токенами и связями
-   * со складами. Вызывается планировщиком (startGuestCleanupChecker,
+   * ttlHours вместе со всеми ссылающимися на них данными (коды подтверждения,
+   * refresh-токены, назначения, заработок, выданные модели, связи со складами
+   * и т.п.). Вызывается планировщиком (startGuestCleanupChecker,
    * TTL — GUEST_TTL_HOURS, по умолчанию 24 ч).
    * Заодно вычищает все просроченные коды подтверждения — в том числе
    * «легаси»-строки аккаунтов, которые так и не подтвердили email.
+   *
+   * Список «хвостов» берётся из схемы БД (PRAGMA foreign_key_list), поэтому
+   * очистка автоматически покрывает и таблицы, добавленные позже — ручной
+   * перечень когда-то забыл earnings_active, и удаление падало с
+   * SQLITE_CONSTRAINT: FOREIGN KEY constraint failed.
    *
    * @param {number} ttlHours
    * @returns {Promise<{deletedUsers: number, deletedCodes: number}>}
@@ -359,30 +428,27 @@ class AuthService {
     const cutoff = Date.now() - ttlHours * 60 * 60 * 1000;
     const guests = await User.findGuestsOlderThan(cutoff);
 
-    // Таблицы без ON DELETE CASCADE, ссылающиеся на users(id).
-    // Если у «гостя» остались строки в любой из них (легаси-данные, выданные
-    // модели и т.п.), DELETE FROM users падает с SQLITE_CONSTRAINT: FOREIGN KEY
-    // constraint failed — поэтому перед удалением вычищаем/обнуляем их все.
+    // Все ссылки на users(id) в текущей схеме (один раз на прогон).
+    const refs = await findUserReferences(db);
     const deletedUsers = [];
 
     for (const guest of guests) {
       try {
         await db.run('BEGIN IMMEDIATE');
-        // Коды подтверждения и refresh-токены имеют ON DELETE CASCADE,
-        // но чистим явно — надёжнее для легаси-БД, где каскад мог не примениться.
-        await EmailVerification.deleteByUserId(guest.id);
-        await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM user_warehouses WHERE user_id = ?', guest.id);
-        // Прочие ссылающиеся таблицы (у гостя их быть не должно, но чистим):
-        await db.run('DELETE FROM assignments WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM user_stats WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM earnings_history WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM earnings_adjustments WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM earnings_adjustments_active WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM issued_models WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM model_download_tokens WHERE user_id = ?', guest.id);
-        await db.run('DELETE FROM offer_models WHERE uploaded_by = ?', guest.id);
-        await db.run('UPDATE product_stats SET user_id = NULL WHERE user_id = ?', guest.id);
+        // Проверку FK переносим на момент COMMIT: порядок удалений не важен,
+        // а для «легаси»-схем (где FK мог проверяться сразу) это безопаснее.
+        await db.run('PRAGMA defer_foreign_keys = ON');
+        for (const ref of refs) {
+          const table = quoteIdent(ref.table);
+          const column = quoteIdent(ref.column);
+          if (KEEP_ROWS_ON_USER_DELETE.has(ref.table)) {
+            // Строку сохраняем, ссылку на удаляемого пользователя обнуляем
+            // (product_stats — статистика товара, нужна и без автора)
+            await db.run(`UPDATE ${table} SET ${column} = NULL WHERE ${column} = ?`, guest.id);
+          } else {
+            await db.run(`DELETE FROM ${table} WHERE ${column} = ?`, guest.id);
+          }
+        }
         await db.run('DELETE FROM users WHERE id = ?', guest.id);
         await db.run('COMMIT');
         deletedUsers.push(guest.id);
@@ -393,8 +459,19 @@ class AuthService {
         // Один проблемный гость не должен валиль всю очистку — откатываем
         // его транзакцию и переходим к следующему, сбой журналируется.
         try { await db.run('ROLLBACK'); } catch (e) { /* не был в транзакции */ }
-        console.error(`[Auth] Не удалось удалить неподтверждённый аккаунт #${guest.id}:`, err.message);
-        NotificationService.logServerError('auth.cleanupGuestAccounts', err);
+        // Диагностика: SQLite в ошибке FK не называет виновника — после
+        // ROLLBACK считаем, какие таблицы всё ещё держат ссылку на аккаунт.
+        const blockedBy = await describeUserReferences(db, refs, guest.id);
+        console.error(
+          `[Auth] Не удалось удалить неподтверждённый аккаунт #${guest.id}:`,
+          err.message,
+          blockedBy.length ? `| держат ссылки: ${blockedBy.join(', ')}` : ''
+        );
+        NotificationService.logServerError('auth.cleanupGuestAccounts', err, {
+          guestId: guest.id,
+          username: guest.username,
+          blockedBy: blockedBy.length ? blockedBy.join(', ') : null,
+        });
       }
     }
 

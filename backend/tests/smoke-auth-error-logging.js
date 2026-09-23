@@ -21,7 +21,13 @@
  *     не должен ломать всю задачу планировщика);
  *   • сбой попадает в notifications.db -> server_errors с источником
  *     'auth.cleanupGuestAccounts' и РЕАЛЬНОЙ причиной;
+ *   • в контексте записи есть диагностика «какие таблицы держат ссылку»
+ *     (SQLite в ошибке FK виновника не называет);
  *   • транзакция проблемного гостя откатывается — аккаунт остаётся в БД.
+ *
+ * Сбой имитируется триггером smoke_fail_user_delete на таблице users:
+ * строки ссылающихся таблиц очистка вычищает динамически (PRAGMA), поэтому
+ * сбой вызывается на самом DELETE FROM users.
  */
 
 // ВАЖНО: env нужно выставить ДО require database-модулей (они читают пути при загрузке)
@@ -91,10 +97,16 @@ EmailService.sendVerificationEmail = async (email) => {
     );
     console.log(`1. «Старый» гость #${guest.user.id} создан и состарен (> ${TTL_HOURS} ч)`);
 
-    // 2. Имитация сбоя удаления: убираем одну из таблиц, которые чистит
-    //    cleanupGuestAccounts (в реальности так падают FK/легаси-схемы).
-    await db.run('DROP TABLE earnings_adjustments_active');
-    console.log('2. Таблица earnings_adjustments_active удалена — удаление гостя обязано упасть');
+    // 2. Имитация сбоя удаления: триггер запрещает удалять пользователя
+    //    (аналог «легаси»-схем, из-за которых DELETE FROM users падает).
+    //    Строки ссылающихся таблиц вычищаются динамически, поэтому сбой
+    //    вызываем на самом DELETE FROM users.
+    await db.run(
+      "CREATE TRIGGER IF NOT EXISTS smoke_fail_user_delete " +
+      "BEFORE DELETE ON users BEGIN " +
+      "SELECT RAISE(ABORT, 'smoke: запрещено удаление пользователя'); END"
+    );
+    console.log('2. Триггер smoke_fail_user_delete создан — удаление гостя обязано упасть');
 
     // 3. Сбой одного гостя не должен вылетать наружу (иначе падает вся задача)
     const result = await AuthService.cleanupGuestAccounts(TTL_HOURS);
@@ -104,19 +116,24 @@ EmailService.sendVerificationEmail = async (email) => {
     console.log('3. Очистка отработала без исключения, сбойный гость пропущен');
 
     // 4. В журнал ошибок попала РЕАЛЬНАЯ причина (а не TypeError про logServerError)
+    //    + диагностика: какие таблицы ещё держат ссылку на аккаунт
     const rows = await notifDb.all(
-      "SELECT source, message FROM server_errors WHERE source = 'auth.cleanupGuestAccounts' ORDER BY id DESC"
+      "SELECT source, message, context FROM server_errors WHERE source = 'auth.cleanupGuestAccounts' ORDER BY id DESC"
     );
     if (!rows.length) {
-      throw new Error('Сбой удаления гостя не попал в notifications.db -> server_errors');
+      throw new Error('Сбой удаления гостя не попал в журнал ошибок (server_errors)');
     }
     if (/logServerError is not a function/.test(rows[0].message)) {
       throw new Error(`В журнал попал TypeError вместо причины: ${rows[0].message}`);
     }
-    if (!/no such table/i.test(rows[0].message)) {
-      throw new Error(`Ожидалась реальная причина (no such table), получено: ${rows[0].message}`);
+    if (!/запрещено удаление пользователя/i.test(rows[0].message)) {
+      throw new Error(`Ожидалась реальная причина сбоя, получено: ${rows[0].message}`);
     }
-    console.log(`4. Журнал ошибок: source=${rows[0].source} | message=${rows[0].message} ✅`);
+    if (!/email_verifications\.user_id/.test(String(rows[0].context))) {
+      throw new Error(`В контексте нет диагностики «кто держит ссылку»: ${rows[0].context}`);
+    }
+    console.log(`4. Журнал ошибок: source=${rows[0].source} | message=${rows[0].message}`);
+    console.log(`4b. Диагностика в контексте: ${rows[0].context} ✅`);
 
     // 5. Транзакция гостя откатилась — аккаунт жив
     const alive = await User.getById(guest.user.id);
