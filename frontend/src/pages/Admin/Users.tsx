@@ -919,7 +919,13 @@ export const Users = () => {
                   </TableRow>
                 ) : (
                   users.map((user) => (
-                    <TableRow key={user.id}>
+                    <TableRow
+                      key={user.id}
+                      // Гость — регистрация не завершена, запись временная
+                      // (удалится сама через GUEST_TTL_HOURS): вся строка
+                      // приглушена, как уволенные в таблице «Сотрудники»
+                      className={user.role === "guest" ? "opacity-50" : ""}
+                    >
                       <TableCell className="text-center hidden md:table-cell">
                         <code>{user.id}</code>
                       </TableCell>
