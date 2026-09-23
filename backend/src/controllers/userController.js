@@ -158,7 +158,11 @@ exports.getAllLabels = async (req, res, next) => {
     const userId = req.user.id;
     const pdfBuffer = await OrderService.getAllLabels(userId);
     if (!pdfBuffer) {
-      return res.status(404).json({ error: 'No labels available' });
+      // Нет пересечения completed ∩ awaiting_deliver либо задача Ozon
+      // не дождалась file_url. Отдаём явную ошибку, а не пустой ответ.
+      return res.status(404).json({
+        error: 'Нет этикеток для скачивания: нет завершённых заказов в статусе awaiting_deliver',
+      });
     }
     disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');

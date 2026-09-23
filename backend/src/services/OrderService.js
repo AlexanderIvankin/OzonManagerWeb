@@ -428,23 +428,18 @@ class OrderService {
 
       // 3. Подтверждение сборки через Ozon
       let labelBuffer = null;
-      let isAlreadyConfirmed = false;
       try {
         await OzonService.confirmPostingShip(orderId);
       } catch (shipError) {
         if (shipError.message && shipError.message.includes('не в статусе awaiting_packaging')) {
           console.warn(`[FINISH] Заказ ${orderId} уже подтверждён (статус не awaiting_packaging)`);
-          isAlreadyConfirmed = true;
         } else {
           throw shipError;
         }
       }
 
-      if (!isAlreadyConfirmed) {
-        // Ожидаем 15 секунд для генерации этикетки
-        await new Promise(resolve => setTimeout(resolve, 15000));
-      }
-
+      // Пауза не нужна: getPackageLabel сам ждёт готовности задачи
+      // (первый опрос — через 45-60 секунд по рекомендации Ozon).
       labelBuffer = await OzonService.getPackageLabel(orderId);
 
       // ========== ТРАНЗАКЦИЯ БД ==========
@@ -644,18 +639,39 @@ class OrderService {
       'SELECT order_id FROM assignments WHERE user_id = ? AND status = "completed"',
       userId
     );
-    const buffers = [];
-    for (const order of completed) {
-      try {
-        const label = await OzonService.getPackageLabel(order.order_id);
-        if (label) buffers.push(label);
-      } catch (err) {
-        console.error(`[getAllLabels] Ошибка получения этикетки для ${order.order_id}:`, err);
-      }
+    if (!completed.length) return null;
+
+    // Один запрос списка заказов в статусе awaiting_deliver (этикетка
+    // доступна только в этом статусе; паритет с /send_all_labels в боте).
+    let awaitingDeliver;
+    try {
+      awaitingDeliver = await OzonService.fetchAwaitingDeliverOrders();
+    } catch (err) {
+      console.error(
+        '[getAllLabels] Не удалось получить заказы awaiting_deliver из Ozon:',
+        err.message
+      );
+      throw new Error(`Не удалось получить список заказов из Ozon: ${err.message}`);
     }
-    if (!buffers.length) return null;
-    const { mergePdfs } = require('../utils');
-    return await mergePdfs(buffers);
+
+    // Пересечение: завершённые заказы сотрудника, которые всё ещё в
+    // awaiting_deliver. Один вызов package-label/create на весь массив —
+    // Ozon сам отдаёт один PDF сразу со всеми этикетками (без mergePdfs).
+    const completedIds = new Set(completed.map((o) => o.order_id));
+    const postingNumbers = awaitingDeliver
+      .map((o) => o.posting_number)
+      .filter((n) => completedIds.has(n))
+      .slice(0, 1000); // лимит posting_numbers в package-label/create
+    if (!postingNumbers.length) {
+      console.log(
+        `[getAllLabels] У сотрудника ${userId} нет завершённых заказов в статусе awaiting_deliver`
+      );
+      return null;
+    }
+    console.log(
+      `[getAllLabels] Запрос склейки этикеток для ${postingNumbers.length} отправлений`
+    );
+    return await OzonService.getPackageLabel(postingNumbers);
   }
 
   // =================================================================

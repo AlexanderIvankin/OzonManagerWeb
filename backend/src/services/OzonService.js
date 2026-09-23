@@ -47,6 +47,10 @@ async function requestWithRetry(requestFn, options = {}) {
 }
 
 class OzonService {
+  // HTTP-клиент как статическое поле — чтобы тесты могли подменить его
+  // стабом (проверка пары create/get без реальных запросов к Ozon).
+  static apiClient = apiClient;
+
   // --- Склады (с пагинацией) ---
   static async fetchWarehouses() {
     if (MOCK_MODE) {
@@ -393,25 +397,141 @@ class OzonService {
     }
   }
 
-  // --- Получение PDF этикетки ---
-  static async getPackageLabel(postingNumber) {
+  // --- Получение PDF этикетки (асинхронная пара методов) ---
+  // Ozon v2 /package-label (синхронный PDF) выключен: сначала создаём задачу
+  // POST /v3/posting/fbs/package-label/create { posting_numbers: [...] },
+  // затем опрашиваем POST /v2/posting/fbs/package-label/get { task_id },
+  // пока не появится file_url, и скачиваем готовый PDF по ссылке.
+  // Принимает один номер отправления или массив (по докам API — до 1000):
+  // массив уходит одним заданием, Ozon возвращает один PDF-файл сразу
+  // со всеми этикетками (без локальной склейки).
+  // Возвращает Buffer PDF или null (этикетка ещё не готова / ошибка API).
+  static async getPackageLabel(postingNumberOrNumbers, options = {}) {
+    const {
+      // Паузы между опросами задачи (мс). По рекомендации Ozon первая пауза
+      // 45-60 секунд после сборки заказа, дальше короткий опрос готовности.
+      pollDelays = [45000, 15000, 15000, 15000, 15000],
+      downloadTimeout = 30000,
+      downloader = null,
+    } = options;
     if (MOCK_MODE) {
       return Buffer.from('%PDF-1.4\n%EOF', 'binary');
     }
+    const postings = (Array.isArray(postingNumberOrNumbers)
+      ? postingNumberOrNumbers
+      : [postingNumberOrNumbers]
+    )
+      .map((n) => String(n))
+      .filter(Boolean);
+    if (!postings.length) {
+      console.error('[LABEL] Пустой список posting_numbers — задача не создаётся');
+      return null;
+    }
     try {
-      const response = await requestWithRetry(
-        () => apiClient.post('/v2/posting/fbs/package-label', {
-          posting_number: [postingNumber]
-        }, { responseType: 'arraybuffer' }),
-        { context: 'getPackageLabel' }
+      const api = OzonService.apiClient;
+      const createResponse = await requestWithRetry(
+        () => api.post('/v3/posting/fbs/package-label/create', {
+          posting_numbers: postings,
+        }),
+        { context: 'createPackageLabelTask' }
       );
-      const pdfHeader = Buffer.from('%PDF');
-      if (response.data.slice(0, 4).compare(pdfHeader) === 0) {
-        return response.data;
-      } else {
-        console.warn('[LABEL] Ответ не является PDF');
+      const tasks = createResponse.data?.result?.tasks
+        || createResponse.data?.tasks
+        || [];
+      const task = tasks.find((t) => t && t.task_id) || tasks[0];
+      const taskId = task ? task.task_id : null;
+      if (!taskId) {
+        console.error('[LABEL] Ozon не вернул task_id:', JSON.stringify(createResponse.data));
         return null;
       }
+
+      for (let attempt = 0; attempt <= pollDelays.length; attempt++) {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, pollDelays[attempt - 1]));
+        }
+        let statusResponse;
+        try {
+          statusResponse = await requestWithRetry(
+            () => api.post('/v2/posting/fbs/package-label/get', {
+              task_id: taskId,
+            }),
+            { context: 'getPackageLabelTask' }
+          );
+        } catch (statusError) {
+          // 400 на опросе означает, что задача ещё формируется/не найдена —
+          // ждём следующую итерацию, а не падаем сразу.
+          const httpStatus = statusError?.response?.status;
+          if (httpStatus === 400 && attempt < pollDelays.length) {
+            console.warn(`[LABEL] Задача ${taskId} ещё не готова (400, попытка ${attempt + 1})`);
+            continue;
+          }
+          throw statusError;
+        }
+
+        const payload = statusResponse.data?.result || statusResponse.data || {};
+        if (payload.error && (payload.error.code || payload.error.message)) {
+          console.error(
+            `[LABEL] Ozon вернул ошибку задачи ${taskId}:`,
+            payload.error.code || '',
+            payload.error.message || ''
+          );
+          return null;
+        }
+        const status = payload.status || {};
+        const unprinted = Array.isArray(status.unprinted_postings)
+          ? status.unprinted_postings
+          : [];
+        const unprintedSet = new Set(unprinted.map((u) => u && u.posting_number));
+        // null — только если Ozon отклонил ВСЕ запрошенные отправления.
+        // Частичный отказ (в пакетном задании) не обнуляет PDF: напечатанные
+        // этикетки попадут в file_url ниже.
+        if (unprinted.length && postings.every((p) => unprintedSet.has(p))) {
+          const detail = unprinted
+            .map((u) => u && u.message)
+            .filter(Boolean)
+            .join('; ');
+          console.error(
+            `[LABEL] Ozon не сформировал этикетки для ${postings.join(', ')}` +
+            `${detail ? `: ${detail}` : ''}`
+          );
+          return null;
+        }
+        if (unprinted.length) {
+          console.warn(
+            `[LABEL] Задача ${taskId}: ${unprintedSet.size} из ${postings.length} ` +
+            `отправлений исключено (${[...unprintedSet].join(', ')}), ждём остальные`
+          );
+        }
+
+        if (payload.file_url) {
+          const fetchPdf = downloader
+            || ((url) => axios.get(url, {
+              responseType: 'arraybuffer',
+              timeout: downloadTimeout,
+              headers: { 'User-Agent': 'Mozilla/5.0' },
+            }));
+          const pdfResponse = await requestWithRetry(
+            () => fetchPdf(payload.file_url),
+            { context: 'downloadPackageLabel' }
+          );
+          const pdfBuffer = Buffer.from(pdfResponse.data);
+          if (pdfBuffer.slice(0, 4).compare(Buffer.from('%PDF')) === 0) {
+            return pdfBuffer;
+          }
+          console.warn('[LABEL] Скачанный файл не является PDF');
+          return null;
+        }
+
+        const printed = Number(status.printed_postings_count || 0);
+        const total = Number(status.postings_count || 0);
+        console.log(
+          `[LABEL] Задача ${taskId} ещё готовится (попытка ${attempt + 1}/${pollDelays.length + 1}` +
+          `${total ? `, напечатано ${printed}/${total}` : ''})`
+        );
+      }
+
+      console.error(`[LABEL] Задача ${taskId} не готова: file_url не появился за все опросы`);
+      return null;
     } catch (error) {
       console.error('[LABEL] Ошибка:', error.message);
       return null;

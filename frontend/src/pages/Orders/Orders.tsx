@@ -4,10 +4,35 @@ import { OrderCard } from "../../components/OrderCard";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+// Ошибка при responseType: "blob": тело ошибки приходит Blob-ом, а не JSON-ом —
+// достаём из него { error } и показываем человекочитаемый текст вместо
+// «Request failed with status code 404».
+const readApiErrorMessage = async (err: unknown): Promise<string | null> => {
+  try {
+    const data = (err as { response?: { data?: unknown } })?.response?.data;
+    if (data instanceof Blob) {
+      const parsed = JSON.parse(await data.text());
+      if (typeof parsed?.error === "string") return parsed.error;
+    } else if (
+      typeof data === "object" &&
+      data !== null &&
+      typeof (data as { error?: unknown }).error === "string"
+    ) {
+      return (data as { error: string }).error;
+    }
+  } catch {
+    // Не-JSON ответ (обрыв соединения и т.п.) — переходим к общему сообщению
+  }
+  return null;
+};
+
 export const Orders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Склейка всех этикеток — одно задание Ozon с опросом готовности:
+  // запрос может идти до ~2 минут, кнопку блокируем на всё это время.
+  const [downloadingLabels, setDownloadingLabels] = useState(false);
 
   useEffect(() => {
     loadOrders();
@@ -27,6 +52,8 @@ export const Orders = () => {
   };
 
   const handleDownloadAllLabels = async () => {
+    if (downloadingLabels) return;
+    setDownloadingLabels(true);
     try {
       const blob = await ordersApi.getAllLabels();
       const url = window.URL.createObjectURL(blob);
@@ -36,8 +63,14 @@ export const Orders = () => {
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success("Все этикетки скачаны");
-    } catch (err: any) {
-      toast.error(err.message || "Не удалось скачать этикетки");
+    } catch (err: unknown) {
+      const message =
+        (await readApiErrorMessage(err)) ||
+        (err as Error)?.message ||
+        "Не удалось скачать этикетки";
+      toast.error(message);
+    } finally {
+      setDownloadingLabels(false);
     }
   };
 
@@ -46,8 +79,12 @@ export const Orders = () => {
       <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
         <h1 className="text-2xl font-bold">📦 Мои заказы</h1>
         <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center">
-          <Button variant="outline" onClick={handleDownloadAllLabels}>
-            📄 Скачать все этикетки
+          <Button
+            variant="outline"
+            onClick={handleDownloadAllLabels}
+            disabled={downloadingLabels}
+          >
+            {downloadingLabels ? "⏳ Формируем этикетки..." : "📄 Скачать все этикетки"}
           </Button>
           <Button onClick={loadOrders} disabled={loading}>
             🔄 Обновить
