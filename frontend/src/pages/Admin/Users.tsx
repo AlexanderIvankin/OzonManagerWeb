@@ -146,9 +146,11 @@ export const Users = () => {
     setLoading(true);
     try {
       const data = await adminApi.getUsers({
-        // Вкладка «Пользователи»: только зарегистрированные, ещё НИКОГДА не
-        // бывшие сотрудниками (cohort='users'). «Показывать уволенных»
-        // имеет смысл только для вкладки «Сотрудники» (cohort='staff')
+        // Вкладка «Пользователи»: зарегистрированные, ещё НИКОГДА не бывшие
+        // сотрудниками (cohort='users') + гости (неподтверждённые
+        // регистрации — админ видит попытки, гость удалится сам через 24 ч).
+        // «Показывать уволенных» имеет смысл только для вкладки
+        // «Сотрудники» (cohort='staff')
         includeFired: view === "staff" ? showFired : false,
         includeAll: true,
         cohort: view,
@@ -930,7 +932,16 @@ export const Users = () => {
                         {user.email}
                       </TableCell>
                       <TableCell className="text-center">
-                        {user.email_verified ? (
+                        {/* Гость — регистрация не завершена (email не подтверждён,
+                            удалится автоматически через GUEST_TTL_HOURS) */}
+                        {user.role === "guest" ? (
+                          <Badge
+                            variant="outline"
+                            className="border-dashed text-muted-foreground"
+                          >
+                            ⏳ Регистрация не завершена
+                          </Badge>
+                        ) : user.email_verified ? (
                           <Badge variant="secondary">
                             ✅ Email подтверждён
                           </Badge>

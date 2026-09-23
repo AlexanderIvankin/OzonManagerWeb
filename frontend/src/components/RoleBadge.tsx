@@ -4,11 +4,15 @@ import { Badge } from "@/components/ui/badge";
 // === Роли аккаунта и их отображение ===
 // Единый источник подписей ролей (используется также в Select и т.п.)
 export const ROLE_LABELS: Record<string, string> = {
-  user: "Пользователь",
-  employee: "Сотрудник",
-  moderator: "Модератор",
-  admin: "Администратор",
+  user: "👤 Пользователь",
+  employee: "👷 Сотрудник",
+  moderator: "🕵️ Модератор",
+  admin: "🧑‍💻 Администратор",
   god: "👻 Создатель",
+  // Гость — зарегистрировался, но не подтвердил email (удаляется
+  // планировщиком через GUEST_TTL_HOURS). Показывается только во вкладке
+  // «Пользователи», чтобы админ видел попытки регистрации.
+  guest: "⏳ Гость",
 };
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";

@@ -197,8 +197,9 @@ class User {
    * @param {string|null} opts.cohort - когорта пользователей:
    *   'staff' — только сотрудники и ex-сотрудники (в т.ч. уволенные с
    *   пониженной до 'user' ролью) + все staff-роли;
-   *   'users' — только «обычные пользователи» (role='user', ещё НИКОГДА не
-   *   были сотрудниками — was_employee=0); гости исключаются всегда.
+   *   'users' — «обычные пользователи» (role='user', ещё НИКОГДА не были
+   *   сотрудниками — was_employee=0) + гости (неподтверждённые регистрации,
+   *   чтобы админ видел попытки и мог помочь: создать аккаунт вручную и т.п.);
    *   null/не задан — прежнее поведение (все, кроме гостей).
    */
   static async getAll({ includeFired = false, includeAll = false, role = null, cohort = null } = {}) {
@@ -207,23 +208,38 @@ class User {
     const conditions = [];
     const params = [];
 
-    // Гости (зарегистрировались, но не подтвердили email) не показываются
-    // в списках персонала НИКОГДА — даже с includeFired / includeAll:
-    // такой аккаунт не числится нигде (см. также startGuestCleanupChecker,
-    // который удаляет гостей через GUEST_TTL_HOURS).
-    conditions.push("role <> 'guest'");
-
+    // Фильтрация по когортам. Гости (зарегистрировались, но не подтвердили
+    // email) НЕ показываются в когорте «staff» и в прежнем (без cohort)
+    // списке; в когорту «users» они ВКЛЮЧЕНЫ намеренно: админ видит
+    // незавершённые регистрации (например, код не пришёл) и может вручную
+    // создать аккаунт или принять человека в сотрудники. Гостей, не
+    // подтвердивших email более GUEST_TTL_HOURS часов, удаляет
+    // startGuestCleanupChecker, поэтому список не «замусоривается».
     if (cohort === 'staff') {
       // Сотрудники и ex-сотрудники: текущие staff-роли + пониженные до 'user'
       // (уволенные/выведенные из состава — у них was_employee=1)
+      conditions.push("role <> 'guest'");
       conditions.push("(role <> 'user' OR was_employee = 1)");
     } else if (cohort === 'users') {
-      // Только никогда-не-сотрудники: роль 'user' и флаг не выставлен
-      conditions.push("role = 'user' AND was_employee = 0");
+      // Никогда-не-сотрудники (role='user', was_employee=0) + гости
+      // (неподтверждённые регистрации — админ видит попытки регистрации)
+      conditions.push("((role = 'user' AND was_employee = 0) OR role = 'guest')");
+    } else {
+      // Прежнее поведение (без cohort): все, кроме гостей
+      conditions.push("role <> 'guest'");
     }
 
     if (!includeFired) {
-      conditions.push('is_fired = 0');
+      // Гость всегда is_fired = 1 (вне команды, пока email не подтверждён),
+      // поэтому в когорте «users» фильтр is_fired к гостям не применяем —
+      // иначе они никогда не попали бы в список. «Обычные пользователи»
+      // этой когорты уволенными быть не могут (уволенный = ex-сотрудник,
+      // was_employee=1 → уходит в когорту staff)
+      if (cohort === 'users') {
+        conditions.push("(is_fired = 0 OR role = 'guest')");
+      } else {
+        conditions.push('is_fired = 0');
+      }
     }
     if (!includeAll) {
       conditions.push('taking_orders = 1');

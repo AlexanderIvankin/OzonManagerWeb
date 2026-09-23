@@ -5,7 +5,8 @@
  * Проверяет:
  *   1. User.create: staff-роль → was_employee = 1; роль 'user'/'guest' → 0.
  *   2. Увольнение (role employee → user, is_fired = 1) сохраняет флаг = 1.
- *   3. cohort='users' — только никогда-не-сотрудники (без гостей и ex-сотрудников).
+ *   3. cohort='users' — никогда-не-сотрудники + гости (неподтверждённые
+ *      регистрации видны админу); БЕЗ ex-сотрудников и staff-ролей.
  *   4. cohort='staff' — сотрудники + ex-сотрудники; без includeFired — без уволенных.
  *   5. Клиент не может подменить was_employee напрямую (не входит в allowed).
  *   6. Повышение user → employee выставляет флаг и переводит между когортами;
@@ -93,11 +94,17 @@ async function cohortIds(opts) {
     assert(usersCohort.has(neverUser.id), 'cohort users: содержит обычного пользователя');
     assert(!usersCohort.has(exEmp.id), 'cohort users: НЕ содержит уволенного ex-сотрудника');
     assert(!usersCohort.has(admin.id) && !usersCohort.has(emp.id), 'cohort users: НЕ содержит staff-роли');
-    assert(!usersCohort.has(guest.id), 'cohort users: НЕ содержит гостя');
+    assert(usersCohort.has(guest.id), 'cohort users: СОДЕРЖИТ гостя (неподтверждённая регистрация видна админу)');
     assert(staffAll.has(admin.id) && staffAll.has(emp.id) && staffAll.has(exEmp.id), 'cohort staff: staff + ex-сотрудники');
     assert(!staffAll.has(neverUser.id), 'cohort staff: НЕ содержит обычного пользователя');
     assert(!staffAll.has(guest.id), 'cohort staff: НЕ содержит гостя');
     assert(!staffActive.has(exEmp.id), 'cohort staff без includeFired: без уволенных');
+
+    // --- 2а. Гость виден в «users» и БЕЗ includeFired (он всегда is_fired=1) ---
+    const usersNoFired = await cohortIds({ cohort: 'users', includeFired: false, includeAll: true });
+    assert(usersNoFired.has(guest.id), 'cohort users без includeFired: гость всё равно виден');
+    assert(usersNoFired.has(neverUser.id), 'cohort users без includeFired: обычный пользователь виден');
+    assert(!usersNoFired.has(exEmp.id), 'cohort users без includeFired: ex-сотрудник по-прежнему скрыт');
 
     // --- 3. Прежнее поведение без cohort (обратная совместимость) ---
     const legacy = await cohortIds({ includeFired: true, includeAll: true });
