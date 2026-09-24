@@ -81,6 +81,45 @@ exports.resendCode = async (req, res, next) => {
   }
 };
 
+exports.forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email обязателен' });
+    const result = await AuthService.requestPasswordReset(email);
+    res.json({
+      message: 'Если учетная запись с указанным email существует, на неё отправлено письмо с кодом сброса пароля.',
+      sent: result.sent,
+      retryAfterSec: result.retryAfterSec,
+    });
+  } catch (err) {
+    if (err.message.includes('Не удалось отправить письмо')) {
+      return res.status(502).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { code, newPassword } = req.body;
+    if (!code || !newPassword) {
+      return res.status(400).json({ error: 'Код и новый пароль обязательны' });
+    }
+    const result = await AuthService.resetPassword(code, newPassword);
+    res.json(result);
+  } catch (err) {
+    if (
+      err.message === 'Неверный или просроченный код сброса пароля' ||
+      err.message === 'Пароль должен содержать минимум 6 символов' ||
+      err.message === 'Код обязателен'
+    ) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+};
+
+
 exports.login = async (req, res, next) => {
   try {
     const { usernameOrEmail, password } = req.body;

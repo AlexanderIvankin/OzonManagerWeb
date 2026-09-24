@@ -6,6 +6,8 @@ const User = require('../models/User');
 const { getDB } = require('../config/database');
 const crypto = require('crypto');
 const EmailVerification = require('../models/EmailVerification');
+const PasswordReset = require('../models/PasswordReset');
+
 const EmailService = require('./EmailService');
 const NotificationService = require('./NotificationService');
 const {
@@ -407,6 +409,106 @@ class AuthService {
   }
 
   /**
+   * Запрос на сброс пароля.
+   * Принимает email, отправляет письмо с 6-значным кодом подтверждения.
+   * Для предотвращения перечисления пользователей (enumeration attacks),
+   * если email не найден или аккаунт гостевой (неподтверждённый) —
+   * возвращает успешный ответ с кулдауном без фактической отправки.
+   */
+  static async requestPasswordReset(email) {
+    const cooldownSec = config.resendCodeCooldownSec;
+    const cleanEmail = email ? String(email).trim() : '';
+    if (!cleanEmail) {
+      throw new Error('Email обязателен');
+    }
+
+    const user = await User.getByEmail(cleanEmail);
+    // Гости (email не подтверждён) и несуществующие пользователи не сбрасывают пароль
+    if (!user || user.role === 'guest') {
+      return { sent: true, retryAfterSec: cooldownSec };
+    }
+
+    // Антифлуд: проверяем время последней отправки кода сброса пароля
+    const last = await PasswordReset.getLatestByUserId(user.id);
+    if (last && last.created_at && cooldownSec > 0) {
+      const elapsedMs = Date.now() - last.created_at;
+      if (elapsedMs < cooldownSec * 1000) {
+        return {
+          sent: false,
+          retryAfterSec: Math.ceil((cooldownSec * 1000 - elapsedMs) / 1000),
+        };
+      }
+    }
+
+    const code = this.generateVerificationCode();
+    await PasswordReset.deleteByUserId(user.id);
+    await PasswordReset.create(user.id, code);
+
+    try {
+      await EmailService.sendPasswordResetEmail(user.email, user.name || user.username, code);
+    } catch (err) {
+      console.error('[Auth] Ошибка отправки письма сброса пароля:', err.message);
+      await PasswordReset.deleteByUserId(user.id);
+      throw new Error(`Не удалось отправить письмо со сбросом пароля: ${err.message}`);
+    }
+
+    return { sent: true, retryAfterSec: cooldownSec };
+  }
+
+  /**
+   * Завершение сброса пароля по коду.
+   * Устанавливает новый пароль, хэширует bcrypt, удаляет использованный код
+   * и отзывает текущие refresh-токены пользователя.
+   */
+  static async resetPassword(code, newPassword) {
+    if (!code || typeof code !== 'string') {
+      throw new Error('Код обязателен');
+    }
+    const cleanCode = code.trim();
+    if (!cleanCode) {
+      throw new Error('Код обязателен');
+    }
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+      throw new Error('Пароль должен содержать минимум 6 символов');
+    }
+
+    const record = await PasswordReset.findByCode(cleanCode);
+    if (!record) {
+      throw new Error('Неверный или просроченный код сброса пароля');
+    }
+
+    const user = await User.getById(record.user_id);
+    if (!user) {
+      throw new Error('Пользователь не найден');
+    }
+
+    // Хэшируем новый пароль (без проверки на совпадение с предыдущим)
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await User.setPasswordHash(user.id, newHash);
+
+    // Удаляем все коды сброса пароля этого пользователя
+    await PasswordReset.deleteByUserId(user.id);
+
+    // Инвалидируем существующие refresh-токены для безопасности
+    const db = getDB();
+    await db.run('DELETE FROM refresh_tokens WHERE user_id = ?', user.id);
+
+    // Оповещение персонала в журнал действий
+    NotificationService.notifyStaff('password_reset_success', {
+      userId: user.id,
+      userName: user.name || user.username,
+      email: user.email,
+    });
+
+    return {
+      success: true,
+      message: 'Пароль успешно изменён. Теперь вы можете войти с новым паролем.',
+    };
+  }
+
+
+  /**
    * Удаляет «зависшие» неподтверждённые аккаунты (роль 'guest') старше
    * ttlHours вместе со всеми ссылающимися на них данными (коды подтверждения,
    * refresh-токены, назначения, заработок, выданные модели, связи со складами
@@ -476,6 +578,8 @@ class AuthService {
     }
 
     const deletedCodes = await EmailVerification.deleteExpired();
+    await PasswordReset.deleteExpired();
+
     return { deletedUsers: deletedUsers.length, deletedCodes };
   }
 

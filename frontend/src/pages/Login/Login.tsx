@@ -36,6 +36,7 @@ export const Login = () => {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -109,6 +110,19 @@ export const Login = () => {
                 </p>
               )}
             </div>
+              <div className="flex justify-end">
+                <Link
+                  to={`/reset-password${
+                    getValues("usernameOrEmail")?.includes("@")
+                      ? `?email=${encodeURIComponent(getValues("usernameOrEmail").trim())}`
+                      : ""
+                  }`}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Забыли пароль?
+                </Link>
+              </div>
+
             {error && <p className="text-sm mb-[15px] text-red-500">{error}</p>}
             {unverifiedEmail !== null && (
               <p className="text-sm mb-[15px]">

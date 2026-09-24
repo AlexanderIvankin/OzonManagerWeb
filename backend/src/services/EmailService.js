@@ -73,6 +73,47 @@ class EmailService {
     }
     return info;
   }
+
+  static async sendPasswordResetEmail(email, name, code) {
+    const transporter = this.getTransporter();
+
+    const subject = 'Сброс пароля — Ozon Manager';
+    const text = [
+      `Здравствуйте, ${name || 'пользователь'}!`,
+      '',
+      `Ваш код для сброса пароля: ${code}`,
+      'Код действителен 15 минут.',
+      '',
+      'Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо, ваш пароль останется прежним.',
+    ].join('\n');
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <h1 style="font-size: 20px;">Сброс пароля</h1>
+        <p>Здравствуйте, ${name || 'пользователь'}!</p>
+        <p>Был получен запрос на сброс пароля от вашей учетной записи. Введите код ниже для установки нового пароля:</p>
+        <div style="background: #f4f4f5; border-radius: 8px; padding: 16px; text-align: center; margin: 16px 0;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px;">${code}</span>
+        </div>
+        <p style="color: #666;">Код действителен 15 минут.</p>
+        <p style="color: #999; font-size: 12px;">Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо, пароль не изменится.</p>
+      </div>
+    `;
+
+    const info = await transporter.sendMail({
+      from: process.env.SMTP_FROM || `"Ozon Manager" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject,
+      text,
+      html,
+    });
+
+    console.log(`[Email] Отправлено письмо сброса пароля на ${email}, messageId: ${info.messageId}`);
+    if (transporter.options.host === 'smtp.ethereal.email') {
+      console.log(`[Email] Предпросмотр: ${nodemailer.getTestMessageUrl(info)}`);
+    }
+    return info;
+  }
+
 }
 
 module.exports = EmailService;

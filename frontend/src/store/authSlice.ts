@@ -56,6 +56,25 @@ export const resendCode = createAsyncThunk<
   return response.data;
 });
 
+// Запрос на сброс пароля по email
+export const forgotPassword = createAsyncThunk<
+  { message: string; sent?: boolean; retryAfterSec?: number },
+  { email: string }
+>("auth/forgotPassword", async ({ email }) => {
+  const response = await api.post("/auth/forgot-password", { email });
+  return response.data;
+});
+
+// Установка нового пароля по коду из письма
+export const resetPassword = createAsyncThunk<
+  { success: boolean; message: string },
+  { code: string; newPassword: string }
+>("auth/resetPassword", async (payload) => {
+  const response = await api.post("/auth/reset-password", payload);
+  return response.data;
+});
+
+
 export const logout = createAsyncThunk("auth/logout", async () => {
   const refreshToken = localStorage.getItem("refreshToken");
   if (refreshToken) {

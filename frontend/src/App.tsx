@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Login } from "./pages/Login/Login";
 import { Register } from "./pages/Register/Register";
 import { VerifyEmail } from "./pages/VerifyEmail/VerifyEmail";
+import { ResetPassword } from "./pages/ResetPassword/ResetPassword";
 import { Profile } from "./pages/Profile/Profile";
 import { Orders } from "./pages/Orders/Orders";
 import { Notifications } from "./pages/Notifications/Notifications";
@@ -36,6 +37,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Защищённые маршруты с Layout */}
         <Route element={<ProtectedRoute />}>

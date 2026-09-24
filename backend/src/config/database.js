@@ -128,6 +128,21 @@ async function createTables(db) {
   // Индексы для users и refresh_tokens
   await db.exec('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+  // --- Таблица сброса пароля ---
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_password_resets_code ON password_resets(code)');
+
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token)');
 
   // --- Назначения заказов ---

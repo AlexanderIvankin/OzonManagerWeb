@@ -5,6 +5,8 @@ const Earnings = require('./Earnings');
 const ProductStat = require('./ProductStat');
 const Warehouse = require('./Warehouse');
 const OfferModel = require('./OfferModel');
+const PasswordReset = require('./PasswordReset');
+
 
 module.exports = {
   User,
@@ -14,4 +16,5 @@ module.exports = {
   ProductStat,
   Warehouse,
   OfferModel,
+  PasswordReset,
 };
