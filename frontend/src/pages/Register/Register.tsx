@@ -142,7 +142,7 @@ export const Register = () => {
                 <p className="text-sm text-red-500">{errors.phone.message}</p>
               )}
             </div>
-            <div className="space-y-2 mb-[20px]">
+            <div className="space-y-2 mb-[16px]">
               <Label htmlFor="capacity">Количество принтеров (опционально)</Label>
               <Input id="capacity" type="number" placeholder="1" {...registerField('capacity')} />
               {errors.capacity ? (

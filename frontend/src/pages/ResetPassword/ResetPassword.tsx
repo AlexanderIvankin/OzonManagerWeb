@@ -178,7 +178,7 @@ export const ResetPassword = () => {
         {step === 1 ? (
           <form onSubmit={handleRequestSubmit(onRequestCode)}>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-2 mb-[16px]">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"

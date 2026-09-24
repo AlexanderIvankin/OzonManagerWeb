@@ -17,7 +17,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { isSocketConnected } from "../../lib/socket";
 
 export const Profile = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -106,10 +105,8 @@ export const Profile = () => {
         `Приём заказов ${nextTakingOrders ? "включён" : "выключен"}`,
       );
     } catch (err: any) {
-      // Кулдаун (429): при подключённом сокете live-тост уже ушёл по
-      // WebSocket — локальный не дублируем; сокет отключён -> показываем
-      // локально (fallback), чтобы сообщение не потерялось
-      if (err?.response?.data?.cooldown && isSocketConnected()) return;
+      // Кулдаун (429): live-тост о нём уже пришёл по WebSocket — не дублируем
+      if (err?.response?.data?.cooldown) return;
       toast.error(
         err?.response?.data?.error || err.message || "Ошибка переключения",
       );

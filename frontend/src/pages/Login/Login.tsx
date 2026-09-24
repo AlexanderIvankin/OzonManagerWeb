@@ -101,7 +101,6 @@ export const Login = () => {
                 id="password"
                 type="password"
                 placeholder="Введите пароль"
-                className="mb-[20px]"
                 {...register("password")}
               />
               {errors.password && (
@@ -110,7 +109,7 @@ export const Login = () => {
                 </p>
               )}
             </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end mb-[16px]">
                 <Link
                   to={`/reset-password${
                     getValues("usernameOrEmail")?.includes("@")
