@@ -698,6 +698,60 @@ function stopAwaitingDeliverReminderChecker() {
 }
 
 // ============================================================================
+// Ежечасная синхронизация статусов кэша заказов (2 запроса к Ozon).
+//
+// Зачем: вкладки «📮 Активные» и «🗳️ Завершённые» страницы «Мои заказы»
+// строятся по серверному кэшу состояния заказов (state.orderStateCache), а
+// фотографии товаров живут, пока заказ в awaiting_packaging / awaiting_deliver.
+// Раз в час двумя запросами получаем списки заказов в этих двух статусах:
+//   • заказ есть в списке -> обновляем сохранённый статус;
+//   • заказа нет ни в одном списке (отправлен/отменён/возврат) -> убираем снимок
+//     из кэша и чистим фотографии его артикулов (если их не использует другой
+//     заказ) — карточка исчезает из «Завершённых заказов».
+// Та же операция запускается кнопкой «Обновить» на странице заказов.
+// ============================================================================
+let orderStatusSyncInterval = null;
+let isOrderStatusSyncRunning = false;
+
+function startOrderStatusSyncChecker() {
+  if (orderStatusSyncInterval) clearInterval(orderStatusSyncInterval);
+  isOrderStatusSyncRunning = false;
+
+  const intervalMinutes = envInt('ORDER_STATUS_SYNC_INTERVAL_MINUTES', 60, 5, 24 * 60);
+
+  orderStatusSyncInterval = setInterval(async () => {
+    if (isOrderStatusSyncRunning) return;
+    isOrderStatusSyncRunning = true;
+    try {
+      const result = await OrderService.syncOrderStatuses();
+      if (result.removed || result.photosRemoved) {
+        console.log(
+          `[SCHEDULER] Синхронизация заказов: проверено ${result.checked}, ` +
+          `убрано из кэша ${result.removed}, удалено фото ${result.photosRemoved}`
+        );
+      }
+    } catch (err) {
+      console.error('[SCHEDULER] Ошибка синхронизации статусов заказов:', err.message);
+      NotificationService.logServerError('scheduler.orderStatusSync', err);
+    } finally {
+      isOrderStatusSyncRunning = false;
+    }
+  }, intervalMinutes * 60 * 1000);
+
+  console.log(
+    `[SCHEDULER] Синхронизация статусов заказов запущена (каждые ${intervalMinutes} мин.)`
+  );
+}
+
+function stopOrderStatusSyncChecker() {
+  if (orderStatusSyncInterval) {
+    clearInterval(orderStatusSyncInterval);
+    orderStatusSyncInterval = null;
+  }
+  isOrderStatusSyncRunning = false;
+}
+
+// ============================================================================
 // Обслуживание 3D-моделей (ежечасно, дешёвые идемпотентные операции):
 //   • чистка просроченного локального кэша zip (models-cache/, TTL —
 //     MODELS_CACHE_TTL_MIN, по умолчанию 1 час) — StorageService.cleanCache();
@@ -831,6 +885,8 @@ module.exports = {
   startAwaitingDeliverReminderChecker,
   stopAwaitingDeliverReminderChecker,
   runAwaitingDeliverReminder,
+  startOrderStatusSyncChecker,
+  stopOrderStatusSyncChecker,
   startModelsMaintenanceChecker,
   stopModelsMaintenanceChecker,
   startGuestCleanupChecker,

@@ -8,11 +8,11 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ordersApi, Order, readApiErrorPayload } from "../api/orders";
+import { ordersApi, Order, OrderProduct, readApiErrorPayload } from "../api/orders";
 import { toast } from "sonner";
 import { isSocketConnected } from "../lib/socket";
 import { FillStatsDialog } from "./FillStatsDialog";
-import { ProductImages } from "./ProductImages";
+import { OrderProductsList } from "./OrderProductsList";
 
 // Размер файла в человекочитаемом виде (МБ)
 const formatSize = (bytes: number | null | undefined) => {
@@ -104,6 +104,49 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
     }
   };
 
+  // Дополнительный блок под товаром в общем списке состава: кнопка «Скачать
+  // 3D-модель» (если для артикула есть zip). Разметка состава и фото — в
+  // OrderProductsList, она общая с карточками «Завершённых заказов».
+  const renderProductExtra = (p: OrderProduct) => {
+    const offerId = p.offer_id;
+    const model = p.model;
+    if (!offerId || !model) return null;
+    return (
+      <div className="flex flex-col items-center mt-5 w-full min-w-0 px-2 gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!!modelLoading[offerId]}
+          onClick={() => handleDownloadModel(offerId, model.fileName)}
+          title={`Скачать 3D-модель: ${model.fileName}${formatSize(model.fileSize)}`}
+          className="
+        h-auto min-w-0 max-w-full
+        whitespace-normal
+        flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5
+        text-center leading-tight
+        py-1.5 px-3
+      "
+        >
+          <span className="shrink-0">
+            {modelLoading[offerId] ? "⏳ Скачивание…" : "⬇️ Скачать модель"}
+          </span>
+          <span className="text-muted-foreground break-all [overflow-wrap:anywhere] min-w-0">
+            ({model.fileName}
+            {formatSize(model.fileSize)})
+          </span>
+        </Button>
+
+        {/* Модель взята у родительского артикула */}
+        {model.offerId !== offerId && (
+          <p className="text-xs text-muted-foreground text-center break-all [overflow-wrap:anywhere] min-w-0 max-w-full">
+            🧩 Модель родительского артикула{" "}
+            <code className="break-all">{model.offerId}</code>
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const missingOfferIds = order.missingStats || [];
 
   return (
@@ -141,75 +184,10 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
             </div>
           </div>
         )}
-        {order.products.length > 0 && (
-          <div className="mt-2">
-            <div className="font-semibold text-l mb-[5px]">Состав:</div>
-            <ul className="text-sm space-y-3">
-              {order.products.map((p, idx) => (
-                <li key={idx}>
-                  <div className="mb-[5px]">
-                    <span className="font-bold">
-                      {idx + 1}
-                      {". "}
-                    </span>
-                    {p.name} — {p.quantity} шт.
-                    {p.offer_id && (
-                      <span className="text-l text-muted-foreground">
-                        {" "}
-                        <br></br>(offer_id:{" "}
-                        <span className="font-bold">
-                          <code>{p.offer_id}</code>
-                        </span>
-                        )
-                      </span>
-                    )}
-                  </div>
-                  {p.images && p.images.length > 0 && (
-                    <ProductImages productName={p.name} images={p.images} />
-                  )}
-                  {p.offer_id && p.model && (
-                    <div className="flex flex-col items-center mt-5 w-full min-w-0 px-2 gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!!modelLoading[p.offer_id]}
-                        onClick={() =>
-                          handleDownloadModel(p.offer_id!, p.model!.fileName)
-                        }
-                        title={`Скачать 3D-модель: ${p.model.fileName}${formatSize(p.model.fileSize)}`}
-                        className="
-        h-auto min-w-0 max-w-full
-        whitespace-normal
-        flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5
-        text-center leading-tight
-        py-1.5 px-3
-      "
-                      >
-                        <span className="shrink-0">
-                          {modelLoading[p.offer_id]
-                            ? "⏳ Скачивание…"
-                            : "⬇️ Скачать модель"}
-                        </span>
-                        <span className="text-muted-foreground break-all [overflow-wrap:anywhere] min-w-0">
-                          ({p.model.fileName}
-                          {formatSize(p.model.fileSize)})
-                        </span>
-                      </Button>
-
-                      {/* Модель взята у родительского артикула */}
-                      {p.model.offerId !== p.offer_id && (
-                        <p className="text-xs text-muted-foreground text-center break-all [overflow-wrap:anywhere] min-w-0 max-w-full">
-                          🧩 Модель родительского артикула{" "}
-                          <code className="break-all">{p.model.offerId}</code>
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <OrderProductsList
+          products={order.products}
+          renderProductExtra={renderProductExtra}
+        />
       </CardContent>
       <CardFooter className="flex flex-col gap-2 items-stretch sm:flex-row md:flex-col xl:flex-row xl:items-center">
         <Button

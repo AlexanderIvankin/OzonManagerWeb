@@ -10,7 +10,7 @@ const CooldownService = require('../services/CooldownService');
 const NotificationService = require('../services/NotificationService');
 
 /**
- * @param {string} kind - 'label' | 'allLabels' | 'toggleOrders'
+ * @param {string} kind - 'label' | 'allLabels' | 'toggleOrders' | 'refreshOrders'
  * @param {string} commandLabel - человекочитаемое имя команды для live-тоста
  */
 function cooldown(kind, commandLabel) {

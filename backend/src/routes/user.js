@@ -20,6 +20,19 @@ router.use(requireEmployee);
 // Активные заказы
 router.get('/orders/active', userController.getActiveOrders);
 
+// Завершённые заказы сотрудника, ещё ожидающие отправки (awaiting_deliver) —
+// вкладка «🗳️ Завершённые заказы» (в каждой карточке кнопка «Скачать этикетку»)
+router.get('/orders/completed', userController.getCompletedOrders);
+
+// Обновить статусы всех заказов сотрудника (активные + завершённые) и получить
+// оба списка: синхронизация с Ozon (2 запроса) + кулдаун 1 минута от спама
+router.post(
+  '/orders/refresh',
+  cooldown('refreshOrders', 'Обновление заказов'),
+  userController.refreshOrders
+);
+
+
 // Завершить заказ
 router.post('/orders/:orderId/finish', userController.finishOrder);
 

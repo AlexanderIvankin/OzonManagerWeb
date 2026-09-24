@@ -3,9 +3,24 @@ const { Assignment, UserStats, Earnings, ProductStat, User } = require('../model
 const { getDB } = require('../config/database');
 const NotificationService = require('./NotificationService');
 const { escapeHtml } = require('../utils');
-const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders, productImagesCache } = require('../state');
+const { finishingOrders, pendingFinishConfirmations, pendingForms, processingOrders, productImagesCache, orderStateCache } = require('../state');
 const EarningsService = require('./EarningsService');
 const ModelService = require('./ModelService');
+
+// Статусы Ozon, в которых заказ считается «живым» для сотрудника:
+//   awaiting_packaging — активный заказ (в работе);
+//   awaiting_deliver   — завершён, но этикетка ещё доступна (см. вкладку
+//                        «Завершённые заказы»).
+// Пока заказ в одном из них, в orderStateCache хранятся его детали и статус,
+// а в productImagesCache — фотографии товаров.
+const ORDER_STATUS_PACKAGING = 'awaiting_packaging';
+const ORDER_STATUS_DELIVER = 'awaiting_deliver';
+
+// Страховочный TTL кэша фотографий (24 часа): записи, которые давно никто не
+// запрашивал и которые не принадлежат ни одному «живому» заказу из кэша,
+// вычищаются при синхронизации — иначе фото отменённых/зависших заказов
+// оставались бы в памяти до перезапуска сервера.
+const PRODUCT_IMAGES_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Глобальное состояние очереди (в памяти)
 let pendingNewOrders = [];
@@ -48,18 +63,22 @@ class OrderService {
   // =================================================================
   // 1. ОЧИСТКА УСТАРЕВШИХ НАЗНАЧЕНИЙ (из bot.js)
   // =================================================================
-  static async cleanExpiredAssignments(activeOrderIds) {
+  static async cleanExpiredAssignments(activeOrderIds, { userId = null } = {}) {
     console.log('[OrderService] cleanExpiredAssignments начата');
     const activeSet = new Set(activeOrderIds);
     const db = getDB();
 
-    // Получаем все активные назначения с LEFT JOIN на users
+    // Получаем все активные назначения с LEFT JOIN на users.
+    // userId (опционально) ограничивает проверку одним сотрудником — так
+    // вызывается авто-снятие из интерфейса (кнопка «Обновить»), чтобы кнопка
+    // одного сотрудника не снимала заказы у остальных.
     const assignments = await db.all(
       `SELECT a.order_id, a.user_id, u.tg_user_id, u.name as employee_name,
             u.is_fired, a.status as local_status
      FROM assignments a
      LEFT JOIN users u ON a.user_id = u.id
-     WHERE a.status = "assigned"`
+     WHERE a.status = "assigned"${userId ? ' AND a.user_id = ?' : ''}`,
+      ...(userId ? [userId] : [])
     );
 
     for (const assignment of assignments) {
@@ -134,6 +153,8 @@ class OrderService {
           auto: true,
           reason: 'Сотрудник отсутствует или уволен',
         });
+        // Снимок заказа больше не нужен: он не в awaiting_packaging, фото чистим
+        OrderService.forgetOrderState(orderId, { prunePhotos: true });
         continue;
       }
 
@@ -152,6 +173,8 @@ class OrderService {
         auto: true,
         reason: 'Заказ более не актуален',
       });
+      // Заказ вышел из awaiting_packaging -> забываем снимок и чистим фото
+      OrderService.forgetOrderState(orderId, { prunePhotos: true });
     }
 
     console.log('[OrderService] cleanExpiredAssignments завершена');
@@ -271,6 +294,17 @@ class OrderService {
       await Assignment.assign(orderId, userId);
       assignedInDb = true;
       console.log(`[ASSIGN] Заказ ${orderId} записан в БД за сотрудником ${employee.name}`);
+
+      // Снимок заказа в кэше: детали УЖЕ загружены (0 доп. вызовов Ozon) —
+      // страница «Мои заказы» берёт состав отсюда, пока заказ не выйдет из
+      // awaiting_packaging/awaiting_deliver (см. syncOrderStatuses).
+      this.cacheOrderState(orderId, {
+        userId,
+        status: orderDetails.status || ORDER_STATUS_PACKAGING,
+        details: orderDetails,
+        assignedAt: Date.now(),
+        completedAt: null,
+      });
 
       // === ПРОВЕРКА СТАТИСТИКИ (перенесено из commands.js assignOrder, шаг 4) ===
       // Каких товаров ещё нет в product_stats — сотрудник заполнит их
@@ -468,13 +502,10 @@ class OrderService {
               : null,
         });
 
-        // Очищаем in-memory кэш фотографий для товаров этого заказа
-        // (заказ завершён — фото больше не нужны на страницах активных заказов)
-        if (orderDetails && Array.isArray(orderDetails.products)) {
-          for (const p of orderDetails.products) {
-            if (p.offer_id) productImagesCache.delete(String(p.offer_id));
-          }
-        }
+        // Фотографии товаров НЕ удаляем: заказ только что переведён в
+        // awaiting_deliver, карточка нужна на вкладке «Завершённые заказы»
+        // (фото очистятся, когда заказ выйдет из awaiting_deliver —
+        // см. OrderService.syncOrderStatuses).
 
         await db.run('COMMIT');
         transactionCompleted = true;
@@ -483,6 +514,36 @@ class OrderService {
         await db.run('ROLLBACK');
         console.error(`[FINISH] Ошибка в транзакции для заказа ${orderId}:`, txError);
         throw txError;
+      }
+
+      // === СИНХРОНИЗАЦИЯ С OZON ПОСЛЕ ЗАВЕРШЕНИЯ ===
+      // Заказ подтверждён (confirmPostingShip) -> статус стал awaiting_deliver.
+      // Сохраняем снимок в кэше сразу (даже если синк ниже не удастся) и
+      // уточняем статус/детали одним вызовом. Сбой синка НЕ отменяет завершение:
+      // статус подтянут планировщик и кнопка «Обновить» на странице заказов.
+      this.cacheOrderState(orderId, {
+        userId,
+        status: ORDER_STATUS_DELIVER,
+        details: orderDetails || null,
+        completedAt: Date.now(),
+      });
+      try {
+        const freshDetails = await OzonService.getOrderDetails(orderId);
+        if (freshDetails) {
+          this.cacheOrderState(orderId, {
+            status: freshDetails.status || ORDER_STATUS_DELIVER,
+            details: freshDetails,
+          });
+          if (freshDetails.status && freshDetails.status !== ORDER_STATUS_DELIVER) {
+            console.warn(
+              `[FINISH] Заказ ${orderId} после подтверждения сборки в статусе "${freshDetails.status}" ` +
+              `(ожидался awaiting_deliver) — этикетка может быть недоступна`
+            );
+          }
+        }
+      } catch (syncErr) {
+        console.error(`[FINISH] Не удалось синхронизировать статус заказа ${orderId}:`, syncErr.message);
+        NotificationService.logServerError('OrderService.finishOrder.sync', syncErr, { orderId });
       }
 
       // Оповещения: сотруднику (этикетка/заработок) + персоналу в журнал действий.
@@ -551,6 +612,11 @@ class OrderService {
     // Удаляем назначение
     await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
 
+    // Снимок заказа в кэше больше не нужен (заказ вернулся в очередь).
+    // Фотографии оставляем: заказ по-прежнему в awaiting_packaging и может быть
+    // назначен снова (фото в кэше привязаны к артикулу, а не к сотруднику).
+    this.forgetOrderState(orderId);
+
     // Увеличиваем счётчик отменённых заказов (вина пользователя)
     await UserStats.incrementCanceled(userId);
 
@@ -588,6 +654,10 @@ class OrderService {
 
     // Удаляем назначение (без увеличения счётчика отмен)
     await db.run('DELETE FROM assignments WHERE order_id = ?', orderId);
+
+    // Снимок заказа в кэше больше не нужен (заказ вернулся в очередь);
+    // фотографии оставляем — заказ всё ещё в awaiting_packaging
+    this.forgetOrderState(orderId);
 
     // Оповещения: сотруднику + персоналу в журнал действий
     const unassignedUser = await User.getById(userId);
@@ -698,7 +768,8 @@ class OrderService {
   // =================================================================
   // Для каждого offer_id фото грузятся с Ozon только один раз и кладутся в in-memory кэш
   // (productImagesCache). При повторных запросах (обновлении страниц админом/пользователем)
-  // фото берутся из кэша. При завершении заказа кэш по его offer_id очищается (см. finishOrder).
+  // фото берутся из кэша. Кэш живёт, пока заказ находится в awaiting_packaging /
+  // awaiting_deliver (чистка — при синхронизации статусов, см. syncOrderStatuses).
   static async attachProductImages(products) {
     if (!Array.isArray(products) || !products.length) return products || [];
 
@@ -710,6 +781,8 @@ class OrderService {
         const cached = productImagesCache.get(String(p.offer_id));
         if (cached && cached.images && cached.images.length) {
           p.images = cached.images.map(url => ({ url, name: p.name }));
+          // Отмечаем обращение: пока фото запрашивают, TTL-чистка их не тронет
+          cached.updatedAt = Date.now();
         } else if (p.sku) {
           needSkus.add(String(p.sku));
         }
@@ -743,6 +816,322 @@ class OrderService {
     }
 
     return products;
+  }
+
+  // =================================================================
+  // 7.6 КЭШ СОСТОЯНИЯ ЗАКАЗОВ И ВКЛАДКА «ЗАВЕРШЁННЫЕ ЗАКАЗЫ»
+  // =================================================================
+  // orderStateCache (см. state.js) хранит снимок заказа, пока он «жив»:
+  // awaiting_packaging (активный) или awaiting_deliver (завершён, этикетка
+  // доступна). Это избавляет страницу «Мои заказы» от запроса деталей в Ozon
+  // на каждое открытие и позволяет показать состав с фото на вкладке
+  // «🗳️ Завершённые заказы».
+
+  /**
+   * Записать/обновить снимок заказа в кэше (патч накладывается на запись).
+   * @param {string} orderId
+   * @param {object} [patch] - { userId, status, details, assignedAt, completedAt }
+   * @returns {object|null} обновлённая запись
+   */
+  static cacheOrderState(orderId, patch = {}) {
+    if (!orderId) return null;
+    const key = String(orderId);
+    const prev = orderStateCache.get(key) || {};
+    const next = { ...prev, ...patch, orderId: key, updatedAt: Date.now() };
+    orderStateCache.set(key, next);
+    return next;
+  }
+
+  /** Снимок заказа из кэша (или null). */
+  static getOrderState(orderId) {
+    if (!orderId) return null;
+    return orderStateCache.get(String(orderId)) || null;
+  }
+
+  /**
+   * Забыть заказ (отмена, снятие админом, выход из «живых» статусов).
+   * @param {string} orderId
+   * @param {object} [options]
+   * @param {boolean} [options.prunePhotos] - удалить и фотографии товаров
+   *   (только те артикулы, которые больше не используются другими заказами)
+   */
+  static forgetOrderState(orderId, { prunePhotos = false } = {}) {
+    if (!orderId) return;
+    const key = String(orderId);
+    const state = orderStateCache.get(key);
+    orderStateCache.delete(key);
+    if (prunePhotos && state) {
+      this.pruneProductImagesCache(new Set(this.offerIdsOfState(state)));
+    }
+  }
+
+  /** Артикулы (offer_id) из снимка заказа. */
+  static offerIdsOfState(state) {
+    const products = state && state.details ? state.details.products : null;
+    if (!Array.isArray(products)) return [];
+    return products
+      .map((p) => (p && p.offer_id ? String(p.offer_id) : null))
+      .filter(Boolean);
+  }
+
+  /**
+   * Копия состава заказа: поля, которые добавляются на лету при формировании
+   * ответа (images, model), не должны «оседать» в кэше.
+   */
+  static cloneProducts(products) {
+    return (products || []).map((p) => ({ ...p }));
+  }
+
+  /**
+   * Детали заказа: из кэша, при промахе — 1 запрос к Ozon с записью в кэш.
+   * @param {string} orderId
+   * @param {object} [options]
+   * @param {boolean} [options.forceFresh] - игнорировать кэш (принудительный синк)
+   */
+  static async resolveOrderDetails(orderId, { forceFresh = false } = {}) {
+    const cached = this.getOrderState(orderId);
+    if (!forceFresh && cached && cached.details) return cached;
+    const details = await OzonService.getOrderDetails(orderId);
+    if (!details) return cached;
+    return this.cacheOrderState(orderId, {
+      status: details.status || (cached ? cached.status : null),
+      details,
+    });
+  }
+
+  /**
+   * Активные заказы сотрудника (состав, фото, статус статистики).
+   * Детали берутся из кэша (при промахе — 1 запрос к Ozon), поэтому страница
+   * «Мои заказы» больше не дёргает Ozon по каждому заказу при каждом рендере.
+   * @param {number} userId
+   */
+  static async buildActiveOrders(userId) {
+    const orders = await Assignment.getActiveOrders(userId);
+    const result = [];
+    for (const order of orders) {
+      let state = await this.resolveOrderDetails(order.order_id);
+      // Снимок «кто и когда взял» — по нему видно принадлежность заказа
+      state = this.cacheOrderState(order.order_id, {
+        userId,
+        assignedAt: order.assigned_at,
+        status: (state && state.status) || ORDER_STATUS_PACKAGING,
+      });
+
+      const details = state.details || null;
+      let statsStatus = 'filled';
+      const missingStats = [];
+      if (details && Array.isArray(details.products)) {
+        for (const p of details.products) {
+          if (!p.offer_id) continue;
+          const stat = await ProductStat.get(p.offer_id);
+          if (!stat) {
+            statsStatus = 'missing';
+            missingStats.push(p.offer_id);
+          }
+        }
+      }
+      const products = await this.attachProductImages(this.cloneProducts(details?.products));
+      await ModelService.attachToProducts(products);
+      result.push({
+        orderId: order.order_id,
+        assignedAt: order.assigned_at,
+        statsStatus,
+        missingStats,
+        products,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Завершённые сотрудником заказы, которые ещё ожидают отправки
+   * (awaiting_deliver) — вкладка «🗳️ Завершённые заказы».
+   * Источник списка — БД (assignments.status='completed' пишется при завершении),
+   * статус — из кэша. Для заказов без снимка (завершены до перезапуска сервера/
+   * до внедрения кэша) достаточно ОДНОГО вызова fetchAwaitingDeliverOrders: он
+   * отсеивает уже отправленные заказы без запроса деталей по каждому. Детали
+   * (состав с фото) добираются по требованию и тоже кэшируются.
+   * @param {number} userId
+   */
+  static async buildCompletedOrdersAwaitingDeliver(userId) {
+    const db = getDB();
+    const rows = await db.all(
+      `SELECT order_id, completed_at FROM assignments
+       WHERE user_id = ? AND status = 'completed'
+       ORDER BY completed_at DESC`,
+      userId
+    );
+    if (!rows.length) return [];
+
+    // Статус неизвестен (нет снимка или в снимке нет статуса) -> уточняем одним
+    // списком awaiting_deliver
+    const needsStatus = (orderId) => {
+      const state = this.getOrderState(orderId);
+      return !state || !state.status;
+    };
+    let awaitingDeliverSet = null;
+    if (rows.some((row) => needsStatus(row.order_id))) {
+      try {
+        const postings = await OzonService.fetchAwaitingDeliverOrders();
+        awaitingDeliverSet = new Set(
+          (postings || []).map((p) => p && p.posting_number).filter(Boolean)
+        );
+      } catch (err) {
+        // Ozon недоступен: показываем только то, что уже известно из кэша
+        console.error(
+          '[COMPLETED] Не удалось получить заказы awaiting_deliver из Ozon:',
+          err.message
+        );
+      }
+    }
+
+    const result = [];
+    for (const row of rows) {
+      let state = this.getOrderState(row.order_id);
+      let status = state ? state.status : null;
+      if ((!state || !status) && awaitingDeliverSet) {
+        status = awaitingDeliverSet.has(row.order_id)
+          ? ORDER_STATUS_DELIVER
+          : 'other';
+      }
+      // Статус неизвестен (Ozon недоступен) — заказ не показываем
+      if (!status) continue;
+
+      state = this.cacheOrderState(row.order_id, {
+        userId,
+        status,
+        completedAt: row.completed_at,
+      });
+      // Показываем только ожидающие отправки: этикетка доступна только в них
+      if (status !== ORDER_STATUS_DELIVER) continue;
+
+      if (!state.details) {
+        state = await this.resolveOrderDetails(row.order_id);
+      }
+      const products = await this.attachProductImages(this.cloneProducts(state?.details?.products));
+      result.push({
+        orderId: row.order_id,
+        completedAt: row.completed_at,
+        products,
+      });
+    }
+    return result;
+  }
+
+  /**
+   * Синхронизация кэша со статусами Ozon: ДВА запроса списков
+   * (awaiting_packaging + awaiting_deliver; пагинация — внутри OzonService).
+   * Снимки заказов, вышедшие из обоих статусов, удаляются вместе с фотографиями
+   * (только если артикулы больше не используются оставшимися заказами).
+   * Вызывается планировщиком (ежечасно) и кнопкой «🔄 Обновить» на странице
+   * «Мои заказы» (кулдаун 1 минута).
+   * @returns {Promise<{checked:number, removed:number, photosRemoved:number,
+   *   activeOrderIds:string[]}>}
+   */
+  static async syncOrderStatuses() {
+    // Запросы параллельно; сбой любого -> исключение до правок кэша (fail-safe:
+    // при недоступном Ozon ничего не удаляем)
+    const [packaging, deliver] = await Promise.all([
+      OzonService.fetchAwaitingOrders(),
+      OzonService.fetchAwaitingDeliverOrders(),
+    ]);
+
+    // orderId -> статус, в котором заказ находится СЕЙЧАС
+    const statusByOrderId = new Map();
+    for (const order of packaging || []) {
+      if (order && order.posting_number) {
+        statusByOrderId.set(String(order.posting_number), ORDER_STATUS_PACKAGING);
+      }
+    }
+    for (const order of deliver || []) {
+      if (order && order.posting_number) {
+        statusByOrderId.set(String(order.posting_number), ORDER_STATUS_DELIVER);
+      }
+    }
+
+    const checked = orderStateCache.size;
+    let removed = 0;
+    const removedOfferIds = new Set();
+    for (const [orderId, state] of Array.from(orderStateCache.entries())) {
+      const status = statusByOrderId.get(orderId);
+      if (!status) {
+        // Заказ вышел из «живых» статусов (отправлен/отменён/возврат):
+        // убираем снимок, артикулы запоминаем для чистки фото
+        for (const offerId of this.offerIdsOfState(state)) removedOfferIds.add(offerId);
+        orderStateCache.delete(orderId);
+        removed++;
+        continue;
+      }
+      if (state.status !== status) {
+        this.cacheOrderState(orderId, { status });
+      }
+    }
+
+    let photosRemoved = this.pruneProductImagesCache(removedOfferIds);
+    photosRemoved += this.pruneStaleProductImages();
+
+    const activeOrderIds = [];
+    for (const [orderId, status] of statusByOrderId) {
+      if (status === ORDER_STATUS_PACKAGING) activeOrderIds.push(orderId);
+    }
+
+    if (removed || photosRemoved) {
+      console.log(
+        `[SYNC] Статусы заказов: проверено ${checked}, убрано из кэша ${removed}, ` +
+        `удалено фото ${photosRemoved}`
+      );
+    }
+
+    return { checked, removed, photosRemoved, activeOrderIds };
+  }
+
+  /**
+   * Удаляет фотографии артикулов, забытых вместе с заказами, но только если они
+   * больше НЕ используются оставшимися в кэше заказами (один offer_id может
+   * встречаться в нескольких заказах).
+   * @param {Set<string>} candidateOfferIds
+   * @returns {number} сколько записей кэша удалено
+   */
+  static pruneProductImagesCache(candidateOfferIds) {
+    if (!candidateOfferIds || candidateOfferIds.size === 0) return 0;
+    const stillUsed = this.collectCachedOfferIds();
+    let removed = 0;
+    for (const offerId of candidateOfferIds) {
+      if (stillUsed.has(offerId)) continue;
+      if (productImagesCache.delete(offerId)) removed++;
+    }
+    return removed;
+  }
+
+  /**
+   * Страховочная чистка кэша фото: записи, которые не запрашивались дольше
+   * PRODUCT_IMAGES_TTL_MS и не принадлежат ни одному заказу из кэша (например,
+   * заказ отменили — фото остались, или фото смотрел админ по неназначенному
+   * заказу). Живые заказы не затрагиваются: их артикулы есть в кэше, а каждое
+   * обращение обновляет updatedAt.
+   * @param {number} [now] - метка времени (для тестов)
+   * @returns {number} сколько записей кэша удалено
+   */
+  static pruneStaleProductImages(now = Date.now()) {
+    const stillUsed = this.collectCachedOfferIds();
+    let removed = 0;
+    for (const [offerId, entry] of Array.from(productImagesCache.entries())) {
+      if (stillUsed.has(offerId)) continue;
+      const updatedAt = entry && entry.updatedAt ? entry.updatedAt : 0;
+      if (now - updatedAt < PRODUCT_IMAGES_TTL_MS) continue;
+      productImagesCache.delete(offerId);
+      removed++;
+    }
+    return removed;
+  }
+
+  /** Артикулы, используемые всеми заказами, оставшимися в кэше. */
+  static collectCachedOfferIds() {
+    const offerIds = new Set();
+    for (const state of orderStateCache.values()) {
+      for (const offerId of this.offerIdsOfState(state)) offerIds.add(offerId);
+    }
+    return offerIds;
   }
 
   // =================================================================

@@ -167,6 +167,17 @@ initSocket(server);
       console.log('⏭️ Проверка awaiting_deliver отключена (DELIVER_REMINDER_ENABLED != true)');
     }
 
+    // Ежечасная синхронизация статусов кэша заказов (вкладка «Завершённые
+    // заказы»): 2 запроса к Ozon (awaiting_packaging + awaiting_deliver).
+    // Заказы, вышедшие из этих статусов, убираются из кэша вместе с фото.
+    // Ту же синхронизацию запускает кнопка «Обновить» на странице «Мои заказы».
+    if (process.env.ORDER_STATUS_SYNC_ENABLED === 'true') {
+      scheduler.startOrderStatusSyncChecker();
+      console.log('✅ Синхронизация статусов заказов включена');
+    } else {
+      console.log('⏭️ Синхронизация статусов заказов отключена (ORDER_STATUS_SYNC_ENABLED != true)');
+    }
+
     console.log('✅ Планировщик запущен');
 
     // Первоначальная загрузка очереди

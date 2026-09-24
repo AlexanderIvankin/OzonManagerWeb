@@ -6,8 +6,8 @@
  * стабом, время в CooldownService передаётся явно (параметры now).
  *
  * Проверяет:
- *   1) check() не блокирует до touch() и блокирует после (label/toggleOrders — 60 сек,
- *      allLabels — 1 час «успех» / 60 сек «пусто»);
+ *   1) check() не блокирует до touch() и блокирует после (label/toggleOrders/
+ *      refreshOrders — 60 сек, allLabels — 1 час «успех» / 60 сек «пусто»);
  *   2) чужой пользователь кулдауном не затронут;
  *   3) middleware отвечает 429 { cooldown: true, retryAfterSec } и шлёт
  *      live-оповещение command_cooldown (persist: false);
@@ -40,6 +40,10 @@ const { cooldown } = require('../src/middlewares/cooldown');
   assert.strictEqual(
     CooldownService.check('toggleOrders', USER, now).blocked, false,
     'toggleOrders: до touch() не должен блокировать'
+  );
+  assert.strictEqual(
+    CooldownService.check('refreshOrders', USER, now).blocked, false,
+    'refreshOrders: до touch() не должен блокировать'
   );
   console.log('1. До touch() кулдауны не блокируют ✅');
 
@@ -103,6 +107,24 @@ const { cooldown } = require('../src/middlewares/cooldown');
     'toggleOrders: текст как в боте («изменением статуса»)'
   );
   console.log('4. toggleOrders: 60-секундный кулдаун работает ✅');
+
+  // refreshOrders — кнопка «Обновить» на странице «Мои заказы» (60 сек)
+  CooldownService.touch('refreshOrders', USER, 0, now);
+  const refreshBlocked = CooldownService.check('refreshOrders', USER, now + 5000);
+  assert.strictEqual(refreshBlocked.blocked, true, 'refreshOrders: после touch() блокирует');
+  assert.ok(
+    refreshBlocked.retryAfterSec >= 55 && refreshBlocked.retryAfterSec <= 60,
+    `refreshOrders: retryAfterSec ≈ 60, получено ${refreshBlocked.retryAfterSec}`
+  );
+  assert.ok(
+    refreshBlocked.message.includes('обновлени'),
+    'refreshOrders: текст про повторное обновление заказов'
+  );
+  assert.strictEqual(
+    CooldownService.check('refreshOrders', USER, now + 60 * 1000).blocked, false,
+    'refreshOrders: по истечении 60 сек разрешает'
+  );
+  console.log('4b. refreshOrders: 60-секундный кулдаун работает ✅');
 
   // --- 3. Middleware: 429 + live-оповещение ---
   const notifications = [];

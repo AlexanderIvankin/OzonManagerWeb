@@ -3,7 +3,9 @@
  *   • label         — /send_label: 1 минута после успешной выдачи этикетки;
  *   • allLabels     — /send_all_labels: 1 час после УСПЕШНОЙ склейки (основной)
  *                     + 1 минута после пустого ответа/ошибки (короткий);
- *   • toggleOrders  — /toggle_orders: 1 минута после успешного переключения.
+ *   • toggleOrders  — /toggle_orders: 1 минута после успешного переключения;
+ *   • refreshOrders — страница «Мои заказы»: 1 минута после успешной
+ *                     синхронизации статусов (кнопка «Обновить»).
  *
  * Хранение — в памяти процесса (Map: String(userId) -> timestamp срабатывания).
  * Кулдаун ставится ТОЛЬКО после успешного выполнения (как в боте).
@@ -14,11 +16,13 @@ const LABEL_COOLDOWN_MS = 60 * 1000; // 1 минута
 const SEND_ALL_LABELS_COOLDOWN_MS = 3600 * 1000; // 1 час (после успеха)
 const SEND_ALL_LABELS_EMPTY_COOLDOWN_MS = 60 * 1000; // 1 минута (пусто/ошибка)
 const TOGGLE_ORDERS_COOLDOWN_MS = 60 * 1000; // 1 минута
+const REFRESH_ORDERS_COOLDOWN_MS = 60 * 1000; // 1 минута
 
 const labelCooldowns = new Map();
 const sendAllLabelsCooldowns = new Map();
 const sendAllLabelsEmptyCooldowns = new Map();
 const toggleOrdersCooldowns = new Map();
+const refreshOrdersCooldowns = new Map();
 
 /**
  * Описание кулдаунов по kind: массив «хранилищ» (у allLabels их два —
@@ -50,6 +54,13 @@ const DEFINITIONS = {
       map: toggleOrdersCooldowns,
       limitMs: TOGGLE_ORDERS_COOLDOWN_MS,
       message: (sec) => `⏳ Подождите ${sec} сек. перед повторным изменением статуса.`,
+    },
+  ],
+  refreshOrders: [
+    {
+      map: refreshOrdersCooldowns,
+      limitMs: REFRESH_ORDERS_COOLDOWN_MS,
+      message: (sec) => `⏳ Подождите ${sec} сек. перед повторным обновлением заказов.`,
     },
   ],
 };
@@ -132,6 +143,7 @@ module.exports = {
   SEND_ALL_LABELS_COOLDOWN_MS,
   SEND_ALL_LABELS_EMPTY_COOLDOWN_MS,
   TOGGLE_ORDERS_COOLDOWN_MS,
+  REFRESH_ORDERS_COOLDOWN_MS,
   check,
   touch,
   cleanCooldowns,

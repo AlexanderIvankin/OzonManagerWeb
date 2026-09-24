@@ -58,6 +58,26 @@ export interface Order {
   // images убраны с верхнего уровня — фото теперь привязаны к каждому товару (products[].images)
 }
 
+/**
+ * Завершённый заказ, который ещё ожидает отправки (awaiting_deliver) —
+ * вкладка «🗳️ Завершённые заказы»: тот же состав с фотографиями, но
+ * единственное действие — скачать этикетку (getPackageLabel).
+ */
+export interface CompletedOrder {
+  orderId: string;
+  completedAt: number;
+  products: OrderProduct[];
+}
+
+/** Ответ POST /user/orders/refresh: оба списка после синхронизации с Ozon */
+export interface OrdersSnapshot {
+  active: Order[];
+  completed: CompletedOrder[];
+  syncedAt: number;
+  /** Сколько заказов убрано из кэша (вышли из awaiting_packaging/awaiting_deliver) */
+  removed: number;
+}
+
 export interface OrderProduct {
   name: string;
   quantity: number;
@@ -91,6 +111,15 @@ export const ordersApi = {
   // Получить активные заказы текущего пользователя
   getActiveOrders: () =>
     api.get<Order[]>("/user/orders/active").then((res) => res.data),
+
+  // Получить завершённые заказы, ещё ожидающие отправки (вкладка «Завершённые»)
+  getCompletedOrders: () =>
+    api.get<CompletedOrder[]>("/user/orders/completed").then((res) => res.data),
+
+  // Обновить статусы всех заказов (активные + завершённые) и получить оба списка.
+  // Кулдаун 1 минута: сервер отвечает 429 { cooldown: true, retryAfterSec }
+  refreshOrders: () =>
+    api.post<OrdersSnapshot>("/user/orders/refresh").then((res) => res.data),
 
   // Завершить заказ
   finishOrder: (orderId: string) =>

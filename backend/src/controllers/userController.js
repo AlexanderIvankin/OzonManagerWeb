@@ -1,7 +1,6 @@
 const { Assignment, UserStats, Earnings, ProductStat, User } = require('../models');
 const Notification = require('../models/Notification');
 const OrderService = require('../services/OrderService');
-const ModelService = require('../services/ModelService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
 const CooldownService = require('../services/CooldownService');
@@ -57,46 +56,61 @@ exports.updateDisplayName = async (req, res) => {
 };
 
 /**
- * Получить активные заказы пользователя с деталями (состав, статус статистики)
+ * Получить активные заказы пользователя с деталями (состав, статус статистики).
+ * Детали берутся из серверного кэша состояния заказов (orderStateCache):
+ * Ozon запрашивается только при промахе кэша, а не при каждом открытии страницы.
  */
 exports.getActiveOrders = async (req, res, next) => {
   try {
-    const userId = req.user.id;
-    const orders = await Assignment.getActiveOrders(userId);
-    const result = [];
-    for (const order of orders) {
-      // Получаем детали из Ozon (можно закешировать)
-      const details = await OzonService.getOrderDetails(order.order_id);
-      // Проверяем наличие статистики для всех товаров
-      let statsStatus = 'filled';
-      let missingStats = [];
-      if (details && details.products) {
-        for (const p of details.products) {
-          if (!p.offer_id) continue;
-          const stat = await ProductStat.get(p.offer_id);
-          if (!stat) {
-            statsStatus = 'missing';
-            missingStats.push(p.offer_id);
-          }
-        }
-      }
-      // Привязываем фото к каждому товару (через кэш — фото грузятся с Ozon 1 раз на offer_id)
-      const products = await OrderService.attachProductImages(details?.products || []);
-      // Привязываем информацию о 3D-моделях (p.model) — по флагу клиент рисует
-      // кнопку «Скачать модель» (скачивание по одноразовому токену)
-      await ModelService.attachToProducts(products);
-      result.push({
-        orderId: order.order_id,
-        assignedAt: order.assigned_at,
-        statsStatus,
-        missingStats,
-        products,
-      });
-    }
-    res.json(result);
+    const orders = await OrderService.buildActiveOrders(req.user.id);
+    res.json(orders);
   } catch (err) {
     console.error('[getActiveOrders] Ошибка:', err);
     res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Получить завершённые пользователем заказы, которые ещё ожидают отправки
+ * (awaiting_deliver) — вкладка «🗳️ Завершённые заказы». Такие карточки нужны,
+ * чтобы скачать этикетку (getPackageLabel).
+ */
+exports.getCompletedOrders = async (req, res, next) => {
+  try {
+    const orders = await OrderService.buildCompletedOrdersAwaitingDeliver(req.user.id);
+    res.json(orders);
+  } catch (err) {
+    console.error('[getCompletedOrders] Ошибка:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Обновить статусы ВСЕХ заказов сотрудника (активные + завершённые) и вернуть
+ * оба списка одним ответом. Кулдаун 1 минута — см. routes/user.js
+ * (cooldown('refreshOrders')).
+ * Синхронизация — 2 запроса к Ozon (сравнимо с ежечасной задачей планировщика);
+ * активные заказы, которых больше нет в awaiting_packaging, снимаются — так же,
+ * как это делает плановый OrderService.checkNewOrders.
+ */
+exports.refreshOrders = async (req, res, next) => {
+  const userId = req.user.id;
+  try {
+    const sync = await OrderService.syncOrderStatuses();
+    // Снимаем заказы сотрудника, вышедшие из awaiting_packaging (иначе карточка
+    // «зависнет» до следующего часового прогона checkNewOrders). Ограничиваем
+    // только его назначениями — кнопка не должна трогать чужие заказы.
+    await OrderService.cleanExpiredAssignments(sync.activeOrderIds, { userId });
+    const [active, completed] = await Promise.all([
+      OrderService.buildActiveOrders(userId),
+      OrderService.buildCompletedOrdersAwaitingDeliver(userId),
+    ]);
+    // Кулдаун ставится ТОЛЬКО после успешной синхронизации (как у других команд)
+    CooldownService.touch('refreshOrders', userId);
+    res.json({ active, completed, syncedAt: Date.now(), removed: sync.removed });
+  } catch (err) {
+    console.error('[refreshOrders] Ошибка:', err);
+    res.status(400).json({ error: err.message });
   }
 };
 
