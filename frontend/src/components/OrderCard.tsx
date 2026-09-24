@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ordersApi, Order, readApiErrorPayload } from "../api/orders";
 import { toast } from "sonner";
+import { isSocketConnected } from "../lib/socket";
 import { FillStatsDialog } from "./FillStatsDialog";
 import { ProductImages } from "./ProductImages";
 
@@ -70,10 +71,11 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      // Кулдаун: live-тост о нём уже пришёл по WebSocket — локальный не дублируем;
+      // Кулдаун: при подключённом сокете live-тост уже ушёл по WebSocket —
+      // локальный не дублируем; сокет отключён -> показываем локально (fallback);
       // иначе показываем текст из тела ошибки (Blob при responseType: "blob")
       const payload = await readApiErrorPayload(err);
-      if (payload?.cooldown) return;
+      if (payload?.cooldown && isSocketConnected()) return;
       toast.error(
         payload?.error || err.message || "Не удалось скачать этикетку",
       );

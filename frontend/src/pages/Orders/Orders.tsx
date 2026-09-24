@@ -7,6 +7,7 @@ import {
 import { OrderCard } from "../../components/OrderCard";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { isSocketConnected } from "../../lib/socket";
 
 export const Orders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -46,9 +47,10 @@ export const Orders = () => {
       window.URL.revokeObjectURL(url);
       toast.success("Все этикетки скачаны");
     } catch (err: unknown) {
-      // Кулдаун: live-тост о нём уже пришёл по WebSocket — локальный не дублируем
+      // Кулдаун: при подключённом сокете live-тост уже ушёл по WebSocket —
+      // локальный не дублируем; сокет отключён -> показываем локально (fallback)
       const payload = await readApiErrorPayload(err);
-      if (payload?.cooldown) return;
+      if (payload?.cooldown && isSocketConnected()) return;
       const message =
         payload?.error ||
         (err as Error)?.message ||

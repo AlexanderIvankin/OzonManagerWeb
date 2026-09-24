@@ -13,13 +13,17 @@ let io;
 function initSocket(server) {
   io = new Server(server, {
     cors: {
-      // Единый источник истины для разрешённого origin — CLIENT_ORIGIN
-      // (тот же, что использует cors в server.js). CLIENT_URL оставлен
-      // как fallback для совместимости со старыми .env.
-      origin:
-        process.env.CLIENT_ORIGIN ||
-        process.env.CLIENT_URL ||
+      // Паритет с HTTP-CORS в server.js: разрешаем dev-порты (3000/5173) и
+      // боевой origin из CLIENT_ORIGIN/CLIENT_URL. Раньше здесь был только
+      // CLIENT_ORIGIN || CLIENT_URL || 'http://localhost:3000' — в dev на
+      // localhost:5173 HTTP-запросы проходили, а handshake сокета отклонялся
+      // (CORS), поэтому live-тосты не приходили.
+      origin: [
         'http://localhost:3000',
+        'http://localhost:5173',
+        process.env.CLIENT_ORIGIN,
+        process.env.CLIENT_URL,
+      ].filter(Boolean),
       methods: ['GET', 'POST'],
       credentials: true,
     },
