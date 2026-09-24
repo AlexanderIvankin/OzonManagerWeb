@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ordersApi, Order } from "../api/orders";
+import { ordersApi, Order, readApiErrorPayload } from "../api/orders";
 import { toast } from "sonner";
 import { FillStatsDialog } from "./FillStatsDialog";
 import { ProductImages } from "./ProductImages";
@@ -70,7 +70,13 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      toast.error(err.message || "Не удалось скачать этикетку");
+      // Кулдаун: live-тост о нём уже пришёл по WebSocket — локальный не дублируем;
+      // иначе показываем текст из тела ошибки (Blob при responseType: "blob")
+      const payload = await readApiErrorPayload(err);
+      if (payload?.cooldown) return;
+      toast.error(
+        payload?.error || err.message || "Не удалось скачать этикетку",
+      );
     }
   };
 

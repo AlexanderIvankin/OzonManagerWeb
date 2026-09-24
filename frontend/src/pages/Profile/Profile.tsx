@@ -105,7 +105,11 @@ export const Profile = () => {
         `Приём заказов ${nextTakingOrders ? "включён" : "выключен"}`,
       );
     } catch (err: any) {
-      toast.error(err.message || "Ошибка переключения");
+      // Кулдаун (429): live-тост о нём уже пришёл по WebSocket — не дублируем
+      if (err?.response?.data?.cooldown) return;
+      toast.error(
+        err?.response?.data?.error || err.message || "Ошибка переключения",
+      );
     } finally {
       setLoadingToggle(false);
     }

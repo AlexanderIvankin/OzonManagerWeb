@@ -1,30 +1,12 @@
 import { useEffect, useState } from "react";
-import { ordersApi, Order } from "../../api/orders";
+import {
+  ordersApi,
+  Order,
+  readApiErrorPayload,
+} from "../../api/orders";
 import { OrderCard } from "../../components/OrderCard";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-
-// Ошибка при responseType: "blob": тело ошибки приходит Blob-ом, а не JSON-ом —
-// достаём из него { error } и показываем человекочитаемый текст вместо
-// «Request failed with status code 404».
-const readApiErrorMessage = async (err: unknown): Promise<string | null> => {
-  try {
-    const data = (err as { response?: { data?: unknown } })?.response?.data;
-    if (data instanceof Blob) {
-      const parsed = JSON.parse(await data.text());
-      if (typeof parsed?.error === "string") return parsed.error;
-    } else if (
-      typeof data === "object" &&
-      data !== null &&
-      typeof (data as { error?: unknown }).error === "string"
-    ) {
-      return (data as { error: string }).error;
-    }
-  } catch {
-    // Не-JSON ответ (обрыв соединения и т.п.) — переходим к общему сообщению
-  }
-  return null;
-};
 
 export const Orders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -64,8 +46,11 @@ export const Orders = () => {
       window.URL.revokeObjectURL(url);
       toast.success("Все этикетки скачаны");
     } catch (err: unknown) {
+      // Кулдаун: live-тост о нём уже пришёл по WebSocket — локальный не дублируем
+      const payload = await readApiErrorPayload(err);
+      if (payload?.cooldown) return;
       const message =
-        (await readApiErrorMessage(err)) ||
+        payload?.error ||
         (err as Error)?.message ||
         "Не удалось скачать этикетки";
       toast.error(message);

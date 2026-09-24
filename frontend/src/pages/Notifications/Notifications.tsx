@@ -20,6 +20,8 @@ const PAGE_SIZE = 30;
 
 // Иконки и подписи по типу оповещения (легко расширять)
 const TYPE_META: Record<string, { icon: string; label: string }> = {
+  // Сработал кулдаун команды (только live-тост, в истории не сохраняется)
+  command_cooldown: { icon: "⏳", label: "Кулдаун команды" },
   order_assigned: { icon: "📦", label: "Назначение заказа" },
   order_finished: { icon: "✅", label: "Завершение заказа" },
   order_cancelled: { icon: "❌", label: "Отмена заказа" },

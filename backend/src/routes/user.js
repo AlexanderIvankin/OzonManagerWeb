@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate, requireEmployee } = require('../middlewares/auth');
+const { cooldown } = require('../middlewares/cooldown');
 const userController = require('../controllers/userController');
 
 // Аутентификация для всех маршрутов
@@ -25,17 +26,29 @@ router.post('/orders/:orderId/finish', userController.finishOrder);
 // Отменить заказ
 router.post('/orders/:orderId/cancel', userController.cancelOrder);
 
-// Получить этикетку
-router.get('/orders/:orderId/label', userController.getLabel);
+// Получить этикетку (кулдаун 1 мин после успеха — как /send_label в боте)
+router.get(
+  '/orders/:orderId/label',
+  cooldown('label', 'Скачивание этикетки'),
+  userController.getLabel
+);
 
-// Получить склейку всех этикеток
-router.get('/orders/labels/all', userController.getAllLabels);
+// Получить склейку всех этикеток (1 час после успеха / 1 мин после пустого ответа)
+router.get(
+  '/orders/labels/all',
+  cooldown('allLabels', 'Скачивание всех этикеток'),
+  userController.getAllLabels
+);
 
 // Скачать этикетку, отправленную администратором (label_sent)
 router.get('/labels/:orderId/sent', userController.getSentLabel);
 
-// Переключить приём заказов
-router.post('/toggle-orders', userController.toggleOrders);
+// Переключить приём заказов (кулдаун 1 мин после успеха — как /toggle_orders в боте)
+router.post(
+  '/toggle-orders',
+  cooldown('toggleOrders', 'Переключение приёма заказов'),
+  userController.toggleOrders
+);
 
 // Заработок за месяц
 router.get('/earnings/monthly', userController.getMonthlyEarnings);

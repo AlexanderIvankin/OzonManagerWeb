@@ -1,5 +1,47 @@
 import api from ".";
 
+// Ошибка при responseType: "blob" тело ошибки приходит Blob-ом, а не JSON-ом —
+// достаём из него { error, cooldown } (см. Orders.tsx для исторического контекста).
+export interface ApiErrorPayload {
+  error?: string;
+  /** true — сервер ответил 429: сработал кулдаун команды (live-тост уже ушёл) */
+  cooldown?: boolean;
+  retryAfterSec?: number;
+}
+
+/**
+ * Разбирает тело ошибки API (JSON или Blob) в { error, cooldown }.
+ * Возвращает null, если тело не JSON (обрыв соединения и т.п.).
+ */
+export async function readApiErrorPayload(
+  err: unknown,
+): Promise<ApiErrorPayload | null> {
+  try {
+    const data = (err as { response?: { data?: unknown } })?.response?.data;
+    if (data instanceof Blob) {
+      const parsed = JSON.parse(await data.text());
+      if (parsed && typeof parsed === "object") {
+        return parsed as ApiErrorPayload;
+      }
+    } else if (
+      typeof data === "object" &&
+      data !== null &&
+      typeof (data as { error?: unknown }).error === "string"
+    ) {
+      return data as ApiErrorPayload;
+    }
+  } catch {
+    // Не-JSON ответ (обрыв соединения и т.п.) — переходим к общему сообщению
+  }
+  return null;
+}
+
+/** Человекочитаемый текст ошибки или null. */
+export async function readApiErrorMessage(err: unknown): Promise<string | null> {
+  const payload = await readApiErrorPayload(err);
+  return typeof payload?.error === "string" ? payload.error : null;
+}
+
 export interface ProductModel {
   /** Артикул, по которому лежит zip (может отличаться: родитель -NR/-NL) */
   offerId: string;

@@ -4,6 +4,7 @@ const OrderService = require('../services/OrderService');
 const ModelService = require('../services/ModelService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
+const CooldownService = require('../services/CooldownService');
 const { getLocalDate, disableCache } = require('../utils');
 const fs = require('fs');
 const path = require('path');
@@ -140,6 +141,8 @@ exports.getLabel = async (req, res, next) => {
     if (!labelBuffer) {
       return res.status(404).json({ error: 'Label not available' });
     }
+    // Кулдаун ставится только после успешной выдачи (паритет с ботом)
+    CooldownService.touch('label', userId);
     disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=label_${orderId}.pdf`);
@@ -154,21 +157,27 @@ exports.getLabel = async (req, res, next) => {
  * Получить все этикетки для завершённых заказов (объединённые в PDF)
  */
 exports.getAllLabels = async (req, res, next) => {
+  const userId = req.user.id;
   try {
-    const userId = req.user.id;
     const pdfBuffer = await OrderService.getAllLabels(userId);
     if (!pdfBuffer) {
       // Нет пересечения completed ∩ awaiting_deliver либо задача Ozon
       // не дождалась file_url. Отдаём явную ошибку, а не пустой ответ.
+      // Пустой ответ/ошибка -> короткий кулдаун 1 мин (как в боте).
+      CooldownService.touch('allLabels', userId, 1);
       return res.status(404).json({
         error: 'Нет этикеток для скачивания: нет завершённых заказов в статусе awaiting_deliver',
       });
     }
+    // Успех -> длинный кулдаун 1 час (как в боте)
+    CooldownService.touch('allLabels', userId, 0);
     disableCache(res);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=all_labels.pdf');
     res.send(pdfBuffer);
   } catch (err) {
+    // Ошибка -> короткий кулдаун 1 мин, чтобы не долбить Ozon (как в боте)
+    CooldownService.touch('allLabels', userId, 1);
     console.error('[getAllLabels] Ошибка:', err);
     res.status(400).json({ error: err.message });
   }
@@ -281,6 +290,9 @@ exports.toggleOrders = async (req, res, next) => {
     if (!user) throw new Error('User not found');
     const newStatus = user.taking_orders === 1 ? 0 : 1;
     await User.update(userId, { taking_orders: newStatus });
+
+    // Кулдаун ставится только после успешного изменения (паритет с ботом)
+    CooldownService.touch('toggleOrders', userId);
 
     // Оповещение персоналу: сотрудник изменил приём заказов
     NotificationService.notifyStaff('taking_orders_changed', {

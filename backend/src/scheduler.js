@@ -12,6 +12,7 @@ const OfferModel = require('./models/OfferModel');
 const Notification = require('./models/Notification');
 const NotificationService = require('./services/NotificationService');
 const AuthService = require('./services/AuthService');
+const CooldownService = require('./services/CooldownService');
 
 // ============================================================================
 // УСИЛЕННАЯ ЗАЩИТА ОТ ПРОПУСКОВ ПРОВЕРОК (единые правила для всех задач):
@@ -162,20 +163,50 @@ function pauseChecker() { isPaused = true; }
 function resumeChecker() { isPaused = false; }
 function isCheckerPaused() { return isPaused; }
 
-// --- Очистка кулдаунов (пока заглушка) ---
+// --- Очистка кулдаунов (по аналогии с BOTFILES/scheduler.js) ---
+// Кулдауны команд хранятся в памяти процесса (CooldownService) и чистятся
+// раз в час; guard isCooldownCleanRunning исключает перекрывающиеся прогоны.
 let cooldownCleanInterval = null;
+let isCooldownCleanRunning = false;
+
 function startCooldownCleaner() {
-  if (cooldownCleanInterval) clearInterval(cooldownCleanInterval);
+  if (cooldownCleanInterval) {
+    clearInterval(cooldownCleanInterval);
+    cooldownCleanInterval = null;
+  }
+
+  isCooldownCleanRunning = false;
+
   cooldownCleanInterval = setInterval(() => {
-    // В веб-версии кулдауны хранятся в Redis или в памяти – пока пропускаем
-    console.log('[SCHEDULER] Очистка кулдаунов (заглушка)');
+    if (isCooldownCleanRunning) {
+      console.log('[SCHEDULER] Очистка кулдаунов уже выполняется, пропускаем');
+      return;
+    }
+
+    isCooldownCleanRunning = true;
+
+    try {
+      CooldownService.cleanCooldowns();
+    } catch (err) {
+      console.error(
+        '[SCHEDULER] Ошибка при очистке кулдаунов:',
+        err
+      );
+    } finally {
+      isCooldownCleanRunning = false;
+    }
   }, 60 * 60 * 1000);
+
+  console.log('[SCHEDULER] Очистка кулдаунов запланирована каждый час');
 }
+
 function stopCooldownCleaner() {
   if (cooldownCleanInterval) {
     clearInterval(cooldownCleanInterval);
     cooldownCleanInterval = null;
   }
+
+  isCooldownCleanRunning = false;
 }
 
 // --- Ежедневный бэкап БД ---
