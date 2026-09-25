@@ -210,7 +210,7 @@ export const ResetPassword = () => {
           </form>
         ) : (
           <form onSubmit={handleResetSubmit(onResetPassword)}>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 mb-[16px]">
               <div className="space-y-2">
                 <Label htmlFor="resetCode">Код из письма</Label>
                 <Input
