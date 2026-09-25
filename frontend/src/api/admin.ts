@@ -1,5 +1,6 @@
 import api from ".";
 import type { AxiosResponse } from "axios";
+import type { ProductPrice, ProductStats } from "./orders";
 
 export interface User {
   id: number;
@@ -101,9 +102,13 @@ export interface AdminActiveOrder {
     quantity: number;
     offer_id?: string;
     sku?: string;
+    price?: ProductPrice;
+    currency_code?: string;
     images?: Array<{ url: string; name: string }>;
     // 3D-модель (zip в S3): наличие = кнопка скачивания у сотрудника
     model?: { offerId: string; fileName: string; fileSize: number | null } | null;
+    // Статистика товара (материал, цвет, вес); null — статистика не заполнена
+    stats?: ProductStats | null;
   }>;
 }
 

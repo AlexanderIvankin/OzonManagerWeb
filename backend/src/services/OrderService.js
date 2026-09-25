@@ -819,6 +819,33 @@ class OrderService {
   }
 
   // =================================================================
+  // 7.5.1 ПРИВЯЗКА СТАТИСТИКИ ТОВАРА (материал, цвет, вес)
+  // =================================================================
+  // Для каждого offer_id берём запись из product_stats и кладём её в p.stats —
+  // фронт показывает её под товаром (как «Материал/Цвет» в карточке бота).
+  // Если статистики нет — p.stats = null, блок не рендерится. Вызывается
+  // ПОСЛЕ attachProductImages/attachToProducts на копии состава (cloneProducts),
+  // чтобы служебные поля не оседали в кэше деталей заказа.
+  static async attachProductStats(products) {
+    if (!Array.isArray(products) || !products.length) return products || [];
+    for (const p of products) {
+      if (!p || !p.offer_id) {
+        if (p) p.stats = null;
+        continue;
+      }
+      const stat = await ProductStat.get(p.offer_id);
+      p.stats = stat
+        ? {
+            material: stat.material,
+            color: stat.color,
+            weight_grams: stat.weight_grams,
+          }
+        : null;
+    }
+    return products;
+  }
+
+  // =================================================================
   // 7.6 КЭШ СОСТОЯНИЯ ЗАКАЗОВ И ВКЛАДКА «ЗАВЕРШЁННЫЕ ЗАКАЗЫ»
   // =================================================================
   // orderStateCache (см. state.js) хранит снимок заказа, пока он «жив»:
@@ -932,6 +959,7 @@ class OrderService {
       }
       const products = await this.attachProductImages(this.cloneProducts(details?.products));
       await ModelService.attachToProducts(products);
+      await this.attachProductStats(products);
       result.push({
         orderId: order.order_id,
         assignedAt: order.assigned_at,
@@ -1009,6 +1037,7 @@ class OrderService {
         state = await this.resolveOrderDetails(row.order_id);
       }
       const products = await this.attachProductImages(this.cloneProducts(state?.details?.products));
+      await this.attachProductStats(products);
       result.push({
         orderId: row.order_id,
         completedAt: row.completed_at,

@@ -527,6 +527,8 @@ exports.getAwaitingOrders = async (req, res, next) => {
         ? details.products
         : (order.products || []);
       const products = await OrderService.attachProductImages(sourceProducts);
+      // Материал/цвет/вес по каждому товару — как в карточке заказа бота
+      await OrderService.attachProductStats(products);
       return { ...order, products, details };
     }));
 
@@ -628,6 +630,8 @@ exports.getActiveOrdersAll = async (req, res, next) => {
       const products = await OrderService.attachProductImages(details?.products || []);
       // Информация о 3D-моделях (p.model) — наличие zip-архива для артикула
       await ModelService.attachToProducts(products);
+      // Статистика товара (материал/цвет/вес) — блок под товаром на карточке
+      await OrderService.attachProductStats(products);
       result.push({
         orderId: a.order_id,
         userId: a.user_id,

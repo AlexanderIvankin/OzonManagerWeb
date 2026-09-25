@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { OrderProduct } from "../api/orders";
 import { ProductImages } from "./ProductImages";
+import { ProductStatsBlock } from "./ProductStatsBlock";
 
 interface OrderProductsListProps {
   products: OrderProduct[];
@@ -44,6 +45,7 @@ export const OrderProductsList = ({
                 </span>
               )}
             </div>
+            <ProductStatsBlock stats={p.stats} />
             {p.images && p.images.length > 0 && (
               <ProductImages productName={p.name} images={p.images} />
             )}

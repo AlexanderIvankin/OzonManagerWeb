@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ProductImages } from "../../components/ProductImages";
+import { ProductStatsBlock } from "../../components/ProductStatsBlock";
+import { OrderTotalAmount } from "../../components/OrderTotalAmount";
 
 export const ActiveOrders = () => {
   const [orders, setOrders] = useState<AdminActiveOrder[]>([]);
@@ -275,6 +277,7 @@ export const ActiveOrders = () => {
                               </span>
                             )}
                           </div>
+                          <ProductStatsBlock stats={p.stats} />
                           {p.images && p.images.length > 0 && (
                             <ProductImages
                               productName={p.name}
@@ -284,6 +287,7 @@ export const ActiveOrders = () => {
                         </li>
                       ))}
                     </ul>
+                    <OrderTotalAmount products={order.products} />
                   </div>
                 )}
               </CardContent>

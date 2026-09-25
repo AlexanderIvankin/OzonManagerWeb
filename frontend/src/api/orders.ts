@@ -78,15 +78,31 @@ export interface OrdersSnapshot {
   removed: number;
 }
 
+/** Статистика товара из product_stats (материал, цвет, вес) */
+export interface ProductStats {
+  material: string;
+  color: string;
+  weight_grams: number;
+}
+
+/** Цена товара в данных Ozon: строка/число или объект { amount, currency } */
+export type ProductPrice =
+  | string
+  | number
+  | { amount?: string | number; currency?: string };
+
 export interface OrderProduct {
   name: string;
   quantity: number;
   offer_id?: string;
   sku?: string;
-  price?: number;
+  price?: ProductPrice;
+  currency_code?: string;
   images?: Array<{ url: string; name: string }>;
   // 3D-модель (zip в S3) — если есть, клиент показывает кнопку «Скачать модель»
   model?: ProductModel | null;
+  // Статистика товара (материал, цвет, вес); null — статистика не заполнена
+  stats?: ProductStats | null;
 }
 
 export interface FinishOrderResponse {

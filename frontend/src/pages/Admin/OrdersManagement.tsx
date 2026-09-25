@@ -14,6 +14,9 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ProductImages } from "../../components/ProductImages";
+import { ProductStatsBlock } from "../../components/ProductStatsBlock";
+import { OrderTotalAmount } from "../../components/OrderTotalAmount";
+import type { ProductPrice, ProductStats } from "../../api/orders";
 
 interface AwaitingOrder {
   posting_number: string;
@@ -22,7 +25,11 @@ interface AwaitingOrder {
     quantity: number;
     offer_id?: string;
     sku?: string;
+    price?: ProductPrice;
+    currency_code?: string;
     images?: Array<{ url: string; name: string }>;
+    // Статистика товара (материал, цвет, вес); null — статистика не заполнена
+    stats?: ProductStats | null;
   }>;
   warehouse_id?: string | number;
   analytics_data?: { warehouse?: string };
@@ -358,6 +365,7 @@ export const OrdersManagement = () => {
                               </span>
                             )}
                           </div>
+                          <ProductStatsBlock stats={p.stats} />
                           {p.images && p.images.length > 0 && (
                             <ProductImages
                               productName={p.name}
@@ -367,6 +375,7 @@ export const OrdersManagement = () => {
                         </li>
                       ))}
                     </ul>
+                    <OrderTotalAmount products={order.products || []} />
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex-1 space-y-2">
