@@ -166,10 +166,17 @@ export const VerifyEmail = () => {
                 id="code"
                 placeholder="000000"
                 inputMode="numeric"
-                autoComplete="one-time-code"
+                autoComplete="off"
                 maxLength={6}
                 className="text-center text-lg tracking-[0.5em]"
                 {...register("code")}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  // Браузер может автозаполнить поле сохранённым email —
+                  // оставляем только чистый ввод (до 6 цифр)
+                  event.target.value = /^\d*$/.test(raw) ? raw.slice(0, 6) : "";
+                  register("code").onChange(event);
+                }}
               />
               {errors.code && (
                 <p className="text-sm text-red-500">{errors.code.message}</p>

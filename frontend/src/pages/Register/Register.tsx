@@ -115,7 +115,7 @@ export const Register = () => {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Пароль</Label>
-              <Input id="password" type="password" placeholder="Придумайте пароль" {...registerField('password')} />
+              <Input id="password" type="password" placeholder="Придумайте пароль" autoComplete="new-password" {...registerField('password')} />
               {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
             </div>
             <div className="space-y-2">

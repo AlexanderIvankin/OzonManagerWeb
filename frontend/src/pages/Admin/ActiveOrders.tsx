@@ -121,7 +121,7 @@ export const ActiveOrders = () => {
       </div>
 
       {/* Фильтры */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-2">
           <Label>Поиск по номеру заказа</Label>
           <Input
@@ -199,7 +199,7 @@ export const ActiveOrders = () => {
           {filtered.map((order) => (
             <Card key={order.orderId}>
               <CardHeader>
-                <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex flex-col lg:flex-row flex-wrap items-center justify-center lg:justify-between gap-2">
                   <span>
                     Заказ{" "}
                     <span className="font-bold">
@@ -218,7 +218,7 @@ export const ActiveOrders = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="grid gap-1 text-sm">
+                <div className="grid gap-1 text-sm text-center justify-center lg:text-start lg:justify-start">
                   <div>
                     <span className="font-semibold">Сотрудник:</span>{" "}
                     <b>{order.userName}</b>{" "}
@@ -243,9 +243,9 @@ export const ActiveOrders = () => {
                   </div>
                 </div>
                 {order.missingStats.length > 0 && (
-                  <div className="text-sm text-red-500 space-y-1">
+                  <div className="text-sm text-red-500 space-y-1 text-center lg:text-start">
                     <div>Отсутствует статистика для:</div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap justify-center gap-1 lg:justify-start">
                       {order.missingStats.map((id) => (
                         <Badge key={id} variant="outline">
                           <code>{id}</code>
@@ -256,11 +256,13 @@ export const ActiveOrders = () => {
                 )}
                 {order.products.length > 0 && (
                   <div className="mt-2">
-                    <div className="font-semibold text-l mb-[5px]">Состав:</div>
+                    <div className="font-semibold text-l text-center lg:text-start">
+                      Состав:
+                    </div>
                     <ul className="text-sm space-y-3">
                       {order.products.map((p, idx) => (
                         <li key={idx}>
-                          <div className="mb-[5px]">
+                          <div className="mb-1 text-center lg:text-start">
                             <span className="font-bold">
                               {idx + 1}
                               {". "}

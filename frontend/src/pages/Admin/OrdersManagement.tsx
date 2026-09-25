@@ -69,7 +69,8 @@ const modelCoverage = (emp: EmployeeOption, order: AwaitingOrder) => {
     (/-(NR|NL)$/.test(offerId) && issued.has(offerId.slice(0, -1)));
   const covered = offers.filter(hasIssued).length;
   if (covered === 0) return { icon: "🔴", label: "нет моделей" };
-  if (covered === offers.length) return { icon: "🟢", label: "все модели выданы" };
+  if (covered === offers.length)
+    return { icon: "🟢", label: "все модели выданы" };
   return { icon: "🟡", label: "часть моделей" };
 };
 
@@ -96,13 +97,14 @@ const filterPriorityEmployees = (
 // На узких экранах (max-md) статистика переносится на вторую строку,
 // чтобы не вылезать за пределы Select.
 const renderEmployeeLabel = (emp: EmployeeOption, order?: AwaitingOrder) => {
-  const coverage = order ? modelCoverage(emp, order) : { icon: "🔴", label: "нет моделей" };
+  const coverage = order
+    ? modelCoverage(emp, order)
+    : { icon: "🔴", label: "нет моделей" };
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-1 text-center lg:text-left">
       <div>
         {" "}
-        <span aria-hidden>{coverage.icon}</span>
-        {" "}<b>{emp.name}</b>{" "}
+        <span aria-hidden>{coverage.icon}</span> <b>{emp.name}</b>{" "}
         <span>
           (ID: <code>{emp.id}</code>)
         </span>
@@ -319,7 +321,7 @@ export const OrdersManagement = () => {
             return (
               <Card key={order.posting_number}>
                 <CardHeader>
-                  <CardTitle>
+                  <CardTitle className="flex text-center justify-center lg:text-start lg:justify-start">
                     Заказ{" "}
                     <span className="font-bold">
                       <code>{order.posting_number}</code>
@@ -328,8 +330,8 @@ export const OrdersManagement = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <div className="font-semibold mb-1">Склад:</div>
-                    <div>
+                    <div className="font-semibold mb-1 text-center lg:text-start">Склад:</div>
+                    <div className="text-center lg:text-start">
                       {order.analytics_data?.warehouse || "не указан"}
                       {warehouseId && (
                         <span className="text-sm text-muted-foreground">
@@ -344,11 +346,11 @@ export const OrdersManagement = () => {
                     </div>
                   </div>
                   <div>
-                    <div className="font-semibold text-l mb-[5px]">Состав:</div>
+                    <div className="font-semibold text-l text-center lg:text-start">Состав:</div>
                     <ul className="text-sm space-y-5">
                       {order.products?.map((p, idx) => (
                         <li key={idx}>
-                          <div className="mb-[5px]">
+                          <div className="mb-1 text-center lg:text-start">
                             <span className="font-bold">
                               {idx + 1}
                               {". "}
@@ -399,14 +401,17 @@ export const OrdersManagement = () => {
                                 : "Склад заказа не указан"
                             }
                           >
-                            👑 По складу ({priorityEmployees.length})
+                            <span className="inline-block align-middle -translate-y-[2px]">
+                              👑
+                            </span>{" "}
+                            По складу ({priorityEmployees.length})
                           </Button>
                           <Button
                             size="sm"
                             variant={mode === "all" ? "default" : "outline"}
                             onClick={() => changeListMode(order, "all")}
                           >
-                            <span className="inline-block align-middle -translate-y-[1px]">
+                            <span className="inline-block align-middle -translate-y-[2px]">
                               👥
                             </span>{" "}
                             Все ({visibleEmployees.length})

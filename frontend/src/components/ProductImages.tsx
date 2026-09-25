@@ -41,7 +41,7 @@ export const ProductImages = ({ productName, images }: ProductImagesProps) => {
   if (!visible.length) return null;
 
   return (
-    <div className="mt-1">
+    <div className="mt-2">
       <div className="grid grid-cols-3 gap-2">
         {visible.map((img, idx) => (
           <button

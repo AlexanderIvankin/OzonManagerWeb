@@ -153,7 +153,7 @@ export const Materials = () => {
       </div>
 
       {/* Карточка с загрузкой файла */}
-      <Card>
+      <Card className="text-center justify-center md:text-start md:justify-start">
         <CardHeader>
           <CardTitle>Загрузить новый файл материалов</CardTitle>
         </CardHeader>
@@ -211,7 +211,7 @@ export const Materials = () => {
       </Card>
 
       {/* Карточка со скачиванием текущих настроек */}
-      <Card>
+      <Card className="text-center justify-center md:text-start md:justify-start">
         <CardHeader>
           <CardTitle>Текущий файл настроек</CardTitle>
         </CardHeader>
@@ -243,7 +243,7 @@ export const Materials = () => {
       </Card>
 
       {/* Текущие настройки */}
-      <Card>
+      <Card className="text-center justify-center md:text-start md:justify-start">
         <CardHeader>
           <CardTitle>Текущие настройки</CardTitle>
         </CardHeader>
@@ -256,7 +256,7 @@ export const Materials = () => {
           </div>
           <div>
             <h3 className="font-semibold mb-2">Цвета пластика:</h3>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex text-center justify-center md:text-start md:justify-start flex-wrap gap-2">
               {data.colors.map((color) => (
                 <Badge key={color} variant="secondary">
                   {color}
@@ -269,15 +269,15 @@ export const Materials = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Материал</TableHead>
-                  <TableHead className="text-right">Цена за грамм</TableHead>
+                  <TableHead className="text-center md:text-start">Материал</TableHead>
+                  <TableHead className="text-center md:text-right">Цена за грамм</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {Object.entries(data.materials).map(([name, price]) => (
                   <TableRow key={name}>
                     <TableCell>{name}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center md:text-right">
                       {price.toFixed(2)}
                     </TableCell>
                   </TableRow>
@@ -291,8 +291,8 @@ export const Materials = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Offer ID</TableHead>
-                    <TableHead className="text-right">
+                    <TableHead className="text-center md:text-start">Offer ID</TableHead>
+                    <TableHead className="text-center md:text-right">
                       Стоимость (руб/шт)
                     </TableHead>
                   </TableRow>
@@ -304,7 +304,7 @@ export const Materials = () => {
                         <TableCell>
                           <code>{offerId}</code>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center md:text-right">
                           {price.toFixed(2)}
                         </TableCell>
                       </TableRow>

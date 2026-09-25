@@ -87,6 +87,7 @@ export const Login = () => {
               <Input
                 id="usernameOrEmail"
                 placeholder="Введите логин или email"
+                autoComplete="username"
                 {...register("usernameOrEmail")}
               />
               {errors.usernameOrEmail && (
@@ -101,6 +102,7 @@ export const Login = () => {
                 id="password"
                 type="password"
                 placeholder="Введите пароль"
+                autoComplete="current-password"
                 {...register("password")}
               />
               {errors.password && (

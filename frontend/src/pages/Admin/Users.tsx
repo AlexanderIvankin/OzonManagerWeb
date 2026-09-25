@@ -1238,6 +1238,7 @@ export const Users = () => {
               <Input
                 id="create-password"
                 type="password"
+                autoComplete="new-password"
                 placeholder="Минимум 1 символ"
                 value={createForm.password}
                 onChange={(e) =>

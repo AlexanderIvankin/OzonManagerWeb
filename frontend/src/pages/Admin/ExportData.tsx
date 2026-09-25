@@ -105,7 +105,9 @@ export const ExportData = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">📤 Экспорт данных</h1>
+      <h1 className="text-2xl font-bold text-center sm:text-start">
+        📤 Экспорт данных
+      </h1>
 
       {/* Статистика товаров */}
       <Card>
@@ -120,8 +122,14 @@ export const ExportData = () => {
             цвет, вес, кто заполнил, дата) в Excel.
           </p>
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            <Button onClick={handleExportProductStats} disabled={loadingStats}>
-              {loadingStats ? "Готовим файл..." : "📥 Скачать статистику"}
+            <Button
+              onClick={handleExportProductStats}
+              disabled={loadingStats}
+              className="min-w-0"
+            >
+              <span className="truncate min-w-0">
+                {loadingStats ? "Готовим файл..." : "📥 Скачать статистику"}
+              </span>
             </Button>
           </div>
         </CardContent>
@@ -147,19 +155,17 @@ export const ExportData = () => {
             <Button
               onClick={() => handleExportTeamInfo(false)}
               disabled={loadingTeam}
-              className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
+              className="min-w-0"
             >
-              <span className="truncate block w-full sm:w-auto text-center">
-                📥 Скачать (активные)
-              </span>
+              <span className="truncate min-w-0">📥 Скачать (активные)</span>
             </Button>
             <Button
               onClick={() => handleExportTeamInfo(true)}
               disabled={loadingTeam}
               variant="outline"
-              className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
+              className="min-w-0"
             >
-              <span className="truncate block w-full sm:w-auto text-center">
+              <span className="truncate min-w-0">
                 📥 Скачать (включая уволенных)
               </span>
             </Button>
@@ -170,11 +176,13 @@ export const ExportData = () => {
       {/* База данных — для персонала (admin/moderator/god) */}
       {isAdmin && (
         <Card>
-          <CardHeader className="justify-center sm:justify-start">
+          <CardHeader className="flex flex-col items-center text-center justify-center gap-2 sm:text-start sm:flex-row sm:justify-start">
             <CardTitle className="flex items-center gap-2">
               🗄️ Файл базы данных
-              <Badge variant="destructive">Backup</Badge>
             </CardTitle>
+            <div>
+              <Badge variant="destructive">Backup</Badge>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -190,9 +198,9 @@ export const ExportData = () => {
                 onClick={handleDownloadDatabase}
                 disabled={loadingDb}
                 variant="outline"
-                className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
+                className="min-w-0"
               >
-                <span className="truncate block w-full sm:w-auto text-center">
+                <span className="truncate min-w-0">
                   {loadingDb
                     ? "Готовим снимок..."
                     : "💾 Скачать базу данных (.db)"}
@@ -202,9 +210,9 @@ export const ExportData = () => {
                 onClick={handleCreateBackup}
                 disabled={creatingBackup}
                 variant="outline"
-                className="w-full sm:w-auto max-w-[340px] sm:max-w-none"
+                className="min-w-0"
               >
-                <span className="truncate block w-full sm:w-auto text-center">
+                <span className="truncate min-w-0">
                   {creatingBackup ? "Создаём бэкап..." : "🗄️ Бэкап на сервере"}
                 </span>
               </Button>

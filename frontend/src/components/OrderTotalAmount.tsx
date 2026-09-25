@@ -47,8 +47,8 @@ export const OrderTotalAmount = ({ products }: OrderTotalAmountProps) => {
   }
 
   return (
-    <div className="mt-2 text-sm font-semibold">
-      Общая сумма заказа:{" "}
+    <div className="flex justify-center text-center mt-4 text-sm font-semibold lg:justify-start lg:text-start">
+      Общая сумма заказа:&nbsp;
       {hasPrice ? (
         <b>
           {total.toFixed(2)} {currency}
