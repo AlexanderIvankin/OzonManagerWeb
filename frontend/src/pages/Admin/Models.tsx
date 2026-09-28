@@ -42,6 +42,10 @@ export const Models = () => {
   const [file, setFile] = useState<File | null>(null);
   const [offerId, setOfferId] = useState("");
 
+  // Поиск по артикулу (offer_id): фильтрация клиентская — список моделей
+  // загружается целиком, поэтому результат виден сразу при вводе
+  const [search, setSearch] = useState("");
+
   const loadModels = async () => {
     setLoading(true);
     try {
@@ -57,6 +61,19 @@ export const Models = () => {
   useEffect(() => {
     loadModels();
   }, []);
+
+  // Фильтр по артикулу: подстрока в offer_id или в имени файла архива.
+  // «ARD000003-N.zip» в поиске тоже найдёт модель ARD000003-N.
+  const query = search.trim().toLowerCase();
+  const offerQuery = query.replace(/\.zip$/, "") || query;
+  const visibleModels = models.filter((m) => {
+    if (!query) return true;
+    return (
+      m.offer_id.toLowerCase().includes(offerQuery) ||
+      (m.file_name || "").toLowerCase().includes(query)
+    );
+  });
+  const hasSearch = !!query;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -175,7 +192,12 @@ export const Models = () => {
           </p>
           <div className="grid gap-3 lg:grid-cols-2 lg:text-center">
             <div className="space-y-1.5">
-              <Label className="justify-center lg:justify-start" htmlFor="model-offer-id">Артикул (offer_id)</Label>
+              <Label
+                className="justify-center lg:justify-start"
+                htmlFor="model-offer-id"
+              >
+                Артикул (offer_id)
+              </Label>
               <Input
                 id="model-offer-id"
                 placeholder="ARD000003-N"
@@ -184,7 +206,10 @@ export const Models = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="justify-center lg:justify-start cursor-pointer" htmlFor="model-file-upload">
+              <Label
+                className="justify-center lg:justify-start cursor-pointer"
+                htmlFor="model-file-upload"
+              >
                 Zip-архив
               </Label>
               <Input
@@ -228,11 +253,40 @@ export const Models = () => {
           <CardTitle className="text-lg">
             🗃️ Загруженные модели{" "}
             {models.length > 0 && (
-              <Badge variant="outline">{models.length}</Badge>
+              <Badge variant="outline">
+                {hasSearch && visibleModels.length !== models.length
+                  ? `${visibleModels.length} из ${models.length}`
+                  : models.length}
+              </Badge>
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Фильтр по артикулу (offer_id) */}
+          {models.length > 0 && (
+            <div className="flex flex-col gap-2text-start sm:flex-row sm:items-end">
+              <div className="w-full space-y-1.5">
+                <Label
+                  className="text-center justify-center lg:text-start lg:justify-start"
+                  htmlFor="models-search"
+                >
+                  Поиск по артикулу (offer_id)
+                </Label>
+                <Input
+                  id="models-search"
+                  placeholder="🔖 Артикул (offer_id)..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              {hasSearch && (
+                <Button variant="ghost" onClick={() => setSearch("")}>
+                  ✕ Сбросить
+                </Button>
+              )}
+            </div>
+          )}
+
           {loading ? (
             <div className="py-6 text-center text-muted-foreground">
               Загрузка…
@@ -240,6 +294,10 @@ export const Models = () => {
           ) : models.length === 0 ? (
             <div className="py-6 text-center text-muted-foreground">
               Моделей пока нет — загрузите первый zip-архив
+            </div>
+          ) : visibleModels.length === 0 ? (
+            <div className="py-6 text-center text-muted-foreground">
+              Ничего не найдено по артикулу «{search.trim()}»
             </div>
           ) : (
             <Table>
@@ -253,12 +311,14 @@ export const Models = () => {
                   <TableHead className="text-center hidden lg:table-cell">
                     Загружена
                   </TableHead>
-                  <TableHead className="text-center hidden lg:table-cell">Кем</TableHead>
+                  <TableHead className="text-center hidden lg:table-cell">
+                    Кем
+                  </TableHead>
                   <TableHead className="text-center">Действия</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {models.map((m) => (
+                {visibleModels.map((m) => (
                   <TableRow key={m.offer_id}>
                     <TableCell className="text-center">
                       <code className="font-bold">{m.offer_id}</code>
@@ -266,7 +326,9 @@ export const Models = () => {
                         {m.file_name || `${m.offer_id}.zip`}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">{formatSize(m.file_size)}</TableCell>
+                    <TableCell className="text-center">
+                      {formatSize(m.file_size)}
+                    </TableCell>
                     <TableCell className="text-center hidden md:table-cell">
                       <code className="text-xs text-muted-foreground">
                         {shortHash(m.file_hash)}
