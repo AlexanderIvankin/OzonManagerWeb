@@ -86,7 +86,10 @@ export const CompletedOrderCard = ({ order }: CompletedOrderCardProps) => {
           alignClassName="text-center sm:text-start md:text-center xl:text-start justify-center sm:justify-start md:justify-center xl:justify-start"
         />
       </CardContent>
-      <CardFooter className="flex justify-center items-stretch">
+      {/* mt-auto прижимает футер к низу карточки: в грид-раскладке
+          (md:grid-cols-2) карточки растягиваются до высоты самой высокой в
+          ряду, и без авто-отступа кнопка «повисает» посреди карточки. */}
+      <CardFooter className="mt-auto flex justify-center items-stretch">
         <Button
           variant="secondary"
           className="w-full sm:w-auto md:w-full xl:w-auto"

@@ -205,7 +205,10 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
           alignClassName="text-center sm:text-start md:text-center xl:text-start justify-center sm:justify-start md:justify-center xl:justify-start"
         />
       </CardContent>
-      <CardFooter className="flex flex-col gap-2 items-stretch sm:flex-row md:flex-col xl:flex-row xl:items-center">
+      {/* mt-auto прижимает футер к низу карточки: в грид-раскладке
+          (md:grid-cols-2) карточки растягиваются до высоты самой высокой в
+          ряду, и без авто-отступа кнопки «повисают» посреди карточки. */}
+      <CardFooter className="mt-auto flex flex-col gap-2 items-stretch sm:flex-row md:flex-col xl:flex-row xl:items-center">
         <Button
           onClick={handleFinish}
           disabled={loading || order.statsStatus === "missing"}
