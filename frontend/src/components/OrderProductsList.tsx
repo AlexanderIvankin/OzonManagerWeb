@@ -32,11 +32,11 @@ export const OrderProductsList = ({
 
   return (
     <div className={`mt-2 ${alignClassName ?? ""}`}>
-      <div className="font-semibold text-l mb-[5px]">Состав:</div>
+      <div className="font-semibold text-l">Состав:</div>
       <ul className="text-sm space-y-3">
         {products.map((p, idx) => (
           <li key={idx}>
-            <div className="mb-[5px]">
+            <div className="mb-1">
               <span className="font-bold">
                 {idx + 1}
                 {". "}
