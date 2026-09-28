@@ -8,7 +8,12 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ordersApi, Order, OrderProduct, readApiErrorPayload } from "../api/orders";
+import {
+  ordersApi,
+  Order,
+  OrderProduct,
+  readApiErrorPayload,
+} from "../api/orders";
 import { toast } from "sonner";
 import { isSocketConnected } from "../lib/socket";
 import { FillStatsDialog } from "./FillStatsDialog";
@@ -152,7 +157,17 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle
+          className="
+    flex flex-wrap flex-col items-center justify-center gap-2 text-center
+
+    sm:flex-row sm:items-start sm:justify-between sm:text-start
+
+    md:flex-col md:items-center md:justify-center md:text-center
+
+    xl:flex-row xl:items-start xl:justify-between xl:text-start
+  "
+        >
           <span>
             Заказ{" "}
             <span className="font-bold">
@@ -168,14 +183,14 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 text-center sm:text-start md:text-center xl:text-start">
         <div className="text-sm text-muted-foreground">
           Назначен: {new Date(order.assignedAt).toLocaleString()}
         </div>
         {missingOfferIds.length > 0 && (
           <div className="text-sm text-red-500 space-y-1">
             <div>Отсутствует статистика для:</div>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 justify-center sm:justify-start md:justify-center xl:justify-start">
               {missingOfferIds.map((id) => (
                 <Badge key={id} variant="outline" className="cursor-pointer">
                   <code>{id}</code>
@@ -187,6 +202,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
         <OrderProductsList
           products={order.products}
           renderProductExtra={renderProductExtra}
+          alignClassName="text-center sm:text-start md:text-center xl:text-start justify-center sm:justify-start md:justify-center xl:justify-start"
         />
       </CardContent>
       <CardFooter className="flex flex-col gap-2 items-stretch sm:flex-row md:flex-col xl:flex-row xl:items-center">

@@ -10,6 +10,13 @@ interface OrderProductsListProps {
    * активных заказов). Завершённым заказам не нужен.
    */
   renderProductExtra?: (product: OrderProduct, index: number) => ReactNode;
+  /**
+   * Классы выравнивания. Применяются к корневому div (text-* наследуется
+   * дочерним текстом) и пробрасываются в ProductStatsBlock.
+   * Для ProductStatsBlock указывай и text-*, и justify-* парой.
+   * Если не передать — поведение по умолчанию (влево на всех размерах).
+   */
+  alignClassName?: string;
 }
 
 /**
@@ -19,11 +26,12 @@ interface OrderProductsListProps {
 export const OrderProductsList = ({
   products,
   renderProductExtra,
+  alignClassName,
 }: OrderProductsListProps) => {
   if (!products || products.length === 0) return null;
 
   return (
-    <div className="mt-2">
+    <div className={`mt-2 ${alignClassName ?? ""}`}>
       <div className="font-semibold text-l mb-[5px]">Состав:</div>
       <ul className="text-sm space-y-3">
         {products.map((p, idx) => (
@@ -45,7 +53,10 @@ export const OrderProductsList = ({
                 </span>
               )}
             </div>
-            <ProductStatsBlock stats={p.stats} />
+            <ProductStatsBlock
+              stats={p.stats}
+              alignClassName={alignClassName}
+            />
             {p.images && p.images.length > 0 && (
               <ProductImages productName={p.name} images={p.images} />
             )}

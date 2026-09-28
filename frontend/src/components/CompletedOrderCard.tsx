@@ -8,11 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  ordersApi,
-  CompletedOrder,
-  readApiErrorPayload,
-} from "../api/orders";
+import { ordersApi, CompletedOrder, readApiErrorPayload } from "../api/orders";
 import { toast } from "sonner";
 import { isSocketConnected } from "../lib/socket";
 import { OrderProductsList } from "./OrderProductsList";
@@ -61,7 +57,17 @@ export const CompletedOrderCard = ({ order }: CompletedOrderCardProps) => {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle
+          className="
+    flex flex-wrap flex-col items-center justify-center gap-2 text-center
+
+    sm:flex-row sm:items-start sm:justify-between sm:text-start
+
+    md:flex-col md:items-center md:justify-center md:text-center
+
+    xl:flex-row xl:items-start xl:justify-between xl:text-start
+  "
+        >
           <span>
             Заказ{" "}
             <span className="font-bold">
@@ -71,15 +77,19 @@ export const CompletedOrderCard = ({ order }: CompletedOrderCardProps) => {
           <Badge variant="secondary">🗳️ Ожидает отправки</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-2 text-center sm:text-start md:text-center xl:text-start">
         <div className="text-sm text-muted-foreground">
           Завершён: {new Date(order.completedAt).toLocaleString()}
         </div>
-        <OrderProductsList products={order.products} />
+        <OrderProductsList
+          products={order.products}
+          alignClassName="text-center sm:text-start md:text-center xl:text-start justify-center sm:justify-start md:justify-center xl:justify-start"
+        />
       </CardContent>
-      <CardFooter className="justify-center">
+      <CardFooter className="flex justify-center items-stretch">
         <Button
           variant="secondary"
+          className="w-full sm:w-auto md:w-full xl:w-auto"
           onClick={handleDownloadLabel}
           disabled={downloading}
         >
