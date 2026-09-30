@@ -4,6 +4,7 @@ const OrderService = require('../services/OrderService');
 const OzonService = require('../services/OzonService');
 const NotificationService = require('../services/NotificationService');
 const CooldownService = require('../services/CooldownService');
+const PushService = require('../services/PushService');
 const { getLocalDate, disableCache } = require('../utils');
 const fs = require('fs');
 const path = require('path');
@@ -361,6 +362,97 @@ exports.fillStats = async (req, res, next) => {
     res.json({ message: 'Stats saved' });
   } catch (err) {
     console.error('[fillStats] Ошибка:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ===========================================================================
+// WEB PUSH: подписки браузера (доступно ВСЕМ авторизованным — см. routes/user.js)
+//
+// Канал доставки оповещений выбирает NotificationService: онлайн-пользователю
+// событие уходит мгновенно через Socket.IO, офлайн — Web Push (PushService).
+// Здесь — только управление подписками устройства.
+// ===========================================================================
+
+/**
+ * Публичный VAPID-ключ для подписки на Web Push.
+ * Браузер использует его как applicationServerKey в pushManager.subscribe().
+ * Секретов не содержит — можно отдавать любому авторизованному пользователю.
+ */
+exports.getPushPublicKey = (req, res) => {
+  const publicKey = PushService.publicKey;
+  if (!publicKey) {
+    // Web Push не настроен (нет VAPID_* в .env) — фронт просто не подпишется
+    return res.status(503).json({ error: 'Web Push не настроен на сервере' });
+  }
+  res.json({ publicKey });
+};
+
+/**
+ * Сохранить подписку браузера на Web Push.
+ * Body: { subscription: { endpoint, keys: { p256dh, auth } } } (PushSubscription.toJSON()).
+ * endpoint уникален: повторная подписка того же браузера обновляет запись, а
+ * вход другого пользователя на этом устройстве переприсваивает её ему.
+ */
+exports.pushSubscribe = async (req, res) => {
+  try {
+    const { subscription } = req.body || {};
+    if (!PushService.isValidSubscription(subscription)) {
+      return res.status(400).json({ error: 'Некорректная подписка' });
+    }
+    const saved = await PushService.subscribe(
+      req.user.id,
+      subscription,
+      req.headers['user-agent'] || null
+    );
+    if (!saved) {
+      return res.status(500).json({ error: 'Не удалось сохранить подписку' });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[pushSubscribe] Ошибка:', err);
+    NotificationService.logServerError('user.pushSubscribe', err, {
+      userId: req.user?.id,
+    });
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Удалить подписку устройства (кнопка «Отключить», выход из системы).
+ * Body: { endpoint } — одно устройство, { all: true } — все устройства.
+ */
+exports.pushUnsubscribe = async (req, res) => {
+  try {
+    const { endpoint, all } = req.body || {};
+    let removed;
+    if (all) {
+      removed = await PushService.unsubscribeAll(req.user.id);
+    } else {
+      if (typeof endpoint !== 'string' || !endpoint.trim()) {
+        return res.status(400).json({ error: 'Укажите endpoint подписки' });
+      }
+      removed = await PushService.unsubscribe(req.user.id, endpoint.trim());
+    }
+    res.json({ ok: true, removed });
+  } catch (err) {
+    console.error('[pushUnsubscribe] Ошибка:', err);
+    NotificationService.logServerError('user.pushUnsubscribe', err, {
+      userId: req.user?.id,
+    });
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Сколько устройств пользователя подписано на Web Push (для UI профиля).
+ */
+exports.getPushStatus = async (req, res) => {
+  try {
+    const count = await PushService.countForUser(req.user.id);
+    res.json({ enabled: PushService.enabled, count });
+  } catch (err) {
+    console.error('[getPushStatus] Ошибка:', err);
     res.status(500).json({ error: err.message });
   }
 };

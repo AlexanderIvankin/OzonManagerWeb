@@ -1,6 +1,12 @@
 const { getDB } = require('../config/database');
 const Notification = require('../models/Notification');
-const { notifyUser, notifyModerators, notifyStaffLive } = require('../socket');
+const PushService = require('./PushService');
+const {
+  notifyUser,
+  notifyUsers,
+  notifyModerators,
+  isUserOnline,
+} = require('../socket');
 // Единый источник истины по ролям персонала (модуль без зависимостей —
 // цикл require через socket.js / middlewares/auth исключён).
 const { STAFF_ROLES } = require('../config/staffRoles');
@@ -11,13 +17,20 @@ const { STAFF_ROLES } = require('../config/staffRoles');
 // (массив админов/модераторов/создателя поддерживается автоматически).
 // Чтобы добавить/убрать роль — достаточно править src/config/staffRoles.js (не здесь).
 //
-// Live-доставка через WebSocket:
-//   • события о действиях сотрудников (notifyStaff) в реальном времени
-//     получает ТОЛЬКО роль 'moderator' (комната 'moderators' в socket.js);
-//   • остальные роли персонала (admin, god) читают действия сотрудников
-//     в архиве журнала (страница «Оповещения» -> вкладка «Персонал»);
-//   • ошибки сервера (logServerError) доставляются live всему персоналу
-//     (комната 'staff').
+// Куда доставлять оповещение (Socket.IO или Web Push) — решает notifyUser:
+//   • пользователь ОНЛАЙН — есть хотя бы один активный сокет в комнате
+//     `user_<id>` (socket.isUserOnline) -> мгновенно через Socket.IO;
+//   • пользователь ОФЛАЙН — Web Push (PushService) на ВСЕ его подписанные
+//     устройства (TTL 24 ч: FCM/APNs подержит и доставит, когда он вернётся).
+// Смысл связки: сокет даёт мгновенность онлайн-пользователям, push —
+// гарантированную доставку тем, кто офлайн.
+//
+// Live-доставка событий о действиях сотрудников (notifyStaff) адресуется
+// только ролям из opts.liveRoles (по умолчанию ['moderator'] — как и раньше,
+// комната 'moderators'). Остальные роли персонала (admin, god) читают эти
+// события в архиве журнала (страница «Оповещения» -> вкладка «Персонал»).
+// Ошибки сервера (logServerError) уходят live модераторам, а офлайн-
+// модераторам — ещё и Web Push (ошибка сервера — высокий сигнал).
 // ============================================================================
 
 // ============================================================================
@@ -460,6 +473,62 @@ function extractSearchFields(payload) {
   };
 }
 
+// ============================================================================
+// ДОСТАВКА: Socket.IO (онлайн) или Web Push (офлайн)
+// ============================================================================
+
+/**
+ * Payload для Service Worker (frontend/public/sw.js).
+ *   title/body — как в live-тосте;
+ *   url        — куда вести по клику на уведомление;
+ *   tag        — «схлопывание» дублей одного и того же оповещения;
+ *   vibrate    — паттерн вибрации (Android; iOS игнорирует).
+ */
+function buildPushPayload(data = {}) {
+  const id = data.id != null ? data.id : null;
+  const type = data.type || 'notification';
+  return {
+    id,
+    type,
+    audience: data.audience || 'user',
+    title: data.title || 'Ozon Manager',
+    body: data.body || data.message || '',
+    url: data.url || '/notifications',
+    tag: id != null ? `notification-${id}` : `notification-${type}`,
+    vibrate: [200, 100, 200],
+    createdAt: data.createdAt || Date.now(),
+  };
+}
+
+/**
+ * Доставить «живое» оповещение одному пользователю:
+ *   онлайн -> Socket.IO ('socket');
+ *   офлайн -> Web Push ('push'), если push !== false;
+ *   нет подписок и нет сокета -> 'none'.
+ * Никогда не бросает исключений (сбой доставки не ломает бизнес-логику).
+ */
+async function deliverLive(userId, event, data, { push = true } = {}) {
+  if (notifyUser(userId, event, data)) return 'socket';
+  if (!push) return 'none';
+  const res = await PushService.sendToUser(userId, buildPushPayload(data));
+  return res.sent > 0 ? 'push' : 'none';
+}
+
+/**
+ * Разовая рассылка «живого» события по списку id: онлайн — сокет,
+ * офлайн — Web Push (параллельно, чтобы сеть не задерживала вызывающего).
+ * @returns {Promise<number[]>} id тех, кому событие ушло в сокет
+ */
+async function deliverLiveBatch(userIds, event, data, { push = true } = {}) {
+  const delivered = notifyUsers(userIds, event, data);
+  if (!push || delivered.length === (userIds || []).length) return delivered;
+  const offline = (userIds || []).filter((id) => !delivered.includes(id));
+  await Promise.allSettled(
+    offline.map((id) => PushService.sendToUser(id, buildPushPayload(data)))
+  );
+  return delivered;
+}
+
 class NotificationService {
   /**
    * Роли персонала (журнал действий + ошибки сервера).
@@ -469,18 +538,27 @@ class NotificationService {
   }
 
   /**
-   * Персональное оповещение пользователю: запись в notifications.db + WebSocket.
+   * Персональное оповещение пользователю: запись в notifications.db +
+   * доставка «куда нужно» — Socket.IO (онлайн) или Web Push (офлайн).
    * Никогда не бросает исключений — сбой оповещений не должен ломать бизнес-логику.
    *
    * @param {number} userId
    * @param {string} type
    * @param {object} payload
-   * @param {object} opts - { persist = true }. persist: false — ТОЛЬКО мгновенная
-   *   доставка через WebSocket (toast), БЕЗ записи в историю «Оповещений».
-   *   Используется для незначимых/информационных событий (например,
-   *   «заработок уже 0, рассчитывать нечего»).
+   * @param {object} opts
+   *   persist = true  — писать ли запись в историю «Оповещений»
+   *                     (persist: false — только мгновенный тост, БЕЗ записи:
+   *                     «заработок уже 0», кулдаун команды, отклонённая загрузка);
+   *   push = persist  — слать ли Web Push, если пользователь ОФЛАЙН. По умолчанию
+   *                     транзиентные (persist: false) не пушатся: это немедленный
+   *                     отклик на действие в открытом UI.
    */
-  static async notifyUser(userId, type, payload = {}, { persist = true } = {}) {
+  static async notifyUser(
+    userId,
+    type,
+    payload = {},
+    { persist = true, push = persist } = {}
+  ) {
     try {
       const tpl = TEMPLATES[type] ? TEMPLATES[type](payload) : null;
       const text = tpl && tpl.user;
@@ -500,17 +578,23 @@ class NotificationService {
         });
       }
 
-      // Мгновенная доставка через WebSocket (если пользователь онлайн)
-      notifyUser(userId, 'notification_new', {
-        id,
-        audience: 'user',
-        type,
-        title: text.title,
-        message: text.message,
-        payload,
-        createdAt: Date.now(),
-        transient: !persist,
-      });
+      // Доставка: онлайн — Socket.IO (мгновенно, во все вкладки/устройства),
+      // офлайн — Web Push (на все подписанные устройства пользователя).
+      await deliverLive(
+        userId,
+        'notification_new',
+        {
+          id,
+          audience: 'user',
+          type,
+          title: text.title,
+          message: text.message,
+          payload,
+          createdAt: Date.now(),
+          transient: !persist,
+        },
+        { push }
+      );
     } catch (err) {
       console.error(
         `[NotificationService] Не удалось сохранить оповещение для пользователя ${userId}:`,
@@ -532,8 +616,17 @@ class NotificationService {
    *   replaceUnreadType— если задан тип, перед вставкой нового оповещения
    *                      удаляются все НЕПРОЧИТАННЫЕ оповещения этого типа
    *                      (дедупликация: подобное оповещение всегда ОДНО).
+   *   liveRoles        — кому доставлять событие «живьём» (сокет или push).
+   *                      По умолчанию ['moderator'] — паритет с прежней
+   *                      рассылкой в комнату 'moderators'. Пустой массив или
+   *                      null — запись только в архив журнала (без live/push).
+   *   push = true      — слать ли Web Push тем получателям из liveRoles, кто ОФЛАЙН.
    */
-  static async notifyStaff(type, payload = {}, { roles = null, replaceUnreadType = null } = {}) {
+  static async notifyStaff(
+    type,
+    payload = {},
+    { roles = null, replaceUnreadType = null, liveRoles = ['moderator'], push = true } = {}
+  ) {
     try {
       const tpl = TEMPLATES[type] ? TEMPLATES[type](payload) : null;
       const text = tpl && tpl.staff;
@@ -542,7 +635,7 @@ class NotificationService {
       const notifyRoles = Array.isArray(roles) && roles.length ? roles : STAFF_ROLES;
       const db = getDB();
       const recipients = await db.all(
-        `SELECT id FROM users WHERE role IN (${notifyRoles.map(() => '?').join(',')}) AND is_fired = 0`,
+        `SELECT id, role FROM users WHERE role IN (${notifyRoles.map(() => '?').join(',')}) AND is_fired = 0`,
         ...notifyRoles
       );
       if (!recipients.length) return;
@@ -567,17 +660,33 @@ class NotificationService {
         }))
       );
 
-      // recipients ограничен ролями (см. opts.roles) — live-доставка через
-      // комнату 'moderators' соответствует получателям по умолчанию, а при
-      // сужении круга (например, только модераторы) она им и предназначена.
-      notifyModerators('notification_new', {
-        audience: 'staff',
-        type,
-        title: text.title,
-        message: text.message,
-        payload,
-        createdAt,
-      });
+      // «Живая» доставка — только ролям из opts.liveRoles (по умолчанию
+      // модераторы — паритет с прежней рассылкой в комнату 'moderators').
+      // Онлайн -> адресный сокет в комнату `user_<id>`: широковещательная
+      // рассылка в 'moderators' дала бы пользователю с несколькими вкладками
+      // ДУБЛЬ тоста, а адресная — ровно один на все его вкладки.
+      // Офлайн -> Web Push на все подписанные устройства.
+      const liveRoleList = Array.isArray(liveRoles) ? liveRoles : [];
+      const liveRecipientIds = liveRoleList.length
+        ? recipients
+            .filter((r) => liveRoleList.includes(r.role))
+            .map((r) => r.id)
+        : [];
+      if (liveRecipientIds.length) {
+        await deliverLiveBatch(
+          liveRecipientIds,
+          'notification_new',
+          {
+            audience: 'staff',
+            type,
+            title: text.title,
+            message: text.message,
+            payload,
+            createdAt,
+          },
+          { push }
+        );
+      }
     } catch (err) {
       console.error(
         '[NotificationService] Не удалось сохранить оповещение для персонала:',
@@ -606,13 +715,45 @@ class NotificationService {
         context,
       });
 
-      notifyModerators('server_error_new', {
+      const data = {
         id,
         level,
         source,
         message,
         createdAt: Date.now(),
-      });
+      };
+
+      // Live — модераторам (как раньше, комната 'moderators').
+      notifyModerators('server_error_new', data);
+
+      // Офлайн-модераторам — ещё и Web Push: ошибка сервера важна, а «живьём»
+      // (сокетом) они её не увидят, пока не откроют приложение.
+      // Только для level='error': warn-логи могут повторяться часто, и телефон
+      // модератора не должен звенеть на каждый из них (live-тост остаётся).
+      const db = getDB();
+      const moderators = await db.all(
+        "SELECT id FROM users WHERE role = 'moderator' AND is_fired = 0"
+      );
+      const offlineModerators = moderators
+        .filter((u) => !isUserOnline(u.id))
+        .map((u) => u.id);
+      if (level !== 'warn' && offlineModerators.length) {
+        await Promise.allSettled(
+          offlineModerators.map((userId) =>
+            PushService.sendToUser(
+              userId,
+              buildPushPayload({
+                ...data,
+                type: 'server_error_new',
+                title:
+                  level === 'warn'
+                    ? `⚠️ Предупреждение сервера (${source})`
+                    : `🚨 Ошибка сервера (${source})`,
+              })
+            )
+          )
+        );
+      }
     } catch (logErr) {
       console.error(
         '[NotificationService] Не удалось сохранить ошибку сервера:',

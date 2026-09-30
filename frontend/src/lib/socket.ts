@@ -106,6 +106,21 @@ export function onServerErrorNew(
 }
 
 /**
+ * Сокет подключился — в том числе ПЕРЕподключился после обрыва.
+ * Нужен фронту как сигнал «я снова онлайн, подтяни состояние»: пока
+ * пользователь был офлайн, оповещения могли прийти Web Push'ом, и счётчик
+ * непрочитанных в сайдбаре нужно обновить (сценарий 2).
+ * Возвращает функцию отписки.
+ */
+export function onSocketConnect(cb: () => void): () => void {
+  const s = getSocket();
+  s.on("connect", cb);
+  return () => {
+    s.off("connect", cb);
+  };
+}
+
+/**
  * Список оповещений изменился (прочитано/удалено) — для синхронизации бейджа.
  */
 export function onNotificationsChanged(cb: (data: unknown) => void): () => void {

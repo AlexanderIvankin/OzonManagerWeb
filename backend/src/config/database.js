@@ -370,6 +370,29 @@ async function createTables(db) {
   await db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_model_tokens_token ON model_download_tokens(token);`);
   await db.exec(`CREATE INDEX IF NOT EXISTS idx_model_tokens_expires ON model_download_tokens(expires_at);`);
 
+  // --- Подписки на Web Push (гарантированная доставка офлайн-пользователям) ---
+  // Одна строка = одна подписка браузера (endpoint уникален). Если на устройстве
+  // под другим аккаунтом входят в систему повторно, endpoint тот же — запись
+  // ПЕРЕприсваивается новому user_id (upsert в PushService.subscribe).
+  // Дополняет Socket.IO: онлайн-пользователю событие уходит мгновенно по сокету,
+  // офлайн — сюда (см. src/services/PushService.js, NotificationService.js).
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,      -- URL push-сервиса (FCM/APNs)
+      p256dh TEXT NOT NULL,               -- публичный ключ клиента
+      auth TEXT NOT NULL,                 -- секрет клиента
+      user_agent TEXT,                    -- чтобы различать устройства
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  await db.exec(`CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);`);
+
+  console.log('✅ Все таблицы созданы/проверены');
+
   console.log('✅ Все таблицы созданы/проверены');
 }
 

@@ -14,6 +14,17 @@ router.get('/profile', userController.getProfile);
 // доступно всем авторизованным (даже с ролью 'user')
 router.put('/profile', userController.updateDisplayName);
 
+// ===========================================================================
+// Web Push: подписки на оповещения.
+// Размещено ДО requireEmployee — подписаться может ЛЮБОЙ авторизованный, т.к.
+// личные оповещения приходят всем ролям (включая 'user': например, сброс пароля).
+// Канал доставки (Socket.IO или Web Push) выбирает NotificationService.
+// ===========================================================================
+router.get('/push-public-key', userController.getPushPublicKey);
+router.get('/push-status', userController.getPushStatus);
+router.post('/push-subscribe', userController.pushSubscribe);
+router.post('/push-unsubscribe', userController.pushUnsubscribe);
+
 // Для всех остальных маршрутов требуется роль сотрудника (employee, moderator, admin)
 router.use(requireEmployee);
 

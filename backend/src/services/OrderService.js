@@ -229,7 +229,13 @@ class OrderService {
             products_count: o.products?.length || 0,
           })),
         },
-        { roles: ['moderator'], replaceUnreadType: 'new_orders_available' },
+        {
+          roles: ['moderator'],
+          replaceUnreadType: 'new_orders_available',
+          // Без Web Push: оповещение дедуплицируется и обновляется постоянно —
+          // будить телефон на каждый тик планировщика нельзя.
+          push: false,
+        },
       );
 
       // Если нет активного заказа и есть заказы – берём первый

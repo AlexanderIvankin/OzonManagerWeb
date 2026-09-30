@@ -95,9 +95,53 @@ function notifyStaffLive(event, data) {
   io.to('staff').emit(event, data);
 }
 
-function notifyUser(userId, event, data) {
-  if (!io) return;
-  io.to(`user_${userId}`).emit(event, data);
+/**
+ * Онлайн ли пользователь: есть хотя бы ОДИН активный сокет.
+ * Все вкладки/устройства с открытым сайтом входят в комнату `user_<id>`,
+ * поэтому размер комнаты — это и есть «Set активных сокетов»
+ * (Socket.IO ведёт его сам, отдельная структура не нужна).
+ * Пользователь считается онлайн при количестве сокетов >= 1.
+ *
+ * ВАЖНО: адаптер in-memory корректен для одного инстанса (PM2 fork,
+ * instances: 1). При горизонтальном масштабировании нужен
+ * @socket.io/redis-adapter — иначе каждый инстанс видит только свои сокеты.
+ */
+function isUserOnline(userId) {
+  if (!io) return false;
+  const room = io.sockets.adapter.rooms.get(`user_${userId}`);
+  return Boolean(room && room.size > 0);
 }
 
-module.exports = { initSocket, getIO, notifyModerators, notifyStaffLive, notifyUser };
+/**
+ * Доставить событие пользователю. Возвращает true, если у него был хотя бы
+ * один активный сокет (событие ушло), иначе false — по этому признаку
+ * NotificationService решает отправить Web Push офлайн-получателю.
+ */
+function notifyUser(userId, event, data) {
+  if (!isUserOnline(userId)) return false;
+  io.to(`user_${userId}`).emit(event, data);
+  return true;
+}
+
+/**
+ * Персональная рассылка нескольким пользователям с онлайн-фильтром.
+ * Возвращает массив id тех, кому событие реально ушло в сокет
+ * (остальным вызывающий отправляет Web Push).
+ */
+function notifyUsers(userIds, event, data) {
+  const delivered = [];
+  for (const id of userIds || []) {
+    if (notifyUser(id, event, data)) delivered.push(id);
+  }
+  return delivered;
+}
+
+module.exports = {
+  initSocket,
+  getIO,
+  notifyModerators,
+  notifyStaffLive,
+  notifyUser,
+  notifyUsers,
+  isUserOnline,
+};

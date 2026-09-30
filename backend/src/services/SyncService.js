@@ -459,12 +459,18 @@ class SyncService {
       for (const pr of flat) {
         console.warn(`[SyncService]   • ${pr.name || '(без имени)'}: ${pr.field} «${pr.raw}» — ${pr.note}`);
       }
-      await NotificationService.notifyStaff('sync_data_invalid', {
-        fileName: path.basename(filePath),
-        adminName,
-        problems: flat,
-        userName: flat.map((pr) => pr.name).filter(Boolean).slice(0, 3).join(', ') || null,
-      });
+      // Без Web Push: отчёт для архива — синхронизацию запускает сам персонал
+      // из админки, он и так смотрит на экран.
+      await NotificationService.notifyStaff(
+        'sync_data_invalid',
+        {
+          fileName: path.basename(filePath),
+          adminName,
+          problems: flat,
+          userName: flat.map((pr) => pr.name).filter(Boolean).slice(0, 3).join(', ') || null,
+        },
+        { push: false }
+      );
     }
 
     // --- Увольнение сотрудников, отсутствующих в актуальном team-info.xlsx ---

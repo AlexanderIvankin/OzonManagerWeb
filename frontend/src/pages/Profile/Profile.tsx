@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { RootState, AppDispatch } from "../../store";
 import { updateUser } from "../../store/authSlice";
 import { userApi } from "../../api/user";
+import { usePushSubscription } from "../../hooks/usePushSubscription";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -39,6 +40,19 @@ export const Profile = () => {
   const [editingDisplayName, setEditingDisplayName] = useState(false);
   const [displayNameInput, setDisplayNameInput] = useState("");
   const [savingDisplayName, setSavingDisplayName] = useState(false);
+  // Web Push: включение/отключение уведомлений на этом устройстве.
+  // Разрешение браузера запрашивается ТОЛЬКО по кнопке (не при загрузке) —
+  // отклонённый автопопап вернуть уже нельзя.
+  const {
+    status: pushStatus,
+    enable: enablePush,
+    disable: disablePush,
+  } = usePushSubscription();
+
+  const handleDisablePush = async () => {
+    await disablePush();
+    toast.success("Уведомления отключены на этом устройстве");
+  };
 
   const handleSaveDisplayName = async () => {
     const value = displayNameInput.trim();
@@ -238,6 +252,74 @@ export const Profile = () => {
               </p>
             </div>
           )}
+
+          <Separator />
+
+          {/* Web Push: оповещения на этом устройстве.
+              Пока сайт открыт, события приходят мгновенно по WebSocket;
+              когда приложение закрыто — Web Push (звук и вибрацию даёт система). */}
+          <div className="flex flex-col items-center gap-2 text-center">
+            <div className="flex items-center gap-2">
+              <span className="text-lg" aria-hidden="true">
+                🔔
+              </span>
+              <p className="font-medium">Уведомления на устройстве</p>
+            </div>
+            <p className="text-sm text-muted-foreground max-w-md">
+              Пока сайт открыт, оповещения приходят мгновенно. Включите
+              уведомления, чтобы получать их со звуком и вибрацией, когда
+              приложение закрыто.
+            </p>
+
+            {pushStatus === "unsupported" && (
+              <p className="text-sm text-muted-foreground">
+                Браузер не поддерживает push-уведомления.
+              </p>
+            )}
+
+            {pushStatus === "denied" && (
+              <p className="text-sm text-destructive">
+                Уведомления запрещены в настройках браузера — разрешите их для
+                этого сайта.
+              </p>
+            )}
+
+            {pushStatus === "subscribed" && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <span className="text-sm text-green-600">
+                  ✅ Уведомления включены на этом устройстве
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleDisablePush()}
+                >
+                  Отключить
+                </Button>
+              </div>
+            )}
+
+            {(pushStatus === "prompt" ||
+              pushStatus === "error" ||
+              pushStatus === "subscribing") && (
+              <>
+                <Button
+                  size="sm"
+                  onClick={() => void enablePush()}
+                  disabled={pushStatus === "subscribing"}
+                >
+                  {pushStatus === "subscribing"
+                    ? "Подключаем..."
+                    : "🔔 Включить уведомления"}
+                </Button>
+                {pushStatus === "error" && (
+                  <p className="text-sm text-destructive">
+                    Не удалось подписаться — попробуйте ещё раз.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
 
           {/* Для сотрудников, модераторов и админов – переключатель приёма заказов */}
           {user?.role !== "user" && (

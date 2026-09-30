@@ -11,6 +11,7 @@ const ModelService = require('./services/ModelService');
 const OfferModel = require('./models/OfferModel');
 const Notification = require('./models/Notification');
 const NotificationService = require('./services/NotificationService');
+const PushService = require('./services/PushService');
 const AuthService = require('./services/AuthService');
 const CooldownService = require('./services/CooldownService');
 
@@ -361,12 +362,17 @@ function startMonthlyExportChecker() {
 
       monthlyExportGate.onSuccess(); // маркер только после успеха
 
-      // Запись в журнал действий персонала (модераторы получат её и live)
+      // Запись в журнал действий персонала (модераторы получат её и live).
+      // Без Web Push: итоговая/информационная запись — телефон не будим.
       const baseName = outputPath ? path.basename(outputPath) : null;
-      NotificationService.notifyStaff('monthly_export_done', {
-        month: monthStr,
-        file: baseName,
-      });
+      NotificationService.notifyStaff(
+        'monthly_export_done',
+        {
+          month: monthStr,
+          file: baseName,
+        },
+        { push: false }
+      );
     } catch (err) {
       console.error('[SCHEDULER] Ошибка автоматического экспорта:', err);
       monthlyExportGate.onFailure();
@@ -427,6 +433,18 @@ function startNotificationsCleanup() {
       if (result.notifications > 0 || result.errors > 0) {
         console.log(
           `[SCHEDULER] Очистка notifications.db: удалено ${result.notifications} оповещений старше ${notifDays} дн., ${result.errors} ошибок старше ${errorDays} дн.`
+        );
+      }
+
+      // Заодно чистим «залежавшиеся» подписки Web Push (браузер отписался,
+      // устройство выброшено, аккаунт сменился): те, что не использовались
+      // PUSH_SUB_RETENTION_DAYS дней. Активные устройства переподписываются при
+      // каждом входе в приложение (upsert обновляет last_used_at) и не удаляются.
+      const pushDays = envInt('PUSH_SUB_RETENTION_DAYS', 180, 7, 3650);
+      const removedSubs = await PushService.pruneStale(pushDays);
+      if (removedSubs > 0) {
+        console.log(
+          `[SCHEDULER] Очистка Web Push: удалено ${removedSubs} неактивных подписок (старше ${pushDays} дн.)`
         );
       }
     } catch (err) {
@@ -680,10 +698,15 @@ async function runAwaitingDeliverReminder(delayHours) {
 
   // 4. Итог проверки — запись в журнал действий персонала.
   try {
-    await NotificationService.notifyStaff('deliver_reminder_summary', {
-      found: completedAssignments.length,
-      sent,
-    });
+    // Без Web Push: сводка для архива — сотрудникам уже ушли личные пуши.
+    await NotificationService.notifyStaff(
+      'deliver_reminder_summary',
+      {
+        found: completedAssignments.length,
+        sent,
+      },
+      { push: false }
+    );
   } catch (err) {
     console.error('[REMINDER] Не удалось отправить сводку персоналу:', err.message);
   }

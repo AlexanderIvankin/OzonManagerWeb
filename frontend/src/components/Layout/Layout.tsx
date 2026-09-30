@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { RootState } from "../../store";
@@ -13,7 +13,18 @@ import {
   disconnectSocket,
   onNotificationNew,
   onNotificationsChanged,
+  onSocketConnect,
 } from "../../lib/socket";
+import {
+  disablePush,
+  usePushSubscription,
+} from "../../hooks/usePushSubscription";
+import {
+  playNotificationSound,
+  showSystemNotification,
+  unlockNotificationSound,
+  vibrate,
+} from "../../lib/notify";
 
 export const Layout = () => {
   const user = useSelector((state: RootState) => state.auth.user);
@@ -39,18 +50,37 @@ export const Layout = () => {
         isActive ? "bg-primary/10 font-medium text-primary" : "hover:bg-accent"
       }`;
 
-  useEffect(() => {
-    let cancelled = false;
+  // Web Push: подписка этого устройства на оповещения (офлайн-доставка).
+  // Попап разрешения здесь НЕ показывается — включение вынесено в «Профиль»,
+  // иначе пользователи отклоняют запрос на старте и теряют возможность
+  // включить уведомления навсегда.
+  usePushSubscription();
 
-    const load = async () => {
-      try {
-        const data = await notificationsApi.unreadCount("mine");
-        if (!cancelled) setUnreadCount(data.count);
-      } catch {
-        // счётчик некритичен
-      }
+  // Непрочитанные личные оповещения для бейджа в сайдбаре. Вынесено в
+  // useCallback: перезагружается по сокету и при переподключении (офлайн -> онлайн).
+  const loadUnread = useCallback(async () => {
+    try {
+      const data = await notificationsApi.unreadCount("mine");
+      setUnreadCount(data.count);
+    } catch {
+      // счётчик некритичен
+    }
+  }, []);
+
+  // Разблокировка звука: браузеры разрешают воспроизведение только после
+  // первого взаимодействия пользователя со страницей (клик/тап/клавиша).
+  useEffect(() => {
+    const unlock = () => unlockNotificationSound();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
-    load();
+  }, []);
+
+  useEffect(() => {
+    loadUnread();
 
     // Живое обновление бейджа: новое оповещение или изменение (прочитано/удалено)
     const offNew = onNotificationNew((n) => {
@@ -61,19 +91,61 @@ export const Layout = () => {
       if (n.audience === "staff" && !isStaff) return;
       toast(n.title, { description: n.message || undefined });
 
-      load();
+      // Звук и вибрация: событие дошло по сокету, но вкладка может быть в фоне
+      // (сценарий 1) — пользователь всё равно должен «услышать» оповещение.
+      // В фоне дополнительно показываем системное уведомление: его видно вне
+      // браузера, и оно даёт системный звук (то же, что и Web Push).
+      playNotificationSound();
+      vibrate();
+      if (document.hidden) {
+        void showSystemNotification(n.title, n.message || "", {
+          url: "/notifications",
+          tag: n.id != null ? `notification-${n.id}` : `notification-${n.type}`,
+          type: n.type,
+        });
+      }
+
+      loadUnread();
     });
-    const offChanged = onNotificationsChanged(load);
+    const offChanged = onNotificationsChanged(loadUnread);
+    // Сценарий 2: пользователь вернулся после офлайна — сокет переподключился
+    // (или это первый коннект). Подтягиваем непрочитанные, накопившиеся, пока
+    // приложение было закрыто: их мог доставить Web Push в системный центр.
+    const offConnect = onSocketConnect(loadUnread);
 
     return () => {
-      cancelled = true;
       offNew();
       offChanged();
+      offConnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.role]);
+  }, [user?.role, loadUnread]);
+
+  // Push, доставленный пока приложение открыто (вкладка в фоне): sw.js шлёт
+  // postMessage — проигрываем свой звук/вибрацию и обновляем бейдж.
+  // (Сам Service Worker звук воспроизводить не может: у него нет DOM.)
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string } | undefined;
+      if (data?.type !== "push-received") return;
+      playNotificationSound();
+      vibrate();
+      loadUnread();
+    };
+
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+    };
+  }, [loadUnread]);
 
   const handleLogout = async () => {
+    // Отписываем устройство от Web Push, пока access-токен ещё валиден: после
+    // выхода оповещения на этом браузере приходить не должны. При входе другого
+    // пользователя подписка переприсвоится ему (PushService.subscribe, upsert
+    // по endpoint) — чужие уведомления не «просочатся».
+    await disablePush();
     disconnectSocket();
     await dispatch(logout());
     navigate("/login");
