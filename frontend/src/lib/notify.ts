@@ -15,6 +15,7 @@
 // ============================================================================
 
 let audioCtx: AudioContext | null = null;
+let unlockInitialized = false;
 
 /** Ленивое создание AudioContext (в старых Safari он webkit-prefixed). */
 function getAudioContext(): AudioContext | null {
@@ -33,22 +34,8 @@ function getAudioContext(): AudioContext | null {
   }
 }
 
-/**
- * «Разбудить» звук. Браузеры разрешают воспроизведение только после первого
- * взаимодействия пользователя со страницей, поэтому вызывается на первый
- * клик/тап/нажатие клавиши (см. Layout.tsx) — иначе первые оповещения
- * придут беззвучно.
- */
-export function unlockNotificationSound(): void {
-  const ctx = getAudioContext();
-  if (ctx && ctx.state === "suspended") void ctx.resume();
-}
-
-/** Короткий двухтональный сигнал оповещения (ошибки глушим — звук не критичен). */
-export function playNotificationSound(): void {
-  const ctx = getAudioContext();
-  if (!ctx || ctx.state !== "running") return;
-
+/** Сигнал оповещения на УЖЕ запущенном AudioContext. */
+function playTone(ctx: AudioContext): void {
   try {
     const now = ctx.currentTime;
     const gain = ctx.createGain();
@@ -68,6 +55,62 @@ export function playNotificationSound(): void {
   } catch {
     /* звук — не критичная функция */
   }
+}
+
+/**
+ * «Разбудить» звук. Браузеры разрешают воспроизведение только после первого
+ * взаимодействия пользователя со страницей, поэтому контекст создаётся и
+ * возобновляется из обработчика жеста (клик/тап/клавиша).
+ */
+export function unlockNotificationSound(): void {
+  const ctx = getAudioContext();
+  if (ctx && ctx.state === "suspended") void ctx.resume();
+}
+
+/**
+ * Подписка на первое взаимодействие со страницей — ОДИН РАЗ при старте
+ * приложения (main.tsx). Так разблокировка срабатывает и на странице логина,
+ * до монтирования Layout, и не теряется при переходах между страницами.
+ */
+export function initNotificationSoundUnlock(): void {
+  if (unlockInitialized || typeof window === "undefined") return;
+  unlockInitialized = true;
+
+  const unlock = () => unlockNotificationSound();
+  const events: Array<keyof WindowEventMap> = [
+    "pointerdown",
+    "keydown",
+    "touchstart",
+    "click",
+  ];
+  for (const event of events) {
+    window.addEventListener(event, unlock, { once: true, passive: true });
+  }
+}
+
+/**
+ * Проиграть сигнал оповещения.
+ * Если контекст ещё "suspended" (после перезагрузки страницы браузер
+ * «замораживает» его, даже если пользователь уже взаимодействовал с сайтом) —
+ * пробуем resume() и играем сразу после него.
+ */
+export function playNotificationSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  if (ctx.state === "running") {
+    playTone(ctx);
+    return;
+  }
+
+  ctx
+    .resume()
+    .then(() => {
+      if (ctx.state === "running") playTone(ctx);
+    })
+    .catch(() => {
+      /* звук запрещён до первого жеста — прозвучит после него */
+    });
 }
 
 /** Вибрация (Android). iOS vibrate не поддерживает — вызов просто игнорируется. */

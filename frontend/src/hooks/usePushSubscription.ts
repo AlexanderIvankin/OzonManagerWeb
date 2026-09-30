@@ -21,6 +21,37 @@ import { pushApi, PushSubscriptionJSON } from "../api/user";
 //      оповещения на этом браузере больше не приходили.
 // ============================================================================
 
+// ============================================================================
+// «Пользователь сам отключил уведомления на этом устройстве».
+//
+// ВАЖНО: отписка (pushManager.unsubscribe) НЕ отзывает разрешение браузера —
+// Notification.permission остаётся 'granted'. Без этого флага молчаливая
+// автоподписка при следующей загрузке страницы оформляла подписку заново, и
+// кнопка «Отключить» не работала. Флаг живёт в localStorage, т.е. это
+// устройство/браузер (как и сама подписка), и НЕ сбрасывается при выходе из
+// системы: логаут — не отказ от уведомлений.
+// ============================================================================
+const PUSH_OPT_OUT_KEY = "pushNotificationsDisabled";
+
+/** Пользователь осознанно отключил push на этом устройстве? */
+function isPushOptedOut(): boolean {
+  try {
+    return localStorage.getItem(PUSH_OPT_OUT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Запомнить выбор пользователя (true — отключено, false — включено). */
+function setPushOptedOut(disabled: boolean): void {
+  try {
+    if (disabled) localStorage.setItem(PUSH_OPT_OUT_KEY, "1");
+    else localStorage.removeItem(PUSH_OPT_OUT_KEY);
+  } catch {
+    /* localStorage недоступен — работаем как раньше */
+  }
+}
+
 // new Uint8Array(length) даёт Uint8Array<ArrayBuffer> — это и есть BufferSource,
 // который ожидает pushManager.subscribe({ applicationServerKey }).
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -96,6 +127,11 @@ export function usePushSubscription() {
     async (requestPermission: boolean): Promise<PushStatus> => {
       if (!isPushSupported()) return "unsupported";
       if (Notification.permission === "denied") return "denied";
+      // Пользователь сам отключил уведомления на этом устройстве: молчаливая
+      // автоподписка (requestPermission: false) не должна возвращать их обратно —
+      // иначе кнопка «Отключить» отменяется сама собой после перезагрузки страницы.
+      // Повторное включение — только явной кнопкой «Включить».
+      if (!requestPermission && isPushOptedOut()) return "prompt";
 
       try {
         // 1. Service Worker (public/sw.js → /sw.js, scope '/')
@@ -156,12 +192,16 @@ export function usePushSubscription() {
 
   /** Включить уведомления кнопкой — здесь браузер спросит разрешение. */
   const enable = useCallback(async () => {
+    setPushOptedOut(false);
     setStatus("subscribing");
     setStatus(await register(true));
   }, [register]);
 
   /** Отключить уведомления на этом устройстве. */
   const disable = useCallback(async () => {
+    // Выбор запоминаем ДО отписки: даже если отписка в браузере не удалась,
+    // автоподписка при следующей загрузке страницы уведомления не вернёт.
+    setPushOptedOut(true);
     await disablePush();
     setStatus(Notification.permission === "denied" ? "denied" : "prompt");
   }, []);

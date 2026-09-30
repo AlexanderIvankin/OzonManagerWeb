@@ -22,7 +22,6 @@ import {
 import {
   playNotificationSound,
   showSystemNotification,
-  unlockNotificationSound,
   vibrate,
 } from "../../lib/notify";
 
@@ -67,17 +66,9 @@ export const Layout = () => {
     }
   }, []);
 
-  // Разблокировка звука: браузеры разрешают воспроизведение только после
-  // первого взаимодействия пользователя со страницей (клик/тап/клавиша).
-  useEffect(() => {
-    const unlock = () => unlockNotificationSound();
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
+  // Разблокировка звука и системных уведомлений вынесена в main.tsx
+  // (initNotificationSoundUnlock) — она должна работать ещё на странице логина,
+  // до монтирования Layout, иначе первый жест пользователя не засчитывается.
 
   useEffect(() => {
     loadUnread();
