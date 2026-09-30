@@ -1,4 +1,18 @@
-const webpush = require('web-push');
+// ВАЖНО: PushService подключается на верхнем уровне через
+// NotificationService -> AuthService -> routes/auth, то есть загружается при
+// СТАРТЕ сервера. Поэтому MODULE_NOT_FOUND/SyntaxError из require('web-push')
+// (например, на сервере не выполнен `npm install` после обновления кода) уронил
+// бы весь API: nginx начал бы отдавать 502 на все запросы, включая /api/auth/login.
+// Вместо падения — режим «Web Push выключен» с понятной строкой в логе.
+let webpush = null;
+try {
+  webpush = require('web-push');
+} catch (err) {
+  console.warn(
+    `[Push] Web Push выключен: пакет web-push недоступен (${err.message}). ` +
+      'Выполните `npm install` в папке backend/ и перезапустите процесс.'
+  );
+}
 const { getDB } = require('../config/database');
 
 // ============================================================================
@@ -37,24 +51,28 @@ function isGone(err) {
   return err?.statusCode === 404 || err?.statusCode === 410;
 }
 
-try {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:admin@your-domain.ru',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY,
-  );
-  vapidReady = true;
-} catch (err) {
-  // Сервер продолжает работать, но Web Push отключён (ошибка видна в логе).
-  console.warn(
-    `[Push] Web Push выключен — проверьте VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY в .env: ${err.message}`
-  );
+if (!webpush) {
+  // Пакет не установлен — Web Push отключён (см. warning выше).
+} else {
+  try {
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || 'mailto:admin@your-domain.ru',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY,
+    );
+    vapidReady = true;
+  } catch (err) {
+    // Сервер продолжает работать, но Web Push отключён (ошибка видна в логе).
+    console.warn(
+      `[Push] Web Push выключен — проверьте VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY в .env: ${err.message}`
+    );
+  }
 }
 
 class PushService {
-  /** Настроен ли Web Push на сервере (валидные VAPID-ключи). */
+  /** Настроен ли Web Push на сервере (пакет установлен + валидные VAPID-ключи). */
   static get enabled() {
-    return vapidReady && Boolean(process.env.VAPID_PUBLIC_KEY);
+    return Boolean(webpush) && vapidReady && Boolean(process.env.VAPID_PUBLIC_KEY);
   }
 
   /** Публичный VAPID-ключ для клиента (applicationServerKey). */
@@ -180,7 +198,9 @@ class PushService {
    */
   static async sendToUser(userId, payload) {
     const result = { sent: 0, failed: 0, removed: 0 };
-    if (!PushService.enabled) return result;
+    // !webpush — пакет не установлен: отправлять нечем. Сервер при этом работает
+    // (см. защищённый require выше), просто без Web Push.
+    if (!webpush || !PushService.enabled) return result;
 
     try {
       const db = getDB();
