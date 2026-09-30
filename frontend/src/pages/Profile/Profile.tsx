@@ -242,14 +242,47 @@ export const Profile = () => {
 
           {/* Для роли user – сообщение о необходимости подтверждения */}
           {user?.role === "user" && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
-              <p className="font-medium">
-                ⚠️ Ваш аккаунт ожидает подтверждения
-              </p>
-              <p className="text-sm">
-                Обратитесь к администратору или модератору для получения прав
-                сотрудника.
-              </p>
+            <>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-yellow-800">
+                <p className="font-medium">
+                  ⚠️ Ваш аккаунт ожидает подтверждения
+                </p>
+                <p className="text-sm">
+                  Обратитесь к администратору или модератору для получения прав
+                  сотрудника.
+                </p>
+              </div>
+
+              <Separator />
+            </>
+          )}
+
+          {/* Для сотрудников, модераторов и админов – переключатель приёма заказов */}
+          {user?.role !== "user" && (
+            <div className="flex items-center justify-center gap-4 py-2">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  checked={takingOrders}
+                  onCheckedChange={handleToggleOrders}
+                  disabled={loadingToggle}
+                  id="taking-orders"
+                />
+                <Label
+                  htmlFor="taking-orders"
+                  className={
+                    loadingToggle ? "cursor-not-allowed" : "cursor-pointer"
+                  }
+                >
+                  {takingOrders
+                    ? "✅ Принимаю заказы"
+                    : "❌ Не принимаю заказы"}
+                </Label>
+              </div>
+              {loadingToggle && (
+                <span className="text-sm text-muted-foreground">
+                  Сохранение...
+                </span>
+              )}
             </div>
           )}
 
@@ -320,35 +353,6 @@ export const Profile = () => {
               </>
             )}
           </div>
-
-          {/* Для сотрудников, модераторов и админов – переключатель приёма заказов */}
-          {user?.role !== "user" && (
-            <div className="flex items-center justify-center gap-4 py-2">
-              <div className="flex items-center space-x-2">
-                <Switch
-                  checked={takingOrders}
-                  onCheckedChange={handleToggleOrders}
-                  disabled={loadingToggle}
-                  id="taking-orders"
-                />
-                <Label
-                  htmlFor="taking-orders"
-                  className={
-                    loadingToggle ? "cursor-not-allowed" : "cursor-pointer"
-                  }
-                >
-                  {takingOrders
-                    ? "✅ Принимаю заказы"
-                    : "❌ Не принимаю заказы"}
-                </Label>
-              </div>
-              {loadingToggle && (
-                <span className="text-sm text-muted-foreground">
-                  Сохранение...
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Заработок (для сотрудников и выше) */}
           {user?.role !== "user" && (
