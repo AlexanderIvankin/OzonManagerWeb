@@ -18,6 +18,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 // Размер zip в человекочитаемом виде
@@ -30,8 +37,22 @@ const formatSize = (bytes: number | null | undefined) => {
 const formatDateTime = (ts: number | null) =>
   ts ? new Date(ts).toLocaleString("ru-RU") : "—";
 
-// Короткий хеш для таблицы: первые 12 символов sha256
-const shortHash = (hash: string | null) => (hash ? hash.slice(0, 12) : "—");
+// Короткая версия модели для таблицы: первые 12 символов ETag из S3.
+// ETag — версия объекта: пока он не меняется, архив в хранилище тот же.
+// Как только он изменился (в т.ч. при замене файла напрямую в S3), бэкенд
+// сбрасывает локальный кэш и оповещает сотрудников (model_updated).
+const shortEtag = (etag: string | null) => (etag ? etag.slice(0, 12) : "—");
+
+// Фильтр «что сейчас в работе»: модели, выданные сотрудникам и/или лежащие
+// в локальном кэше сервера (значит, их активно раздают).
+type ModelFilter = "all" | "in_work" | "issued" | "cached";
+
+const MODEL_FILTERS: Array<{ value: ModelFilter; label: string }> = [
+  { value: "all", label: "Все модели" },
+  { value: "in_work", label: "🧰 В работе (выданы / в кэше)" },
+  { value: "issued", label: "👷 Выданы сотрудникам" },
+  { value: "cached", label: "📦 В кэше сервера" },
+];
 
 export const Models = () => {
   const [models, setModels] = useState<OfferModelRow[]>([]);
@@ -45,6 +66,9 @@ export const Models = () => {
   // Поиск по артикулу (offer_id): фильтрация клиентская — список моделей
   // загружается целиком, поэтому результат виден сразу при вводе
   const [search, setSearch] = useState("");
+
+  // Фильтр по статусу «в работе» (выданы сотрудникам / в кэше сервера)
+  const [filter, setFilter] = useState<ModelFilter>("all");
 
   const loadModels = async () => {
     setLoading(true);
@@ -64,9 +88,13 @@ export const Models = () => {
 
   // Фильтр по артикулу: подстрока в offer_id или в имени файла архива.
   // «ARD000003-N.zip» в поиске тоже найдёт модель ARD000003-N.
+  // Плюс фильтр по статусу «в работе» (фильтрация клиентская — список грузится целиком).
   const query = search.trim().toLowerCase();
   const offerQuery = query.replace(/\.zip$/, "") || query;
   const visibleModels = models.filter((m) => {
+    if (filter === "in_work" && !m.in_work) return false;
+    if (filter === "issued" && !(m.issued_count && m.issued_count > 0)) return false;
+    if (filter === "cached" && !m.in_cache) return false;
     if (!query) return true;
     return (
       m.offer_id.toLowerCase().includes(offerQuery) ||
@@ -74,6 +102,8 @@ export const Models = () => {
     );
   });
   const hasSearch = !!query;
+  const hasFilter = filter !== "all";
+  const inWorkCount = models.filter((m) => m.in_work).length;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -254,17 +284,22 @@ export const Models = () => {
             🗃️ Загруженные модели{" "}
             {models.length > 0 && (
               <Badge variant="outline">
-                {hasSearch && visibleModels.length !== models.length
+                {hasSearch || hasFilter
                   ? `${visibleModels.length} из ${models.length}`
                   : models.length}
+              </Badge>
+            )}
+            {inWorkCount > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                🧰 в работе: {inWorkCount}
               </Badge>
             )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Фильтр по артикулу (offer_id) */}
+          {/* Фильтр по артикулу (offer_id) + по статусу «в работе» */}
           {models.length > 0 && (
-            <div className="flex flex-col gap-2text-start sm:flex-row sm:items-end">
+            <div className="flex flex-col gap-2 text-start sm:flex-row sm:items-end">
               <div className="w-full space-y-1.5">
                 <Label
                   className="text-center justify-center lg:text-start lg:justify-start"
@@ -279,8 +314,42 @@ export const Models = () => {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              {hasSearch && (
-                <Button variant="ghost" onClick={() => setSearch("")}>
+              <div className="w-full space-y-1.5 sm:max-w-xs">
+                <Label
+                  className="text-center justify-center lg:text-start lg:justify-start"
+                  htmlFor="models-filter"
+                >
+                  Статус модели
+                </Label>
+                <Select
+                  value={filter}
+                  onValueChange={(v) => setFilter((v ?? "all") as ModelFilter)}
+                >
+                  <SelectTrigger id="models-filter" className="w-full">
+                    <SelectValue>
+                      {(val) =>
+                        MODEL_FILTERS.find((f) => f.value === val)?.label ||
+                        "Все модели"
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_FILTERS.map((f) => (
+                      <SelectItem key={f.value} value={f.value}>
+                        {f.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {(hasSearch || hasFilter) && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setFilter("all");
+                  }}
+                >
                   ✕ Сбросить
                 </Button>
               )}
@@ -297,7 +366,9 @@ export const Models = () => {
             </div>
           ) : visibleModels.length === 0 ? (
             <div className="py-6 text-center text-muted-foreground">
-              Ничего не найдено по артикулу «{search.trim()}»
+              {hasSearch
+                ? `Ничего не найдено по артикулу «${search.trim()}»`
+                : "Нет моделей с выбранным статусом"}
             </div>
           ) : (
             <Table>
@@ -306,8 +377,9 @@ export const Models = () => {
                   <TableHead className="text-center">Артикул</TableHead>
                   <TableHead className="text-center">Размер</TableHead>
                   <TableHead className="text-center hidden md:table-cell">
-                    SHA-256
+                    Версия (ETag)
                   </TableHead>
+                  <TableHead className="text-center">Статус</TableHead>
                   <TableHead className="text-center hidden lg:table-cell">
                     Загружена
                   </TableHead>
@@ -331,8 +403,32 @@ export const Models = () => {
                     </TableCell>
                     <TableCell className="text-center hidden md:table-cell">
                       <code className="text-xs text-muted-foreground">
-                        {shortHash(m.file_hash)}
+                        {shortEtag(m.s3_etag)}
                       </code>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        {m.issued_count ? (
+                          <Badge variant="secondary" title="Выдана сотрудникам">
+                            👷 {m.issued_count}
+                          </Badge>
+                        ) : null}
+                        {m.in_cache ? (
+                          <Badge
+                            variant="outline"
+                            title={
+                              m.cache_fresh
+                                ? "Файл в кэше сервера (актуальный)"
+                                : "Файл в кэше сервера (скоро будет перечитан из S3)"
+                            }
+                          >
+                            📦{m.cache_fresh ? "" : " ⏳"}
+                          </Badge>
+                        ) : null}
+                        {!m.issued_count && !m.in_cache ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="text-center hidden lg:table-cell text-xs text-muted-foreground">
                       {formatDateTime(m.uploaded_at)}

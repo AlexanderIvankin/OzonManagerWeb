@@ -30,6 +30,8 @@ exports.requestDownload = async (req, res) => {
       viaParent: String(grant.requestedOfferId) !== String(grant.sourceOfferId),
       fileName: grant.fileName,
       fileSize: grant.fileSize,
+      // Версия модели (ETag в S3); при скачивании сверяется с хранилищем.
+      version: grant.version || null,
     });
   } catch (err) {
     console.error('[modelsController.requestDownload] Ошибка:', err);
@@ -71,6 +73,8 @@ exports.downloadByToken = async (req, res) => {
       `attachment; filename="${info.fileName}"`
     );
     if (info.size) res.setHeader('Content-Length', String(info.size));
+    // Версия отданного файла (ETag в S3) — для диагностики/логов на клиенте
+    if (info.version) res.setHeader('X-Model-Version', String(info.version));
 
     // Отдаём из локального кэша (он уже прогрет из S3 при необходимости)
     const stream = fs.createReadStream(info.path);

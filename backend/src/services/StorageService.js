@@ -14,6 +14,15 @@ const CACHE_DIR = path.join(__dirname, '../../models-cache');
 // TTL локального кэша zip (по умолчанию 1 час) — настраивается в .env
 const CACHE_TTL = (parseInt(process.env.MODELS_CACHE_TTL_MIN, 10) || 60) * 60 * 1000;
 
+/**
+ * ETag объекта S3 приходит в кавычках ('"abc123"'). Для сравнения версий
+ * кавычки срезаем, чтобы значение из HeadObject и ListObjectsV2 совпадало.
+ */
+function normalizeEtag(etag) {
+  if (!etag) return null;
+  return String(etag).replace(/"/g, '').trim() || null;
+}
+
 class StorageService {
   static ensureCacheDir() {
     if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -44,8 +53,48 @@ class StorageService {
       ContentType: contentType,
     }));
     // сбросить локальный кэш (файл обновлён — старый кэш недействителен)
+    this.invalidateCache(offerId);
+  }
+
+  /**
+   * Сбросить локальный кэш zip для артикула (файл в S3 изменился/удалён).
+   * Идемпотентно: нет файла — не ошибка.
+   * @returns {boolean} true — файл кэша был и удалён
+   */
+  static invalidateCache(offerId) {
     const cp = this.cachePath(offerId);
-    if (fs.existsSync(cp)) fs.unlinkSync(cp);
+    if (fs.existsSync(cp)) {
+      try {
+        fs.unlinkSync(cp);
+        return true;
+      } catch (err) {
+        console.error(`[STORAGE] Не удалось удалить кэш ${offerId}:`, err.message);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Состояние локального кэша zip (для админки: «модель сейчас в кэше сервера»).
+   * @returns {{ cached: boolean, fresh: boolean, size: number|null, mtime: number|null }}
+   *   cached — файл присутствует; fresh — присутствует и не просрочен по TTL.
+   */
+  static cacheInfo(offerId) {
+    const cp = this.cachePath(offerId);
+    if (!fs.existsSync(cp)) {
+      return { cached: false, fresh: false, size: null, mtime: null };
+    }
+    try {
+      const st = fs.statSync(cp);
+      return {
+        cached: true,
+        fresh: st.mtimeMs + CACHE_TTL > Date.now(),
+        size: st.size,
+        mtime: st.mtimeMs,
+      };
+    } catch {
+      return { cached: false, fresh: false, size: null, mtime: null };
+    }
   }
 
   // Скачать zip: сначала кэш, потом S3, с прогревом кэша.
@@ -88,8 +137,9 @@ class StorageService {
 
   /**
    * HeadObject: existence + метаданные без скачивания.
-   * @returns {Promise<{size: number|null, lastModified: number|null}|null>}
+   * @returns {Promise<{size: number|null, lastModified: number|null, etag: string|null}|null>}
    *   null — объекта нет (404/NoSuchKey); прочие ошибки пробрасываются.
+   *   etag — версия объекта (для сверки «файл изменился?» без скачивания тела).
    */
   static async statZip(offerId) {
     try {
@@ -100,6 +150,7 @@ class StorageService {
       return {
         size: typeof st.ContentLength === 'number' ? st.ContentLength : null,
         lastModified: st.LastModified ? new Date(st.LastModified).getTime() : null,
+        etag: normalizeEtag(st.ETag),
       };
     } catch (err) {
       const status = err && err.$metadata && err.$metadata.httpStatusCode;
@@ -112,7 +163,7 @@ class StorageService {
    * ListObjectsV2: все zip-архивы в бакете (с пагинацией по ContinuationToken).
    * Возвращает и ключ, и offer_id (без MODELS_PREFIX и '.zip') — для
    * периодической синхронизации S3 -> offer_models (ModelService.syncFromStorage).
-   * @returns {Promise<Array<{key: string, offerId: string, size: number|null, lastModified: number|null}>>}
+   * @returns {Promise<Array<{key: string, offerId: string, size: number|null, lastModified: number|null, etag: string|null}>>}
    */
   static async listZipKeys() {
     const out = [];
@@ -132,6 +183,7 @@ class StorageService {
           offerId,
           size: typeof obj.Size === 'number' ? obj.Size : null,
           lastModified: obj.LastModified ? new Date(obj.LastModified).getTime() : null,
+          etag: normalizeEtag(obj.ETag),
         });
       }
       token = resp.IsTruncated ? resp.NextContinuationToken : undefined;
@@ -141,8 +193,7 @@ class StorageService {
 
   static async deleteZip(offerId) {
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: this.keyFor(offerId) }));
-    const cp = this.cachePath(offerId);
-    if (fs.existsSync(cp)) fs.unlinkSync(cp);
+    this.invalidateCache(offerId);
   }
   // Очистка просроченного кэша (для scheduler)
   static cleanCache() {

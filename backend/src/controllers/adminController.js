@@ -1322,6 +1322,7 @@ exports.downloadModel = async (req, res, next) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${info.fileName}"`);
     if (info.size) res.setHeader('Content-Length', String(info.size));
+    if (info.version) res.setHeader('X-Model-Version', String(info.version));
     const stream = fs.createReadStream(info.path);
     stream.on('error', () => { if (!res.headersSent) res.status(500).end(); else res.end(); });
     stream.pipe(res);

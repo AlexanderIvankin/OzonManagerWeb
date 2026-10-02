@@ -780,9 +780,11 @@ function stopOrderStatusSyncChecker() {
 //     MODELS_CACHE_TTL_MIN, по умолчанию 1 час) — StorageService.cleanCache();
 //   • удаление использованных и просроченных одноразовых токенов скачивания —
 //     OfferModel.pruneExpiredTokens();
-//   • синхронизация S3 -> offer_models: zip, залитые в бакет мимо приложения
-//     (вручную/скриптом), регистрируются в БД и становятся доступны при выдаче —
-//     ModelService.syncFromStorage() (ListObjectsV2 + insert-if-missing).
+//   • синхронизация S3 -> offer_models: метаданные всех zip в бакете
+//     upsert'ятся (ListObjectsV2 отдаёт ETag/size/lastModified без скачивания
+//     тела): zip, залитые мимо приложения, регистрируются и становятся доступны
+//     при выдаче, а у изменённых (новый ETag) сбрасывается устаревший локальный
+//     кэш и сотрудникам уходит model_updated — ModelService.syncFromStorage().
 //     Сбой S3 не отменяет чистку кэша/токенов (отдельный try).
 // В отличие от суточных задач здесь не нужен daily-gate: операция лёгкая,
 // и пропуск тика не является проблемой (кэш просто живёт дольше на час).
@@ -809,9 +811,9 @@ function startModelsMaintenanceChecker() {
       // не должна маскировать результат чистки кэша/токенов выше).
       try {
         const sync = await ModelService.syncFromStorage();
-        if (sync.registered) {
+        if (sync.registered || sync.updated) {
           console.log(
-            `[SCHEDULER] Синхронизация моделей из S3: +${sync.registered} запис(ей) из ${sync.found} zip`
+            `[SCHEDULER] Синхронизация моделей из S3: +${sync.registered} новых, ~${sync.updated} обновлённых из ${sync.found} zip`
           );
         }
       } catch (syncErr) {

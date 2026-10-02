@@ -326,18 +326,48 @@ async function createTables(db) {
   // оставлен как настройка «на будущее» для переноса моделей в подпапку.
   // Здесь — только метаданные. Заменяет прежнюю схему product_models
   // (много файлов Telegram file_id на offer_id), которая в веб-версии не нужна.
+  //
+  // Версия модели — s3_etag (ETag объекта в S3): дешёвый и универсальный
+  // идентификатор версии. В отличие от sha256 всего zip его отдают HeadObject и
+  // ListObjectsV2 без скачивания тела, поэтому он актуален и для архивов,
+  // заменённых в бакете НАПРЯМУЮ (мимо приложения). Именно по нему
+  // ModelService.reconcileFromStorage/syncFromStorage определяют, что файл
+  // изменился: сбрасывают локальный кэш и оповещают сотрудников (model_updated).
+  // Прежняя колонка file_hash (sha256 всего архива) удалена: её нельзя было
+  // поддержать актуальной для моделей, залитых в S3 мимо приложения, а
+  // устаревший хеш опаснее его отсутствия.
   await db.exec(`
     CREATE TABLE IF NOT EXISTS offer_models (
         offer_id TEXT PRIMARY KEY,
         s3_key TEXT NOT NULL,
         file_name TEXT,
-        file_hash TEXT,
+        s3_etag TEXT,
         file_size INTEGER,
         uploaded_at INTEGER,
         uploaded_by INTEGER,
         FOREIGN KEY (uploaded_by) REFERENCES users(id)
     )
   `);
+
+  // Миграция offer_models: s3_etag — версия модели (ETag в S3). У старых
+  // записей значение NULL: при первом же sync/reconcile оно будет заполнено
+  // БЕЗ оповещений (сравнивать не с чем — считаем «не изменилось»).
+  const offerModelsInfo = await db.all('PRAGMA table_info(offer_models)');
+  if (!offerModelsInfo.some((col) => col.name === 's3_etag')) {
+    await db.run('ALTER TABLE offer_models ADD COLUMN s3_etag TEXT');
+    console.log('[DB] Добавлена колонка s3_etag в offer_models');
+  }
+  // Устаревшая колонка file_hash (sha256 zip) больше не используется —
+  // удаляем, если она ещё есть. SQLITE поддерживает DROP COLUMN с 3.35;
+  // при неудаче просто оставляем неиспользуемую колонку (не критично).
+  if (offerModelsInfo.some((col) => col.name === 'file_hash')) {
+    try {
+      await db.run('ALTER TABLE offer_models DROP COLUMN file_hash');
+      console.log('[DB] Удалена устаревшая колонка file_hash из offer_models');
+    } catch (dropErr) {
+      console.warn('[DB] Не удалось удалить file_hash из offer_models:', dropErr.message);
+    }
+  }
 
   // Таблица выданных сотруднику 3D-моделей (паритет с бот-версией).
   // Уникальная пара (user_id, offer_id): повторная выдача не дублирует запись.

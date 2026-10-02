@@ -50,11 +50,27 @@ export interface OfferModelRow {
   offer_id: string;
   s3_key: string;
   file_name: string | null;
-  file_hash: string | null;
+  /**
+   * Версия модели — ETag объекта в S3. Заполняется при загрузке через админку,
+   * при синхронизации с S3 (модель залили мимо приложения) и при сверке перед
+   * скачиванием. По изменению ETag бэкенд понимает, что файл обновлён:
+   * сбрасывает локальный кэш и оповещает сотрудников.
+   */
+  s3_etag: string | null;
   file_size: number | null;
   uploaded_at: number | null;
   uploaded_by: number | null;
   uploaded_by_name: string | null;
+  /** Сколько активных сотрудников получили артикул (плюс дочерние -NR/-NL) */
+  issued_count?: number;
+  /** Файл лежит в локальном кэше сервера (модель активно раздают) */
+  in_cache?: boolean;
+  /** Файл в кэше и не просрочен по TTL */
+  cache_fresh?: boolean;
+  /** Когда файл попал в локальный кэш (мс) */
+  cached_at?: number | null;
+  /** «Модель в работе»: выдана сотрудникам или лежит в кэше сервера */
+  in_work?: boolean;
   // Заполняются в ответе на загрузку zip (ModelService.uploadModel):
   // список файлов в архиве и файлов-моделей (мягкая проверка содержимого)
   entries?: string[];

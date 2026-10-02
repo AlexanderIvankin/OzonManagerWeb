@@ -121,6 +121,12 @@ export interface ModelDownloadGrant {
   sourceOfferId?: string;
   fileName: string;
   fileSize: number | null;
+  /**
+   * Версия модели — ETag объекта в S3. При скачивании бэкенд сверяет её с
+   * хранилищем: если архив обновили напрямую в S3, сотруднику уходит
+   * оповещение «Модель обновлена», а скачивается уже актуальная версия.
+   */
+  version?: string | null;
 }
 
 export const ordersApi = {

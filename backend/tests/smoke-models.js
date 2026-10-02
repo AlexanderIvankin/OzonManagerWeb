@@ -14,6 +14,7 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Readable } = require('stream');
 
 const { initDB, getDB } = require('../src/config/database');
@@ -28,9 +29,12 @@ const TEST_OFFER = `${TEST_MARK}-N`;
 const stamp = Date.now();
 
 // ----------------------------------------------------------------------------
-// Заглушка S3: хранит объекты в памяти, GetObject отдаёт Readable (как sdk)
+// Заглушка S3: хранит объекты в памяти, GetObject отдаёт Readable (как sdk).
+// ETag объекта выводится из его содержимого (md5) — как в S3 он меняется при
+// перезаписи, что позволяет тестировать детект «файл обновили напрямую».
 // ----------------------------------------------------------------------------
 const fakeS3Objects = new Map();
+const etagOf = (buf) => `"${crypto.createHash('md5').update(buf).digest('hex')}"`;
 s3.send = async (cmd) => {
   const kind = cmd.constructor.name;
   const key = cmd.input?.Key;
@@ -48,18 +52,19 @@ s3.send = async (cmd) => {
     return { Body: Readable.from(buf) };
   }
   if (kind === 'HeadObjectCommand') {
-    if (!fakeS3Objects.has(key)) {
+    const buf = fakeS3Objects.get(key);
+    if (!buf) {
       const err = new Error('NotFound');
       err.name = 'NotFound';
       throw err;
     }
-    return { ContentLength: fakeS3Objects.get(key).length, LastModified: new Date() };
+    return { ContentLength: buf.length, LastModified: new Date(), ETag: etagOf(buf) };
   }
   if (kind === 'ListObjectsV2Command') {
     const prefix = cmd.input?.Prefix || '';
     const contents = Array.from(fakeS3Objects.entries())
       .filter(([k]) => k.startsWith(prefix))
-      .map(([k, buf]) => ({ Key: k, Size: buf.length, LastModified: new Date() }));
+      .map(([k, buf]) => ({ Key: k, Size: buf.length, LastModified: new Date(), ETag: etagOf(buf) }));
     return { Contents: contents, IsTruncated: false };
   }
   if (kind === 'DeleteObjectCommand') {
@@ -230,7 +235,7 @@ function assert(cond, label) {
     }
     assert(uploadRejected, 'uploadModel: не-zip имя файла отклоняется (validation)');
     assert(fakeS3Objects.size === s3KeysBefore, 'uploadModel: при отказе валидации S3 не тронут');
-    assert(!!uploaded.file_hash && uploaded.file_hash.length === 64, 'uploadModel: sha256-хеш записан');
+    assert(!!uploaded.s3_etag && uploaded.s3_etag.length === 32, 'uploadModel: версия (ETag S3) записана');
     assert(uploaded.file_size === goodZip.length, 'uploadModel: размер zip записан');
 
     // 5. Поиск с родительским артикулом: модель загружена для -N, ищем для -NR
@@ -361,8 +366,8 @@ function assert(cond, label) {
     assert(orphResolved.model.from_storage === true, 'fallback: запись помечена as-from_storage');
     const orphRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', orphOffer);
     assert(
-      !!orphRow && orphRow.file_hash === null && orphRow.uploaded_by === null,
-      'fallback: ленивая регистрация в offer_models (без file_hash/uploaded_by)'
+      !!orphRow && !!orphRow.s3_etag && orphRow.uploaded_by === null,
+      'fallback: ленивая регистрация (версия из S3, без uploaded_by)'
     );
     const orphSummary = await ModelService.issueForAssignment(
       `SMOKE-ORPH-${stamp}`, emp.id, emp,
@@ -376,7 +381,7 @@ function assert(cond, label) {
     assert(!!orphGrant.token, 'requestToken: токен выдан для orphan-модели (emp — уже выдана)');
     // Повторный resolve идемпотентен (запись уже в БД, HeadObject не нужен)
     const orphAgain = await ModelService.resolveModel(orphOffer);
-    assert(!!orphAgain && orphAgain.model.file_hash === null, 'fallback: повторный поиск стабилен');
+    assert(!!orphAgain && !!orphAgain.model.s3_etag, 'fallback: повторный поиск стабилен');
 
     // 11. Периодическая синхронизация S3 -> offer_models (scheduler, ежечасно)
     const syncOffer = `${TEST_MARK}-SYNC`;
@@ -386,19 +391,95 @@ function assert(cond, label) {
     assert(syncRes.found >= 3, `syncFromStorage: zip перечислены (найдено ${syncRes.found})`);
     const syncRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', syncOffer);
     assert(
-      !!syncRow && syncRow.file_hash === null && syncRow.s3_key === `${syncOffer}.zip`,
-      'syncFromStorage: недостающая модель зарегистрирована из S3'
+      !!syncRow && !!syncRow.s3_etag && syncRow.s3_key === `${syncOffer}.zip`,
+      'syncFromStorage: недостающая модель зарегистрирована из S3 (с версией)'
     );
     const syncUploadRow = await db.get('SELECT * FROM offer_models WHERE offer_id = ?', TEST_OFFER);
     assert(
-      !!syncUploadRow && !!syncUploadRow.file_hash,
-      'syncFromStorage: метаданные uploadModel не затёрты'
+      !!syncUploadRow && !!syncUploadRow.s3_etag && syncUploadRow.uploaded_by === mod.id,
+      'syncFromStorage: автор загрузки (uploaded_by) не затёрт'
     );
     await ModelService.syncFromStorage(); // повторный прогон
     const syncCnt = await db.get(
       'SELECT COUNT(*) AS c FROM offer_models WHERE offer_id = ?', syncOffer
     );
     assert(syncCnt.c === 1, 'syncFromStorage: повторный запуск идемпотентен');
+    // Повторный прогон без изменений не должен рассылать model_updated
+    const noopNotifs = await ndb.all(
+      `SELECT COUNT(*) AS c FROM notifications WHERE recipient_id = ? AND type = 'model_updated'`,
+      emp.id
+    );
+    assert(noopNotifs[0].c === 0, 'syncFromStorage: без изменений оповещений нет');
+
+    // 12. Архив заменён в S3 НАПРЯМУЮ (мимо приложения): сверка по ETag
+    //     обнаруживает новую версию, сбрасывает устаревший кэш и оповещает.
+    await ModelService.issueForAssignment(`SMOKE-OOB-${stamp}`, emp.id, emp, {
+      products: [{ name: 'Товар для out-of-band', offer_id: TEST_OFFER, quantity: 1 }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await ndb.run(
+      `DELETE FROM notifications WHERE recipient_id = ? AND type = 'model_updated'`,
+      emp.id
+    );
+    // прогреваем локальный кэш текущей версией
+    const oobBefore = await ModelService.getDownloadInfo(TEST_OFFER);
+    const etagBefore = (await db.get(
+      'SELECT s3_etag FROM offer_models WHERE offer_id = ?', TEST_OFFER
+    )).s3_etag;
+    assert(!!etagBefore && fs.existsSync(oobBefore.path), 'OOB: версия известна, кэш прогрет');
+
+    const newZip = buildZip([{ name: 'ARD000003-N.stl', content: 'updated stl data' }]);
+    fakeS3Objects.set(`${TEST_OFFER}.zip`, newZip); // замена файла в S3 напрямую
+
+    const syncRes2 = await ModelService.syncFromStorage();
+    assert(syncRes2.updated >= 1, `syncFromStorage: изменение версии обнаружено (updated=${syncRes2.updated})`);
+    const etagAfter = (await db.get(
+      'SELECT s3_etag FROM offer_models WHERE offer_id = ?', TEST_OFFER
+    )).s3_etag;
+    assert(etagAfter !== etagBefore, 'OOB: версия в БД обновилась');
+    assert(!fs.existsSync(oobBefore.path), 'OOB: устаревший локальный кэш сброшен');
+    assert(
+      (await db.get('SELECT uploaded_by FROM offer_models WHERE offer_id = ?', TEST_OFFER)).uploaded_by === mod.id,
+      'OOB: автор загрузки сохранён'
+    );
+    const oobNotifs = await ndb.all(
+      `SELECT COUNT(*) AS c FROM notifications WHERE recipient_id = ? AND type = 'model_updated'`,
+      emp.id
+    );
+    assert(oobNotifs[0].c > 0, 'OOB: сотруднику отправлено model_updated');
+    const oobAfter = await ModelService.getDownloadInfo(TEST_OFFER);
+    assert(
+      fs.readFileSync(oobAfter.path).equals(newZip),
+      'OOB: скачивается актуальная версия (не устаревший кэш)'
+    );
+
+    // 12b. Та же логика через путь скачивания (reconcile перед выдачей) —
+    //      срабатывает сразу, без ожидания ежечасного синка.
+    await ndb.run(
+      `DELETE FROM notifications WHERE recipient_id = ? AND type = 'model_updated'`,
+      emp.id
+    );
+    const newerZip = buildZip([{ name: 'ARD000003-N.stl', content: 'ещё новее' }]);
+    fakeS3Objects.set(`${TEST_OFFER}.zip`, newerZip);
+    const viaDownload = await ModelService.getDownloadInfo(TEST_OFFER);
+    assert(
+      fs.readFileSync(viaDownload.path).equals(newerZip),
+      'reconcile: getDownloadInfo отдаёт актуальную версию сразу после замены в S3'
+    );
+    const reconcileNotifs = await ndb.all(
+      `SELECT COUNT(*) AS c FROM notifications WHERE recipient_id = ? AND type = 'model_updated'`,
+      emp.id
+    );
+    assert(reconcileNotifs[0].c > 0, 'reconcile: сотруднику отправлено model_updated');
+
+    // 13. Список моделей админки: issued_count / in_cache / с3_etag для фильтра
+    const list = await ModelService.listModels();
+    const listRow = list.find((m) => m.offer_id === TEST_OFFER);
+    assert(!!listRow, 'listModels: модель присутствует');
+    assert(!!listRow.s3_etag, 'listModels: версия (ETag) присутствует');
+    assert(listRow.issued_count >= 1, `listModels: issued_count учитывает выдачи (${listRow.issued_count})`);
+    assert(listRow.in_cache === true, 'listModels: модель отмечена как лежащая в кэше сервера');
+    assert(listRow.in_work === true, 'listModels: in_work = выдана сотрудникам / в кэше');
 
     console.log(`\n=== Smoke-тест пройден ✅ (проверок: ${assertCount}) ===`);
   } catch (err) {

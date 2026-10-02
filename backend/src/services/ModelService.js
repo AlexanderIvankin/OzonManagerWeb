@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const OfferModel = require('../models/OfferModel');
 const StorageService = require('./StorageService');
 const NotificationService = require('./NotificationService');
@@ -33,6 +32,17 @@ const { STAFF_ROLES } = require('../config/staffRoles');
 //     scheduler ежечасно синхронизирует ListObjectsV2 -> offer_models
 //     (syncFromStorage). Так модели из S3 выдаются по артикулу, даже если
 //     upload через админку не вызывался.
+//
+// Версионирование моделей (s3_etag):
+//   • версия модели — ETag объекта в S3 (в отличие от sha256 его отдают
+//     HeadObject/ListObjectsV2 без скачивания тела, поэтому он актуален и для
+//     архивов, заменённых в бакете ВРУЧНУЮ/скриптом, мимо приложения);
+//   • uploadModel записывает ETag сразу после заливки;
+//   • syncFromStorage (ежечасно) и reconcileFromStorage (перед скачиванием)
+//     сверяют ETag: если он изменился — сбрасывается устаревший локальный кэш
+//     и сотрудникам с выданной моделью уходит model_updated («скачайте заново»);
+//   • в админке по s3_etag/cache видно, какие модели «в работе» (выданы и/или
+//     сейчас лежат в кэше сервера).
 //
 // Валидация при загрузке (персонал):
 //   • ЖЁСТКО: загружаемый файл обязан быть .zip (по расширению и magic-байтам) —
@@ -268,10 +278,11 @@ class ModelService {
    *   1) один запрос в БД (offer_models, артикул + родитель);
    *   2) fallback в S3: по кандидатам без записи в БД выполняется HeadObject —
    *      zip мог быть залит мимо приложения (вручную/скриптом в бакет). При
-   *      успехе запись лениво регистрируется в offer_models (file_hash и
-   *      uploaded_by остаются NULL — признак модели из хранилища). Промахи
-   *      кэшируются на S3_MISS_TTL_MS; ошибки S3 не прерывают поиск (артикул
-   *      просто уйдёт в missing, назначение заказа не страдает).
+   *      успехе запись лениво регистрируется в offer_models (uploaded_by
+   *      остаётся NULL — признак модели из хранилища, а s3_etag фиксирует
+   *      версию объекта для последующих сверок). Промахи кэшируются на
+   *      S3_MISS_TTL_MS; ошибки S3 не прерывают поиск (артикул просто уйдёт в
+   *      missing, назначение заказа не страдает).
    * @returns {Promise<Map<string, {model: object, matchedOfferId: string}>>}
    */
   static async resolveForOffers(offerIds) {
@@ -341,7 +352,7 @@ class ModelService {
           offer_id: candidate,
           s3_key: StorageService.keyFor(candidate),
           file_name: StorageService.fileNameFor(candidate),
-          file_hash: null,
+          s3_etag: stat.etag || null,
           file_size: stat.size,
           uploaded_at: stat.lastModified,
           uploaded_by: null,
@@ -352,11 +363,12 @@ class ModelService {
         if (!registeredNow.has(candidate)) {
           registeredNow.add(candidate);
           try {
-            await OfferModel.insertIfMissing(candidate, {
+            await OfferModel.syncEntry(candidate, {
               s3Key: model.s3_key,
               fileName: model.file_name,
               fileSize: model.file_size,
               uploadedAt: model.uploaded_at,
+              etag: model.s3_etag,
             });
             s3MissCache.delete(candidate);
           } catch (err) {
@@ -373,17 +385,23 @@ class ModelService {
   /**
    * Синхронизация S3 -> offer_models (вызывается из scheduler ежечасно):
    * перечисляет все zip-архивы в бакете (ListObjectsV2, с пагинацией) и
-   * регистрирует отсутствующие в БД записи (insert-if-missing). Существующие
-   * метаданные из uploadModel (file_hash, uploaded_by, uploaded_at) не трогаются.
-   * Благодаря этому модели, залитые в S3 вручную/скриптом, становятся видны
-   * в админке и выдаются при назначении заказа, даже если upload не вызывался.
-   * @returns {Promise<{found: number, registered: number, invalid: number}>}
+   * upsert'ит метаданные (listObjects отдаёт ETag, size, lastModified без
+   * скачивания тела). Существующие записи:
+   *   • уточняют размер/время/версию (полезно для моделей, залитых в S3
+   *     вручную/скриптом — мимо приложения);
+   *   • при ИЗМЕНИВШЕМСЯ ETag версия считается новой: сбрасывается локальный
+   *     кэш и сотрудникам с выданной моделью уходит model_updated.
+   * Автор загрузки (uploaded_by) не трогается.
+   * Благодаря этому модели из S3 видны в админке и выдаются по артикулу, даже
+   * если upload через админку не вызывался.
+   * @returns {Promise<{found: number, registered: number, updated: number, invalid: number}>}
    *   found — zip-файлов в бакете; registered — создано записей;
-   *   invalid — ключей, не похожих на артикул (пропущены).
+   *   updated — записей с новой версией; invalid — ключей, не похожих на артикул.
    */
   static async syncFromStorage() {
     const objects = await StorageService.listZipKeys();
     let registered = 0;
+    let updated = 0;
     let invalid = 0;
 
     for (const obj of objects) {
@@ -392,28 +410,104 @@ class ModelService {
         continue;
       }
       try {
-        const created = await OfferModel.insertIfMissing(obj.offerId, {
+        const res = await OfferModel.syncEntry(obj.offerId, {
           s3Key: obj.key,
           fileName: StorageService.fileNameFor(obj.offerId),
           fileSize: obj.size,
           uploadedAt: obj.lastModified,
+          etag: obj.etag,
         });
-        if (created) {
+        if (res.created) {
           registered++;
           s3MissCache.delete(obj.offerId);
           console.log(`[MODELS] Синхронизация S3: зарегистрирована модель ${obj.offerId} (${obj.key})`);
+        } else if (res.changed) {
+          updated++;
+          s3MissCache.delete(obj.offerId);
+          // Файл заменён в S3 напрямую — кэш устарел, сотрудников оповещаем.
+          StorageService.invalidateCache(obj.offerId);
+          await this.notifyModelUpdated(obj.offerId, res.record, 'storage');
+          console.log(`[MODELS] Синхронизация S3: обновлена модель ${obj.offerId} (новая версия ${String(res.record.s3_etag).slice(0, 12)}…)`);
         }
       } catch (err) {
         console.error(`[MODELS] Синхронизация S3: ошибка записи ${obj.offerId}:`, err.message);
       }
     }
 
-    if (registered) {
+    if (registered || updated) {
       console.log(
-        `[MODELS] Синхронизация S3: +${registered} модел(ей), всего zip в бакете: ${objects.length}`
+        `[MODELS] Синхронизация S3: +${registered} новых, ~${updated} обновлённых, всего zip в бакете: ${objects.length}`
       );
     }
-    return { found: objects.length, registered, invalid };
+    return { found: objects.length, registered, updated, invalid };
+  }
+
+  /**
+   * Сверка ОДНОЙ модели с S3 перед скачиванием (HeadObject, без скачивания
+   * тела): если ETag в хранилище отличается от сохранённого — сбрасываем
+   * устаревший локальный кэш, обновляем метаданные и оповещаем сотрудников
+   * (model_updated). Так сценарий «модель обновили в S3 в реальном времени»
+   * закрывается даже между ежечасными синками и только для реально скачиваемых
+   * моделей (точечная HeadObject вместо полного ListObjectsV2).
+   * Никогда не бросает исключений — при сбое S3 отдаём текущий кэш как есть.
+   * @param {string} offerId - артикул, по которому лежит zip
+   * @returns {Promise<{checked: boolean, changed: boolean}>}
+   */
+  static async reconcileFromStorage(offerId) {
+    try {
+      const stat = await StorageService.statZip(offerId);
+      if (!stat) return { checked: false, changed: false };
+      const res = await OfferModel.syncEntry(offerId, {
+        s3Key: StorageService.keyFor(offerId),
+        fileName: StorageService.fileNameFor(offerId),
+        fileSize: stat.size,
+        uploadedAt: stat.lastModified,
+        etag: stat.etag,
+      });
+      if (res.changed) {
+        StorageService.invalidateCache(offerId);
+        await this.notifyModelUpdated(offerId, res.record, 'storage');
+        console.log(
+          `[MODELS] Сверка с S3: модель ${offerId} изменилась (${String(res.record.s3_etag).slice(0, 12)}…) — кэш сброшен`
+        );
+      }
+      return { checked: true, changed: !!res.changed };
+    } catch (err) {
+      console.error(`[MODELS] Сверка с S3 не удалась (${offerId}):`, err.message);
+      return { checked: false, changed: false };
+    }
+  }
+
+  /**
+   * Оповестить сотрудников с выданной моделью, что архив обновился.
+   * Учитываются дочерние артикулы (для родительского архива -NR/-NL): каждый
+   * получает оповещение по СВОЕМУ артикулу, чтобы найти карточку заказа.
+   * Никогда не бросает исключений.
+   * @param {string} offerId - артикул архива (может быть родительским)
+   * @param {object} record - запись offer_models
+   * @param {'storage'|'upload'} source - откуда узнали об обновлении
+   */
+  static async notifyModelUpdated(offerId, record, source = 'storage') {
+    try {
+      const users = await OfferModel.getUsersWithIssuedAny(offerId);
+      if (!users.length) return;
+      const fileName = (record && record.file_name) || StorageService.fileNameFor(offerId);
+      const fileSize = (record && record.file_size) || null;
+      for (const u of users) {
+        if (u.is_fired) continue;
+        await NotificationService.notifyUser(u.user_id, 'model_updated', {
+          offerId,
+          fileName,
+          fileSize,
+          source,
+        });
+      }
+      console.log(
+        `[MODELS] Модель ${offerId} обновлена (${source}) — оповещено сотрудников: ${users.filter((u) => !u.is_fired).length}`
+      );
+    } catch (err) {
+      console.error('[MODELS] Ошибка оповещения об обновлении модели:', err.message);
+    }
   }
 
   // =====================================================================
@@ -445,21 +539,29 @@ class ModelService {
     // zip-архивом. Внутри архива расширения файлов-моделей проверяются МЯГКО.
     const validation = validateUploadFile(uploadedFileName, buffer);
 
-    // Хеш для инвалидации кэша и контроля версий
-    const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
-
     // S3: s3://bucket/{offer_id}.zip (в корне бакета, перезапись) + сброс кэша
     await StorageService.uploadZip(offerId, buffer);
     const s3Key = StorageService.keyFor(offerId);
     const fileName = StorageService.fileNameFor(offerId);
 
+    // Версия (ETag только что залитого объекта). Нужна, чтобы ежечасная
+    // синхронизация не приняла НАШУ загрузку за «изменение в хранилище» и
+    // не разослала повторные оповещения. Ошибка HeadObject не критична.
+    let etag = null;
+    try {
+      const stat = await StorageService.statZip(offerId);
+      if (stat) etag = stat.etag;
+    } catch (err) {
+      console.error(`[MODELS] Не удалось получить ETag ${offerId}:`, err.message);
+    }
+
     // Метаданные в БД
     const record = await OfferModel.set(offerId, {
       s3Key,
       fileName,
-      fileHash,
       fileSize: buffer.length,
       uploadedBy: userId,
+      etag,
     });
 
     // Журнал персонала: модель загружена/обновлена (+ список файлов-моделей)
@@ -474,20 +576,12 @@ class ModelService {
       adminId: userId,
     });
 
-    // Сотрудники, у которых этот offer_id уже выдан: модель обновилась —
-    // предложить скачать заново (кэш уже сброшен).
-    const issuedUsers = await OfferModel.getUsersWithIssued(offerId);
-    for (const u of issuedUsers) {
-      if (u.is_fired) continue;
-      NotificationService.notifyUser(u.user_id, 'model_updated', {
-        offerId,
-        fileName,
-        fileSize: buffer.length,
-      });
-    }
+    // Сотрудники, у которых модель выдана (включая дочерние -NR/-NL): архив
+    // обновился — предложить скачать заново (кэш уже сброшен).
+    await this.notifyModelUpdated(offerId, record, 'upload');
 
     console.log(
-      `[MODELS] Модель ${offerId} загружена (${fileName}, ${buffer.length} байт, файлов в zip: ${validation.entries.length}, модельных: ${validation.modelFiles.length}, sha256: ${fileHash.slice(0, 12)}…)`
+      `[MODELS] Модель ${offerId} загружена (${fileName}, ${buffer.length} байт, файлов в zip: ${validation.entries.length}, модельных: ${validation.modelFiles.length}, etag: ${etag ? etag.slice(0, 12) + '…' : '—'})`
     );
     return {
       ...record,
@@ -516,10 +610,28 @@ class ModelService {
   }
 
   /**
-   * Список всех моделей с именами загрузивших.
+   * Список всех моделей для страницы «Модели» админки: метаданные + имена
+   * загрузивших + признаки для фильтра «в работе»:
+   *   • issued_count — сколько активных сотрудников получили этот артикул
+   *     (включая дочерние -NR/-NL, которым отдаётся архив родителя);
+   *   • in_cache / cache_fresh — файл лежит в локальном кэше сервера (и не
+   *     просрочен ли он по TTL) — значит, модель сейчас активно раздают;
+   *   • in_work — «модель в работе»: выдана сотрудникам или лежит в кэше.
    */
   static async listModels() {
-    return OfferModel.getAll();
+    const models = await OfferModel.getAll();
+    return models.map((m) => {
+      const cache = StorageService.cacheInfo(m.offer_id);
+      const issuedCount = m.issued_count || 0;
+      return {
+        ...m,
+        issued_count: issuedCount,
+        in_cache: cache.cached,
+        cache_fresh: cache.fresh,
+        cached_at: cache.mtime,
+        in_work: issuedCount > 0 || cache.cached,
+      };
+    });
   }
 
   // =====================================================================
@@ -776,6 +888,9 @@ class ModelService {
       requestedOfferId: String(offerId),
       fileName,
       fileSize: resolved.model.file_size || null,
+      // Версия модели (ETag) — клиент может показать/логировать, какая версия
+      // выдаётся; актуальность гарантируется сверкой в getDownloadInfo.
+      version: resolved.model.s3_etag || null,
     };
   }
 
@@ -796,11 +911,21 @@ class ModelService {
   }
 
   /**
-   * Подготовить файл модели к отдаче: путь в кэше (с прогревом из S3) + размер.
+   * Подготовить файл модели к отдаче: путь в кэше (с прогревом из S3) + размер
+   * + версия (ETag). ПЕРЕД отдачей выполняется сверка с S3: если архив заменён
+   * в бакете мимо приложения, устаревший локальный кэш сбрасывается, поэтому
+   * сотрудник получает АКТУАЛЬНУЮ версию (а не закэшированную до обновления).
+   * Сбой сверки не ломает скачивание — отдаём то, что есть.
    */
   static async getDownloadInfo(offerId) {
+    await this.reconcileFromStorage(offerId);
     const info = await StorageService.getZipInfo(offerId);
-    return { ...info, fileName: StorageService.fileNameFor(offerId) };
+    const record = await OfferModel.get(offerId);
+    return {
+      ...info,
+      fileName: StorageService.fileNameFor(offerId),
+      version: (record && record.s3_etag) || null,
+    };
   }
 
   // =====================================================================
