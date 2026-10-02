@@ -45,11 +45,12 @@ const shortEtag = (etag: string | null) => (etag ? etag.slice(0, 12) : "—");
 
 // Фильтр «что сейчас в работе»: модели, выданные сотрудникам и/или лежащие
 // в локальном кэше сервера (значит, их активно раздают).
-type ModelFilter = "all" | "in_work" | "issued" | "cached";
+type ModelFilter = "all" | "issued" | "cached";
+//type ModelFilter = "all" | "in_work" | "issued" | "cached";
 
 const MODEL_FILTERS: Array<{ value: ModelFilter; label: string }> = [
   { value: "all", label: "Все модели" },
-  { value: "in_work", label: "🧰 В работе (выданы / в кэше)" },
+//  { value: "in_work", label: "🧰 В работе (выданы / в кэше)" },
   { value: "issued", label: "👷 Выданы сотрудникам" },
   { value: "cached", label: "📦 В кэше сервера" },
 ];
@@ -92,7 +93,7 @@ export const Models = () => {
   const query = search.trim().toLowerCase();
   const offerQuery = query.replace(/\.zip$/, "") || query;
   const visibleModels = models.filter((m) => {
-    if (filter === "in_work" && !m.in_work) return false;
+//    if (filter === "in_work" && !m.in_work) return false;
     if (filter === "issued" && !(m.issued_count && m.issued_count > 0))
       return false;
     if (filter === "cached" && !m.in_cache) return false;
@@ -104,7 +105,7 @@ export const Models = () => {
   });
   const hasSearch = !!query;
   const hasFilter = filter !== "all";
-  const inWorkCount = models.filter((m) => m.in_work).length;
+//  const inWorkCount = models.filter((m) => m.in_work).length;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -292,11 +293,11 @@ export const Models = () => {
                     : models.length}
                 </Badge>
               )}
-              {inWorkCount > 0 && (
+              {/* {inWorkCount > 0 && (
                 <Badge variant="secondary" className="ml-2">
                   🧰 в работе: {inWorkCount}
                 </Badge>
-              )}
+              )} */}
             </div>
           </CardTitle>
         </CardHeader>
