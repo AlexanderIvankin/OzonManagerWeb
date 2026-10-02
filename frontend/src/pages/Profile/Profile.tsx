@@ -292,12 +292,12 @@ export const Profile = () => {
               Пока сайт открыт, события приходят мгновенно по WebSocket;
               когда приложение закрыто — Web Push (звук и вибрацию даёт система). */}
           <div className="flex flex-col items-center gap-2 text-center">
-            <div className="flex items-center gap-2">
-              <span className="text-lg" aria-hidden="true">
+            <p className="font-medium text-balance">
+              <span className="text-lg mr-2 inline-block" aria-hidden="true">
                 🔔
               </span>
-              <p className="font-medium">Уведомления на устройстве</p>
-            </div>
+              Уведомления на устройстве
+            </p>
             <p className="text-sm text-muted-foreground max-w-md">
               Пока сайт открыт, оповещения приходят мгновенно. Включите
               уведомления, чтобы получать их со звуком и вибрацией, когда

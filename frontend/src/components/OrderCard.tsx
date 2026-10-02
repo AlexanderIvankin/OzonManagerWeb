@@ -230,7 +230,12 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
         </Button>
       </CardFooter>
       {missingOfferIds.length > 0 && (
-        <div className="flex justify-center px-6 pb-4">
+        <div
+          className="flex flex-col items-center justify-center gap-2 text-center px-6 pb-4
+                  sm:flex-row sm:items-center sm:justify-between sm:text-start
+                  md:flex-col md:items-center md:justify-center md:text-center
+                  xl:flex-row xl:items-center xl:justify-between xl:text-start"
+        >
           <FillStatsDialog
             offerId={missingOfferIds[0]}
             onSuccess={onOrderUpdated}
@@ -240,7 +245,7 @@ export const OrderCard = ({ order, onOrderUpdated }: OrderCardProps) => {
             </Button>
           </FillStatsDialog>
           {missingOfferIds.length > 1 && (
-            <span className="text-xs text-muted-foreground ml-2">
+            <span className="text-xs text-muted-foreground">
               + ещё {missingOfferIds.length - 1} товаров без статистики
             </span>
           )}
