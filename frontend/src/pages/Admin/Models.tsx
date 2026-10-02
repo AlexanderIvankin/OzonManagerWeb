@@ -93,7 +93,8 @@ export const Models = () => {
   const offerQuery = query.replace(/\.zip$/, "") || query;
   const visibleModels = models.filter((m) => {
     if (filter === "in_work" && !m.in_work) return false;
-    if (filter === "issued" && !(m.issued_count && m.issued_count > 0)) return false;
+    if (filter === "issued" && !(m.issued_count && m.issued_count > 0))
+      return false;
     if (filter === "cached" && !m.in_cache) return false;
     if (!query) return true;
     return (
@@ -195,12 +196,12 @@ export const Models = () => {
 
   return (
     <div className="container mx-auto space-y-6 py-6">
-      <div className="flex flex-col items-center justify-center gap-3 text-center md:flex-row md:justify-between">
+      <div className="flex flex-col items-center justify-center gap-3 text-center lg:flex-row lg:justify-between">
         <h1 className="text-2xl font-bold">🧊 3D-модели (zip в S3)</h1>
       </div>
 
       {/* Загрузка новой/обновлённой модели */}
-      <Card className="text-center md:justify-center md:text-start">
+      <Card className="text-center lg:justify-center lg:text-start">
         <CardHeader>
           <CardTitle className="text-lg">📤 Загрузить модель (zip)</CardTitle>
         </CardHeader>
@@ -278,31 +279,34 @@ export const Models = () => {
       </Card>
 
       {/* Список моделей */}
-      <Card className="text-center md:justify-center">
+      <Card className="text-center lg:justify-center">
         <CardHeader>
-          <CardTitle className="text-lg">
+          <CardTitle className="flex flex-wrap justify-center text-center items-center gap-2 text-lg">
             🗃️ Загруженные модели{" "}
-            {models.length > 0 && (
-              <Badge variant="outline">
-                {hasSearch || hasFilter
-                  ? `${visibleModels.length} из ${models.length}`
-                  : models.length}
-              </Badge>
-            )}
-            {inWorkCount > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                🧰 в работе: {inWorkCount}
-              </Badge>
-            )}
+            <div className="flex justify-center items-center align-middle">
+              {" "}
+              {models.length > 0 && (
+                <Badge variant="outline">
+                  {hasSearch || hasFilter
+                    ? `${visibleModels.length} из ${models.length}`
+                    : models.length}
+                </Badge>
+              )}
+              {inWorkCount > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  🧰 в работе: {inWorkCount}
+                </Badge>
+              )}
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Фильтр по артикулу (offer_id) + по статусу «в работе» */}
           {models.length > 0 && (
-            <div className="flex flex-col gap-2 text-start sm:flex-row sm:items-end">
-              <div className="w-full space-y-1.5">
+            <div className="flex flex-col gap-3 text-start lg:flex-row lg:items-stretch">
+              <div className="flex w-full flex-col justify-end gap-1.5">
                 <Label
-                  className="text-center justify-center lg:text-start lg:justify-start"
+                  className="text-center lg:text-start"
                   htmlFor="models-search"
                 >
                   Поиск по артикулу (offer_id)
@@ -314,9 +318,10 @@ export const Models = () => {
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <div className="w-full space-y-1.5 sm:max-w-xs">
+
+              <div className="flex w-full min-w-0 flex-col justify-end gap-1.5 lg:max-w-xs">
                 <Label
-                  className="text-center justify-center lg:text-start lg:justify-start"
+                  className="text-center lg:text-start"
                   htmlFor="models-filter"
                 >
                   Статус модели
@@ -325,8 +330,8 @@ export const Models = () => {
                   value={filter}
                   onValueChange={(v) => setFilter((v ?? "all") as ModelFilter)}
                 >
-                  <SelectTrigger id="models-filter" className="w-full">
-                    <SelectValue>
+                  <SelectTrigger id="models-filter" className="w-full min-w-0">
+                    <SelectValue className="truncate" placeholder="Все модели">
                       {(val) =>
                         MODEL_FILTERS.find((f) => f.value === val)?.label ||
                         "Все модели"
@@ -342,9 +347,11 @@ export const Models = () => {
                   </SelectContent>
                 </Select>
               </div>
+
               {(hasSearch || hasFilter) && (
                 <Button
                   variant="ghost"
+                  className="self-center lg:self-end"
                   onClick={() => {
                     setSearch("");
                     setFilter("all");
@@ -426,7 +433,9 @@ export const Models = () => {
                           </Badge>
                         ) : null}
                         {!m.issued_count && !m.in_cache ? (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">
+                            —
+                          </span>
                         ) : null}
                       </div>
                     </TableCell>
