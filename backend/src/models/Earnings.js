@@ -66,6 +66,22 @@ class Earnings {
   /**
 * Получить историю заработка пользователя с деталями (для формирования сообщения)
 */
+  /**
+   * Сумма заработка, начисленного за КОНКРЕТНЫЙ заказ пользователя.
+   * Используется при сторнировании заработка за отменённый / вовремя не
+   * отправленный заказ: корректировка делается на -эту сумму.
+   */
+  static async getOrderEarningsSum(userId, orderId) {
+    const db = getDB();
+    const row = await db.get(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM earnings_history
+       WHERE user_id = ? AND order_id = ?`,
+      userId, orderId
+    );
+    return row ? Number(row.total) || 0 : 0;
+  }
+
   static async getHistoryWithDetails(userId, fromDate, toDate) {
     const db = getDB();
     return db.all(

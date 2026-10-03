@@ -2,7 +2,7 @@ const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
 const NotificationService = require('./NotificationService');
-const { Earnings, User } = require('../models');
+const { Earnings, User, Assignment } = require('../models');
 const ProductStat = require('../models/ProductStat');
 const MaterialsService = require('./MaterialsService');
 const { getLocalDate, getVersionedDatedFileName } = require('../utils');
@@ -238,6 +238,75 @@ class EarningsService {
     }
 
     return { clearedAmount: totalActive, userName };
+  }
+
+  /**
+   * Отмена (сторнирование) заработка за заказ, который был завершён, но так и
+   * не был отправлен:
+   *   • Ozon перевёл заказ в статус «Отменён» (планировщик cancelledOrders);
+   *   • заказ слишком долго «ожидает отправки» (планировщик awaitingDeliver,
+   *     3-е напоминание).
+   *
+   * Деньги снимаются КОРРЕКТИРОВКОЙ (история + активная), а НЕ удалением
+   * записи заработка: если расчёт с сотрудником уже был, удаление истории
+   * бессмысленно, а корректировка корректно уменьшит следующий расчёт.
+   *
+   * ИДЕМПОТЕНТНОСТЬ (ключевое требование): по одному заказу НИКОГДА не может
+   * произойти два списания. Замок — атомарный
+   * Assignment.claimEarningsRevocation (UPDATE ... WHERE earnings_revoked_at
+   * IS NULL): только один вызов во всей системе (два планировщика, повторный
+   * прогон, ручной вызов) получит claimed = true и выполнит сторнирование.
+   * Остальные увидят already_revoked и выйдут, НЕ трогая деньги.
+   *
+   * @param {number} userId
+   * @param {string} orderId
+   * @param {object} [options]
+   *   reason           — текст причины (пишется в корректировку и оповещение);
+   *   notificationType — тип оповещения (user + staff) или null (без оповещения);
+   *   userName         — имя сотрудника (иначе берётся из БД);
+   *   daysPassed       — сколько дней прошло (для текста);
+   *   source           — источник ('scheduler.cancelledOrders' и т.п.).
+   * @returns {Promise<{revoked: boolean, amount?: number, reason?: string}>}
+   */
+  static async revokeOrderEarnings(userId, orderId, {
+    reason = '',
+    notificationType = null,
+    userName = null,
+    daysPassed = null,
+    source = 'manual',
+  } = {}) {
+    if (!userId || !orderId) return { revoked: false, reason: 'invalid' };
+
+    // Сумма к списанию = начисленный за заказ заработок (все строки истории).
+    const amountRaw = await Earnings.getOrderEarningsSum(userId, orderId);
+    const amount = Math.round((Number(amountRaw) || 0) * 100) / 100;
+
+    // Замок: сторнировать заказ вправе только ОДИН вызов.
+    const claimed = await Assignment.claimEarningsRevocation(orderId, userId, amount, reason);
+    if (!claimed) {
+      return { revoked: false, reason: 'already_revoked' };
+    }
+
+    // Сторнирование: история + активный заработок (учтётся при следующем расчёте).
+    // Если заработка за заказ не было (amount = 0), списывать нечего, но замок
+    // уже выставлен — повторной обработки по этому заказу не будет.
+    if (amount > 0) {
+      await Earnings.addAdjustment(userId, -amount, reason);
+      await Earnings.addActiveAdjustment(userId, -amount, reason);
+    }
+
+    // Оповещения — только если реально списались деньги.
+    if (amount > 0 && notificationType) {
+      const user = userName ? null : await User.getById(userId).catch(() => null);
+      const name = userName || user?.name || null;
+      const payload = { orderId, userId, userName: name, amount, reason, daysPassed, source };
+      // Сотруднику — личное оповещение (архив + Socket.IO/Web Push)...
+      await NotificationService.notifyUser(userId, notificationType, payload);
+      // ...и копия в журнал действий персонала (архив + live модераторам).
+      await NotificationService.notifyStaff(notificationType, payload);
+    }
+
+    return { revoked: true, amount };
   }
 }
 

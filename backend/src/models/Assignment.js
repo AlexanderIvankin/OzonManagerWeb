@@ -10,14 +10,23 @@ function escapeLike(value) {
 
 class Assignment {
   /**
-   * Назначить заказ сотруднику (пользователю)
+   * Назначить заказ сотруднику (пользователю).
+   *
+   * UPSERT (а не INSERT OR REPLACE): при повторном назначении того же заказа
+   * СОХРАНЯЕМ «замок» earnings_revoked_at. Иначе REPLACE удалил бы строку и
+   * обнулил замок — открыв путь ко ВТОРОМУ списанию заработка за тот же заказ
+   * (прямое нарушение требования «одна отмена заказа = одно списание»).
    */
   static async assign(orderId, userId) {
     const db = getDB();
     await db.run(
-      `INSERT OR REPLACE INTO assignments (order_id, user_id, assigned_at, status)
-       VALUES (?, ?, ?, ?)`,
-      orderId, userId, Date.now(), 'assigned'
+      `INSERT INTO assignments (order_id, user_id, assigned_at, status)
+       VALUES (?, ?, ?, 'assigned')
+       ON CONFLICT(order_id) DO UPDATE SET
+         user_id = excluded.user_id,
+         assigned_at = excluded.assigned_at,
+         status = excluded.status`,
+      orderId, userId, Date.now()
     );
   }
 
@@ -60,6 +69,33 @@ class Assignment {
       productsJson,
       orderId
     );
+  }
+
+  /**
+   * АТОМАРНО «забронировать» отмену заработка за заказ (идемпотентность).
+   *
+   * Обновляет assignments, ТОЛЬКО если заработок по заказу ещё не отменялся
+   * (earnings_revoked_at IS NULL). Условие в самом UPDATE + атомарность записи
+   * SQLite гарантируют: сколько бы вызовов (два планировщика, повторный прогон,
+   * ручной вызов) ни стартовало одновременно — ровно ОДИН получит changes = 1.
+   * Это единственная точка «списания», поэтому два списания за один заказ
+   * физически невозможны.
+   *
+   * @param {string} orderId
+   * @param {number} userId
+   * @param {number} amount - списываемая сумма (для аудита)
+   * @param {string|null} reason - причина (для аудита)
+   * @returns {Promise<boolean>} true — замок выставлен именно этим вызовом
+   */
+  static async claimEarningsRevocation(orderId, userId, amount, reason = null) {
+    const db = getDB();
+    const result = await db.run(
+      `UPDATE assignments
+       SET earnings_revoked_at = ?, earnings_revoked_amount = ?, earnings_revoke_reason = ?
+       WHERE order_id = ? AND user_id = ? AND earnings_revoked_at IS NULL`,
+      Date.now(), amount, reason, orderId, userId
+    );
+    return result.changes === 1;
   }
 
   /**

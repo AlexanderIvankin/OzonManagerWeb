@@ -542,12 +542,31 @@ function startAwaitingDeliverReminderChecker() {
 
 /**
  * Один прогон проверки awaiting_deliver.
- * @param {number} delayHours - сколько часов прошло с момента завершения
+ *
+ * Три шага по возрасту заказа (сколько ПОЛНЫХ дней прошло с завершения):
+ *   1) daysPassed >= 1 — напоминание №1;
+ *   2) daysPassed >= warnDays (по умолчанию 2) — напоминание №2 + ПРЕДУПРЕЖДЕНИЕ,
+ *      что завтра заказ будет снят, а заработок обнулён;
+ *   3) daysPassed >= revokeDays (по умолчанию 3) — заработок за заказ обнуляется
+ *      сторнирующей корректировкой + итоговое оповещение (см.
+ *      EarningsService.revokeOrderEarnings — идемпотентно, без двойных списаний).
+ * Напоминание по заказу отправляется не чаще одного раза в сутки
+ * (маркер deliver_reminder_sent_at), а обнуление заработка — строго один раз
+ * (замок assignments.earnings_revoked_at).
+ *
+ * @param {number} delayHours - минимальный возраст заказа (с момента завершения)
+ * @param {object} [options] - warnDays/revokeDays (для тестов; иначе из .env)
  */
-async function runAwaitingDeliverReminder(delayHours) {
+async function runAwaitingDeliverReminder(delayHours, options = {}) {
   console.log('[REMINDER] Запуск проверки awaiting_deliver...');
 
   const db = getDB();
+  const warnDays = options.warnDays != null
+    ? options.warnDays
+    : envInt('DELIVER_REMINDER_WARN_DAYS', 2, 1, 60);
+  const revokeDays = options.revokeDays != null
+    ? options.revokeDays
+    : envInt('DELIVER_REMINDER_REVOKE_DAYS', 3, 1, 90);
 
   // 1. Список заказов в статусе awaiting_deliver из Ozon.
   let orders;
@@ -563,16 +582,18 @@ async function runAwaitingDeliverReminder(delayHours) {
   }
 
   console.log(`[REMINDER] Получено ${orders.length} заказов в awaiting_deliver`);
-  if (!orders.length) return;
+  if (!orders.length) return { found: 0, sent: 0, revoked: 0 };
 
   const orderIds = orders.map((order) => order.posting_number).filter(Boolean);
   if (!orderIds.length) {
     console.log('[REMINDER] В ответе нет posting_number');
-    return;
+    return { found: 0, sent: 0, revoked: 0 };
   }
 
-  // 2. Завершённые назначения по этим заказам, которые:
-  //    • старше delayHours; • всё ещё awaiting_deliver; • напоминали не сегодня.
+  // 2. Кандидаты: завершённые назначения по этим заказам, старше delayHours и
+  //    ещё НЕ сторнированные. Отбор «сегодня уже напоминали» делаем в JS: для
+  //    заказов, дошедших до порога обнуления, прошлое напоминание не мешает
+  //    списать заработок.
   const placeholders = orderIds.map(() => '?').join(',');
   const cutoff = Date.now() - delayHours * 60 * 60 * 1000;
 
@@ -585,6 +606,7 @@ async function runAwaitingDeliverReminder(delayHours) {
         a.order_id,
         a.user_id,
         a.completed_at,
+        a.deliver_reminder_sent_at,
         u.name AS user_name,
         u.is_fired,
         COALESCE(a.deliver_reminder_count, 0) AS reminder_count
@@ -593,31 +615,65 @@ async function runAwaitingDeliverReminder(delayHours) {
      WHERE a.status = 'completed'
        AND a.completed_at IS NOT NULL
        AND a.completed_at < ?
-       AND (a.deliver_reminder_sent_at IS NULL OR a.deliver_reminder_sent_at < ?)
+       AND a.earnings_revoked_at IS NULL
        AND a.order_id IN (${placeholders})`,
-    cutoff, todayStartMs, ...orderIds
+    cutoff, ...orderIds
   );
 
   if (!completedAssignments.length) {
     console.log('[REMINDER] Нет заказов, требующих напоминания');
-    return;
+    return { found: 0, sent: 0, revoked: 0 };
   }
 
-  console.log(`[REMINDER] Найдено ${completedAssignments.length} заказов для напоминания`);
+  console.log(`[REMINDER] Найдено ${completedAssignments.length} заказов (порог обнуления — ${revokeDays} дн.)`);
   let sent = 0;
+  let revoked = 0;
 
-  // 3. Напоминание по каждому проблемному заказу.
+  // 3. Обработка каждого проблемного заказа.
   for (const assignment of completedAssignments) {
     const {
       order_id: orderId,
       user_id: userId,
       completed_at: completedAt,
+      deliver_reminder_sent_at: sentAt,
       user_name: userName,
       is_fired: isFired,
       reminder_count: reminderCount,
     } = assignment;
 
-    // Сумма заработка по заказу (история — за всё время).
+    const daysPassed = Math.max(
+      0,
+      Math.floor((Date.now() - Number(completedAt)) / (24 * 60 * 60 * 1000))
+    );
+
+    // --- 3-й шаг: заказ слишком долго «ожидает отправки» -> обнуляем заработок ---
+    if (daysPassed >= revokeDays) {
+      try {
+        const result = await EarningsService.revokeOrderEarnings(userId, orderId, {
+          reason: `Заказ ${orderId} не отправлен ${daysPassed} дн. — заработок обнулён автоматически`,
+          notificationType: 'deliver_earnings_revoked',
+          userName: userName || null,
+          daysPassed,
+          source: 'scheduler.awaitingDeliver',
+        });
+        if (result.revoked) {
+          revoked += 1;
+          console.log(
+            `[REMINDER] Заказ ${orderId}: заработок обнулён (${result.amount} руб.), сотрудник ${userName || userId}`
+          );
+        }
+      } catch (err) {
+        console.error(`[REMINDER] Не удалось обнулить заработок по заказу ${orderId}:`, err.message);
+        NotificationService.logServerError('scheduler.awaitingDeliverRevoke', err, { orderId, userId });
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      continue;
+    }
+
+    // Напоминание по заказу — не чаще одного раза в сутки.
+    if (sentAt && Number(sentAt) >= todayStartMs) continue;
+
+    // --- 1-2-й шаг: напоминание (второе — с предупреждением об обнулении) ---
     let amount = null;
     try {
       const earningRow = await db.get(
@@ -631,11 +687,6 @@ async function runAwaitingDeliverReminder(delayHours) {
       console.warn(`[REMINDER] Не удалось получить заработок заказа ${orderId}:`, err.message);
     }
 
-    const daysPassed = Math.max(
-      0,
-      Math.floor((Date.now() - Number(completedAt)) / (24 * 60 * 60 * 1000))
-    );
-
     // Детали заказа (товары — для текста оповещения и поиска по offer_id).
     let details = null;
     try {
@@ -644,6 +695,7 @@ async function runAwaitingDeliverReminder(delayHours) {
       console.warn(`[REMINDER] Не удалось получить детали заказа ${orderId}:`, err.message);
     }
 
+    const isFinalWarning = daysPassed >= warnDays;
     const payload = {
       orderId,
       userId,
@@ -652,6 +704,7 @@ async function runAwaitingDeliverReminder(delayHours) {
       amount,
       reminderCount,
       details,
+      isFinalWarning,
     };
 
     let userNotified = false;
@@ -694,7 +747,7 @@ async function runAwaitingDeliverReminder(delayHours) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  console.log(`[REMINDER] Отправлено напоминаний сотрудникам: ${sent}`);
+  console.log(`[REMINDER] Отправлено напоминаний сотрудникам: ${sent}, обнулено заработка: ${revoked}`);
 
   // 4. Итог проверки — запись в журнал действий персонала.
   try {
@@ -704,12 +757,15 @@ async function runAwaitingDeliverReminder(delayHours) {
       {
         found: completedAssignments.length,
         sent,
+        revoked,
       },
       { push: false }
     );
   } catch (err) {
     console.error('[REMINDER] Не удалось отправить сводку персоналу:', err.message);
   }
+
+  return { found: completedAssignments.length, sent, revoked };
 }
 
 function stopAwaitingDeliverReminderChecker() {
@@ -718,6 +774,188 @@ function stopAwaitingDeliverReminderChecker() {
     deliverReminderInterval = null;
   }
   isDeliverReminderRunning = false;
+}
+
+// ============================================================================
+// Ежедневная сверка ОТМЕНЁННЫХ заказов Ozon и сторнирование заработка.
+//
+// Зачем: сотрудник мог завершить заказ (упаковать), но не отправить его. В
+// этом случае заработок уже начислен. Если Ozon затем отменяет заказ
+// (автоматически по таймауту либо иначе), заработок нужно снять — иначе мы
+// «теряем» заказ, заплатив за неотправленный товар.
+//
+// Логика: берём список заказов в статусе 'cancelled' из Ozon
+// (OzonService.fetchCancelledOrders, окно CANCEL_SYNC_WINDOW_HOURS) и по каждому
+// ищем завершённое назначение нашего сотрудника, которое ещё НЕ сторнировано.
+// Сторнирование — зарплатная КОРРЕКТИРОВКА на -сумму (см.
+// EarningsService.revokeOrderEarnings): если расчёт уже был, удаление истории
+// бессмысленно, а корректировка учтётся при следующем расчёте.
+//
+// ИДЕМПОТЕНТНОСТЬ: сколько бы раз заказ ни попал в выборку (широкое окно,
+// повторные прогоны) и что бы ни делал второй планировщик — списание произойдёт
+// РОВНО ОДИН РАЗ (атомарный замок assignments.earnings_revoked_at).
+//
+// Правила единой защиты от пропусков — как у прочих суточных задач
+// (догонялка + daily-gate + guard + журнал сбоев).
+// ============================================================================
+let cancelledOrdersInterval = null;
+let isCancelledOrdersRunning = false;
+let cancelledOrdersGate = null;
+
+/**
+ * Запускает ежедневную сверку отменённых заказов.
+ */
+function startCancelledOrdersChecker() {
+  if (cancelledOrdersInterval) {
+    clearInterval(cancelledOrdersInterval);
+    cancelledOrdersInterval = null;
+  }
+
+  isCancelledOrdersRunning = false;
+  cancelledOrdersGate = createDailyGate(envInt('CANCEL_SYNC_MAX_ATTEMPTS', 10, 1, 60));
+
+  const targetHour = envInt('CANCEL_SYNC_HOUR', 7, 0, 23);
+  const targetMinute = envInt('CANCEL_SYNC_MINUTE', 30, 0, 59);
+
+  cancelledOrdersInterval = setInterval(async () => {
+    if (isCancelledOrdersRunning) return;
+    if (cancelledOrdersGate.isDone()) return; // сегодня уже успешно
+
+    // «Догонялка»: любой тик после целевого времени, а не точное совпадение.
+    const localTime = getLocalTime();
+    if (localTime.hours * 60 + localTime.minutes < targetHour * 60 + targetMinute) return;
+    if (!cancelledOrdersGate.canAttempt()) return; // попытки на сегодня исчерпаны
+
+    isCancelledOrdersRunning = true;
+    try {
+      await runCancelledOrdersEarningsRevocation({
+        windowHours: envInt('CANCEL_SYNC_WINDOW_HOURS', 48, 1, 24 * 30),
+      });
+      cancelledOrdersGate.onSuccess(); // маркер только после успешного прогона
+    } catch (err) {
+      console.error('[SCHEDULER] Ошибка сверки отменённых заказов:', err);
+      cancelledOrdersGate.onFailure();
+      NotificationService.logServerError('scheduler.cancelledOrders', err);
+    } finally {
+      isCancelledOrdersRunning = false;
+    }
+  }, 60 * 1000);
+
+  console.log(
+    `[SCHEDULER] Сверка отменённых заказов запланирована на ` +
+    `${targetHour}:${String(targetMinute).padStart(2, '0')} (с догонялкой после сбоев)`
+  );
+}
+
+/**
+ * Один прогон сверки отменённых заказов.
+ * @param {object} [options]
+ * @param {number} [options.windowHours] - глубина окна выборки (часы)
+ * @returns {Promise<{found:number, revoked:number}>}
+ */
+async function runCancelledOrdersEarningsRevocation(options = {}) {
+  console.log('[CANCEL] Запуск сверки отменённых заказов...');
+
+  const db = getDB();
+  const windowHours = options.windowHours != null
+    ? options.windowHours
+    : envInt('CANCEL_SYNC_WINDOW_HOURS', 48, 1, 24 * 30);
+
+  // 1. Список отменённых заказов из Ozon.
+  let orders;
+  try {
+    orders = await OzonService.fetchCancelledOrders(100, windowHours);
+  } catch (err) {
+    console.error('[CANCEL] Не удалось получить список отменённых заказов:', err.message);
+    throw err; // проброс: планировщик не должен считать прогон успешным
+  }
+
+  if (!Array.isArray(orders)) {
+    throw new Error('fetchCancelledOrders() вернул не массив');
+  }
+
+  console.log(`[CANCEL] Получено ${orders.length} отменённых заказов за ${windowHours} ч`);
+  if (!orders.length) return { found: 0, revoked: 0 };
+
+  const orderIds = orders.map((order) => order.posting_number).filter(Boolean);
+  if (!orderIds.length) {
+    console.log('[CANCEL] В ответе нет posting_number');
+    return { found: 0, revoked: 0 };
+  }
+
+  // 2. Завершённые сотрудником заказы, по которым заработок ещё не сторнирован.
+  const placeholders = orderIds.map(() => '?').join(',');
+  const rows = await db.all(
+    `SELECT a.order_id, a.user_id, a.completed_at, u.name AS user_name
+     FROM assignments a
+     JOIN users u ON a.user_id = u.id
+     WHERE a.status = 'completed'
+       AND a.earnings_revoked_at IS NULL
+       AND a.order_id IN (${placeholders})`,
+    ...orderIds
+  );
+
+  if (!rows.length) {
+    console.log('[CANCEL] Нет завершённых заказов, требующих сторнирования');
+    return { found: 0, revoked: 0 };
+  }
+
+  console.log(`[CANCEL] Найдено ${rows.length} завершённых заказов с отменой Ozon`);
+  let revoked = 0;
+
+  for (const row of rows) {
+    const orderId = row.order_id;
+    const userId = row.user_id;
+    const userName = row.user_name;
+    try {
+      const result = await EarningsService.revokeOrderEarnings(userId, orderId, {
+        reason: `Заказ ${orderId} отменён Ozon (был завершён, но не отправлен)`,
+        notificationType: 'order_cancelled_earnings_revoked',
+        userName: userName || null,
+        source: 'scheduler.cancelledOrders',
+      });
+      if (result.revoked) {
+        revoked += 1;
+        console.log(
+          `[CANCEL] Заказ ${orderId} отменён — заработок ${result.amount} руб. сторнирован (${userName || userId})`
+        );
+        // Снимок заказа в кэше больше не нужен: заказ вышел из «живых» статусов.
+        try {
+          OrderService.forgetOrderState(orderId);
+        } catch (forgetErr) {
+          console.warn(`[CANCEL] forgetOrderState(${orderId}):`, forgetErr.message);
+        }
+      }
+    } catch (err) {
+      console.error(`[CANCEL] Не удалось сторнировать заработок по заказу ${orderId}:`, err.message);
+      NotificationService.logServerError('scheduler.cancelledOrders', err, { orderId, userId });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  console.log(`[CANCEL] Сторнировано заработка по заказам: ${revoked}`);
+
+  // 3. Итог — запись в журнал действий персонала (без Web Push).
+  try {
+    await NotificationService.notifyStaff(
+      'cancelled_orders_summary',
+      { found: rows.length, revoked, windowHours },
+      { push: false }
+    );
+  } catch (err) {
+    console.error('[CANCEL] Не удалось отправить сводку персоналу:', err.message);
+  }
+
+  return { found: rows.length, revoked };
+}
+
+function stopCancelledOrdersChecker() {
+  if (cancelledOrdersInterval) {
+    clearInterval(cancelledOrdersInterval);
+    cancelledOrdersInterval = null;
+  }
+  isCancelledOrdersRunning = false;
 }
 
 // ============================================================================
@@ -910,6 +1148,9 @@ module.exports = {
   startAwaitingDeliverReminderChecker,
   stopAwaitingDeliverReminderChecker,
   runAwaitingDeliverReminder,
+  startCancelledOrdersChecker,
+  stopCancelledOrdersChecker,
+  runCancelledOrdersEarningsRevocation,
   startOrderStatusSyncChecker,
   stopOrderStatusSyncChecker,
   startModelsMaintenanceChecker,

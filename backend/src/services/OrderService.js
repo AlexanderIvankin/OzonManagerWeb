@@ -992,6 +992,7 @@ class OrderService {
     const rows = await db.all(
       `SELECT order_id, completed_at FROM assignments
        WHERE user_id = ? AND status = 'completed'
+         AND earnings_revoked_at IS NULL
        ORDER BY completed_at DESC`,
       userId
     );

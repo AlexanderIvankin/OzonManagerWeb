@@ -49,6 +49,11 @@ const TYPE_META: Record<string, { icon: string; label: string }> = {
   // Напоминания о неотправленных заказах (планировщик, раз в сутки)
   deliver_reminder: { icon: "⏰", label: "Заказ не отправлен" },
   deliver_reminder_summary: { icon: "📋", label: "Проверка «ожидает отправки»" },
+  // Отмена заработка за завершённый, но не отправленный заказ
+  order_cancelled_earnings_revoked: { icon: "💸", label: "Заказ отменён: заработок списан" },
+  deliver_earnings_revoked: { icon: "💸", label: "Заработок обнулён" },
+  // Итог ежедневной сверки отменённых Ozon заказов (журнал персонала)
+  cancelled_orders_summary: { icon: "📋", label: "Проверка отменённых заказов" },
   // Автоматический ежемесячный экспорт заработка (планировщик)
   monthly_export_done: { icon: "📊", label: "Экспорт заработка" },
   // Синхронизация сотрудников из Excel: проблемные данные (некорректные

@@ -163,11 +163,23 @@ initSocket(server);
     // Ежедневная проверка заказов «ожидает отправки» (awaiting_deliver):
     // напоминания уходят в оповещения сотруднику и персоналу (модераторам
     // и остальным staff-ролям), а не сообщениями Telegram-бота.
+    // На 3-й день заработок за неотправленный заказ обнуляется сторнирующей
+    // корректировкой (см. scheduler.runAwaitingDeliverReminder).
     if (process.env.DELIVER_REMINDER_ENABLED === 'true') {
       scheduler.startAwaitingDeliverReminderChecker();
       console.log('✅ Проверка awaiting_deliver включена');
     } else {
       console.log('⏭️ Проверка awaiting_deliver отключена (DELIVER_REMINDER_ENABLED != true)');
+    }
+
+    // Ежедневная сверка отменённых Ozon заказов: если завершённый, но не
+    // отправленный заказ Ozon перевёл в статус «Отменён», заработок за него
+    // сторнируется корректировкой (идемпотентно, без двойных списаний).
+    if (process.env.CANCEL_SYNC_ENABLED === 'true') {
+      scheduler.startCancelledOrdersChecker();
+      console.log('✅ Сверка отменённых заказов включена');
+    } else {
+      console.log('⏭️ Сверка отменённых заказов отключена (CANCEL_SYNC_ENABLED != true)');
     }
 
     // Ежечасная синхронизация статусов кэша заказов (вкладка «Завершённые

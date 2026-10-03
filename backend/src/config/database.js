@@ -222,6 +222,28 @@ async function createTables(db) {
     console.log('[DB] Добавлена колонка products_json в assignments');
   }
 
+  // Миграция assignments: идемпотентная отмена заработка за отменённый /
+  // вовремя не отправленный заказ.
+  //   earnings_revoked_at     — «замок»: время, когда заработок за заказ был
+  //     сторнирован корректировкой (NULL — ещё не отменялся). Атомарное
+  //     выставление ЭТОГО поля (UPDATE ... WHERE earnings_revoked_at IS NULL)
+  //     гарантирует, что по одному заказу НИКОГДА не будет двух списаний
+  //     (см. EarningsService.revokeOrderEarnings).
+  //   earnings_revoked_amount — фактически списанная сумма (для аудита).
+  //   earnings_revoke_reason  — причина отмены (для аудита/истории).
+  if (!assignmentsInfo.some((col) => col.name === 'earnings_revoked_at')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN earnings_revoked_at INTEGER');
+    console.log('[DB] Добавлена колонка earnings_revoked_at в assignments');
+  }
+  if (!assignmentsInfo.some((col) => col.name === 'earnings_revoked_amount')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN earnings_revoked_amount REAL');
+    console.log('[DB] Добавлена колонка earnings_revoked_amount в assignments');
+  }
+  if (!assignmentsInfo.some((col) => col.name === 'earnings_revoke_reason')) {
+    await db.run('ALTER TABLE assignments ADD COLUMN earnings_revoke_reason TEXT');
+    console.log('[DB] Добавлена колонка earnings_revoke_reason в assignments');
+  }
+
   // --- Склады ---
   await db.exec(`
     CREATE TABLE IF NOT EXISTS warehouses (

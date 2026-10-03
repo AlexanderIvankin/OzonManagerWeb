@@ -1,8 +1,14 @@
 /**
- * Smoke-тест напоминаний awaiting_deliver (запуск: node tests/smoke-deliver-reminder.js
- * из папки backend/). Поднимает тестовые данные в основной и оповещений БД,
- * запускает один прогон scheduler.runAwaitingDeliverReminder и удаляет за собой.
- * Ozon API переключён в MOCK-режим: fetchAwaitingDeliverOrders вернёт заказ '12345-1'.
+ * Smoke-тест напоминаний и обнуления заработка awaiting_deliver
+ * (запуск: node tests/smoke-deliver-reminder.js из папки backend/).
+ *
+ * Проверяет трёхшаговую логику планировщика:
+ *   1) 1 полный день  -> напоминание №1 (без предупреждения);
+ *   2) 2 полных дня   -> напоминание №2 с ПРЕДУПРЕЖДЕНИЕМ (payload.isFinalWarning);
+ *   3) 3 полных дня   -> заработок за заказ обнуляется сторнирующей
+ *      корректировкой (идемпотентно — повторный прогон денег не трогает).
+ *
+ * Ozon API переключён в MOCK-режим, список awaiting_deliver подменяется стабом.
  */
 process.env.OZON_MOCK_MODE = 'true';
 require('dotenv').config();
@@ -15,9 +21,9 @@ const OzonService = require('../src/services/OzonService');
 const scheduler = require('../src/scheduler');
 
 const TEST_MARK = 'smokeReminder';
-// Уникальный тестовый заказ: не пересекается с данными dev-БД ('12345-1' из MOCK-режима)
 const stamp = Date.now();
 const TEST_ORDER = `${TEST_MARK}-1_${stamp}`;
+const DAY = 24 * 60 * 60 * 1000;
 
 (async () => {
   const employee = { id: null };
@@ -25,22 +31,18 @@ const TEST_ORDER = `${TEST_MARK}-1_${stamp}`;
   let db;
   let ndb;
 
-  // Подменяем список awaiting_deliver уникальным тестовым заказом
-  // (чтобы не зависеть от '12345-1' MOCK-режима и чужих данных dev-БД).
   const originalFetch = OzonService.fetchAwaitingDeliverOrders;
   OzonService.fetchAwaitingDeliverOrders = async () => [
     { posting_number: TEST_ORDER, products: [{ name: 'Тестовый товар', quantity: 1 }] },
   ];
 
   try {
-    console.log('=== Smoke-тест напоминаний awaiting_deliver ===');
+    console.log('=== Smoke-тест напоминаний/обнуления awaiting_deliver ===');
     await initDB();
     await initNotificationsDB();
     db = getDB();
     ndb = getNotificationsDB();
 
-    // 1. Тестовые пользователи: сотрудник + модератор (получатель журнала)
-    const stamp = Date.now();
     const emp = await User.create({
       username: `${TEST_MARK}_emp_${stamp}`,
       email: `${TEST_MARK}_emp_${stamp}@smoke.local`,
@@ -59,52 +61,77 @@ const TEST_ORDER = `${TEST_MARK}-1_${stamp}`;
     staffUser.id = mod.id;
     console.log(`Созданы: сотрудник #${emp.id}, модератор #${mod.id}`);
 
-    // 2. Назначение: заказ завершён 5 дней назад и всё ещё awaiting_deliver
-    const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+    // Завершено 1 день + 1 час назад -> daysPassed = 1
+    const oneDayAgo = Date.now() - (DAY + 60 * 60 * 1000);
     await db.run(
       `INSERT INTO assignments (order_id, user_id, assigned_at, completed_at, status)
        VALUES (?, ?, ?, ?, 'completed')`,
-      TEST_ORDER, emp.id, fiveDaysAgo, fiveDaysAgo
+      TEST_ORDER, emp.id, oneDayAgo, oneDayAgo
     );
     await db.run(
       `INSERT INTO earnings_history (user_id, order_id, amount, calculated_at)
        VALUES (?, ?, ?, ?)`,
-      emp.id, TEST_ORDER, 150, fiveDaysAgo
+      emp.id, TEST_ORDER, 150, oneDayAgo
+    );
+    await db.run(
+      `INSERT INTO earnings_active (user_id, order_id, amount, calculated_at)
+       VALUES (?, ?, ?, ?)`,
+      emp.id, TEST_ORDER, 150, oneDayAgo
     );
 
-    // 3. Первый прогон: должно отправиться 1 напоминание
-    await scheduler.runAwaitingDeliverReminder(24);
+    const OPTS = { warnDays: 2, revokeDays: 3 };
+    // --- Шаг 1: напоминание №1 ---
+    const r1 = await scheduler.runAwaitingDeliverReminder(24, OPTS);
+    const notif1 = (await Notification.getByRecipient(emp.id, { audience: 'user', limit: 20 }))
+      .items.filter((n) => n.type === 'deliver_reminder');
+    console.log(`Шаг 1: отправлено=${r1.sent}, напоминаний=${notif1.length}, isFinalWarning=${notif1[0]?.payload?.isFinalWarning}`);
+    if (r1.sent !== 1 || notif1.length !== 1) throw new Error('Шаг 1: ожидалось одно напоминание');
+    if (notif1[0].payload.isFinalWarning) throw new Error('Шаг 1: не должно быть предупреждения');
 
-    // 4. Проверки
-    const empNotifs = await Notification.getByRecipient(emp.id, { audience: 'user', limit: 20 });
-    const reminder = empNotifs.items.find((n) => n.type === 'deliver_reminder');
-    console.log(
-      `Личное напоминание сотруднику: ${!!reminder}, «${reminder?.title}»\n  текст: "${reminder?.message?.slice(0, 160)}"`
+    // --- Шаг 2: напоминание №2 с предупреждением ---
+    const twoDaysAgo = Date.now() - (2 * DAY + 60 * 60 * 1000);
+    await db.run(
+      'UPDATE assignments SET completed_at = ?, deliver_reminder_sent_at = NULL WHERE order_id = ?',
+      twoDaysAgo, TEST_ORDER
     );
-    if (!reminder) throw new Error('Напоминание сотруднику не создано');
+    const r2 = await scheduler.runAwaitingDeliverReminder(24, OPTS);
+    const notif2 = (await Notification.getByRecipient(emp.id, { audience: 'user', limit: 20 }))
+      .items.filter((n) => n.type === 'deliver_reminder');
+    const warning = notif2.find((n) => n.payload?.isFinalWarning);
+    console.log(`Шаг 2: отправлено=${r2.sent}, всего напоминаний=${notif2.length}, предупреждение=${!!warning}`);
+    if (r2.sent !== 1 || !warning) throw new Error('Шаг 2: ожидалось напоминание с предупреждением');
 
-    const staffNotifs = await Notification.getByRecipient(mod.id, { audience: 'staff', limit: 20 });
-    const staffCopy = staffNotifs.items.find((n) => n.type === 'deliver_reminder');
-    const summary = staffNotifs.items.find((n) => n.type === 'deliver_reminder_summary');
-    console.log(
-      `Копия персоналу: ${!!staffCopy}, сводка: ${!!summary}, «${summary?.message}»`
+    // --- Шаг 3: обнуление заработка ---
+    const threeDaysAgo = Date.now() - (3 * DAY + 60 * 60 * 1000);
+    await db.run(
+      'UPDATE assignments SET completed_at = ?, deliver_reminder_sent_at = NULL WHERE order_id = ?',
+      threeDaysAgo, TEST_ORDER
     );
-    if (!staffCopy) throw new Error('Копия в журнал персонала не создана');
-    if (!summary) throw new Error('Сводка персоналу не создана');
-
+    const r3 = await scheduler.runAwaitingDeliverReminder(24, OPTS);
     const assignment = await db.get('SELECT * FROM assignments WHERE order_id = ?', TEST_ORDER);
-    console.log(
-      `Маркер напоминания: sent_at=${assignment.deliver_reminder_sent_at}, count=${assignment.deliver_reminder_count}`
+    const revokedNotif = (await Notification.getByRecipient(emp.id, { audience: 'user', limit: 20 }))
+      .items.filter((n) => n.type === 'deliver_earnings_revoked');
+    const adjHist = await db.get(
+      'SELECT COALESCE(SUM(amount),0) AS s FROM earnings_adjustments WHERE user_id = ?', emp.id
     );
-    if (!assignment.deliver_reminder_sent_at) throw new Error('deliver_reminder_sent_at не проставлен');
-    if (assignment.deliver_reminder_count !== 1) throw new Error('deliver_reminder_count != 1');
+    const adjAct = await db.get(
+      'SELECT COALESCE(SUM(amount),0) AS s FROM earnings_adjustments_active WHERE user_id = ?', emp.id
+    );
+    console.log(`Шаг 3: revoked=${r3.revoked}, замок=${assignment.earnings_revoked_at}, история=${adjHist.s}, актив=${adjAct.s}, оповещение=${revokedNotif.length}`);
+    if (r3.revoked !== 1) throw new Error('Шаг 3: заработок не обнулён');
+    if (!assignment.earnings_revoked_at) throw new Error('Шаг 3: замок не выставлен');
+    if (adjHist.s !== -150) throw new Error(`Шаг 3: история корректировок=${adjHist.s}, ожидалось -150`);
+    if (adjAct.s !== -150) throw new Error(`Шаг 3: активные корректировки=${adjAct.s}, ожидалось -150`);
+    if (!revokedNotif.length) throw new Error('Шаг 3: оповещение deliver_earnings_revoked не создано');
 
-    // 5. Повторный прогон в тот же день: напоминаний больше не должно быть
-    await scheduler.runAwaitingDeliverReminder(24);
-    const after = await Notification.getByRecipient(emp.id, { audience: 'user', limit: 20 });
-    const remindersAfter = after.items.filter((n) => n.type === 'deliver_reminder').length;
-    console.log(`Повторный прогон: напоминаний с type=deliver_reminder всё ещё ${remindersAfter} (ожидалось 1)`);
-    if (remindersAfter !== 1) throw new Error('Повторное напоминание в тот же день — дедупликация сломана');
+    // --- Идемпотентность: повторный прогон не должен списать ещё раз ---
+    const r4 = await scheduler.runAwaitingDeliverReminder(24, OPTS);
+    const adjHist2 = await db.get(
+      'SELECT COALESCE(SUM(amount),0) AS s FROM earnings_adjustments WHERE user_id = ?', emp.id
+    );
+    console.log(`Повтор: revoked=${r4.revoked}, сумма корректировок=${adjHist2.s} (должно остаться -150)`);
+    if (r4.revoked !== 0) throw new Error('Повторный прогон снова обнулил заработок (двойное списание!)');
+    if (adjHist2.s !== -150) throw new Error(`Повторное списание: сумма=${adjHist2.s}, ожидалось -150`);
 
     console.log('=== Smoke-тест пройден ✅ ===');
   } catch (err) {
@@ -112,13 +139,17 @@ const TEST_ORDER = `${TEST_MARK}-1_${stamp}`;
     console.error(err);
     process.exitCode = 1;
   } finally {
-    // Восстанавливаем подменённый метод и чистим тестовые данные
     OzonService.fetchAwaitingDeliverOrders = originalFetch;
     try {
-      await ndb.run(`DELETE FROM notifications WHERE type LIKE 'deliver_reminder%' OR payload LIKE '%${TEST_MARK}%'`);
-      await db.run(`DELETE FROM assignments WHERE order_id = ?`, TEST_ORDER);
-      await db.run(`DELETE FROM earnings_history WHERE order_id = ?`, TEST_ORDER);
-      if (employee.id) await db.run('DELETE FROM users WHERE id = ?', employee.id);
+      await ndb.run(`DELETE FROM notifications WHERE payload LIKE '%${TEST_MARK}%'`);
+      await db.run('DELETE FROM assignments WHERE order_id = ?', TEST_ORDER);
+      await db.run('DELETE FROM earnings_history WHERE order_id = ?', TEST_ORDER);
+      await db.run('DELETE FROM earnings_active WHERE order_id = ?', TEST_ORDER);
+      if (employee.id) {
+        await db.run('DELETE FROM earnings_adjustments WHERE user_id = ?', employee.id);
+        await db.run('DELETE FROM earnings_adjustments_active WHERE user_id = ?', employee.id);
+        await db.run('DELETE FROM users WHERE id = ?', employee.id);
+      }
       if (staffUser.id) await db.run('DELETE FROM users WHERE id = ?', staffUser.id);
       console.log('Тестовые данные удалены');
     } catch (cleanupErr) {

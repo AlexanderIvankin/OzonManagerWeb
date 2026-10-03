@@ -233,6 +233,57 @@ class OzonService {
     }
   }
 
+  // --- Заказы в статусе cancelled (для сторнирования заработка) ---
+  // Аналог fetchAwaitingOrders: POST /v4/posting/fbs/list со statuses:
+  // ['cancelled'] и пагинацией по last_id. Окно по времени — последние
+  // windowHours (по умолчанию 48 ч): суточный запуск с запасом не пропускает
+  // отмену даже при пропуске дня; повторная обработка безопасна —
+  // сторнирование заработка идемпотентно (замок assignments.earnings_revoked_at).
+  //
+  // Фильтр по суффиксу offer_id здесь НЕ применяется: выборку и так
+  // ограничивает поиск по нашим assignment'ам, а у отменённого заказа состав
+  // товаров может прийти пустым — фильтрация по суффиксу могла бы его скрыть.
+  static async fetchCancelledOrders(limit = 100, windowHours = 48) {
+    if (MOCK_MODE) {
+      return [];
+    }
+    try {
+      const to = new Date();
+      const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+
+      let allOrders = [];
+      let lastId = null;
+      let hasMore = true;
+
+      while (hasMore) {
+        const requestBody = {
+          filter: {
+            statuses: ['cancelled'],
+            since: since.toISOString(),
+            to: to.toISOString(),
+          },
+          limit,
+          with: { analytics_data: true },
+        };
+        if (lastId) requestBody.last_id = lastId;
+
+        const response = await requestWithRetry(
+          () => apiClient.post('/v4/posting/fbs/list', requestBody),
+          { context: 'fetchCancelledOrders' }
+        );
+        const orders = response.data.postings || [];
+        allOrders = allOrders.concat(orders);
+        lastId = response.data.last_id;
+        hasMore = !!lastId && orders.length === limit;
+      }
+
+      return allOrders;
+    } catch (error) {
+      console.error('[Ozon] Ошибка получения отменённых заказов:', error.message);
+      throw new Error(`Ошибка Ozon API: ${error.message}`);
+    }
+  }
+
   // --- Детали заказа ---
   static async getOrderDetails(orderId) {
     if (MOCK_MODE) {

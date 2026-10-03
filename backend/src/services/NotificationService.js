@@ -223,24 +223,35 @@ const TEMPLATES = {
       p.amount != null ? `\n💰 Заработок по заказу: ${p.amount} руб.` : '';
     const repeatedLine =
       p.reminderCount > 0 ? `\n🔔 Ранее вам уже напоминали: ${p.reminderCount} раз(а).` : '';
+    // 2-е напоминание (за день до авто-обнуления) — усиленный текст.
+    const isFinalWarning = !!p.isFinalWarning;
+    const userWarningLine = isFinalWarning
+      ? `\n🚨 ПРЕДУПРЕЖДЕНИЕ: завтра заказ будет снят автоматически, а заработок за заказ обнулён сторнирующей корректировкой. Срочно отправьте заказ!`
+      : `\n⚠️ Пожалуйста, отправьте заказ как можно скорее, иначе заработок может быть отменён.`;
+    const staffWarningLine = isFinalWarning
+      ? `\n🚨 Последнее напоминание: следующий суточный прогон обнулит заработок сотрудника.`
+      : '';
 
     return {
       user: {
-        title: `⏰ Заказ ${p.orderId} не отправлен`,
+        title: isFinalWarning
+          ? `🚨 Заказ ${p.orderId}: завтра заработок будет обнулён`
+          : `⏰ Заказ ${p.orderId} не отправлен`,
         message:
           `Заказ ${p.orderId} был завершён ${p.daysPassed} дн. назад, но всё ещё находится в статусе «ожидает отправки».` +
           repeatedLine +
           earningsLine +
           productsLine +
-          `\n⚠️ Пожалуйста, отправьте заказ как можно скорее, иначе заработок может быть отменён.`,
+          userWarningLine,
       },
       staff: {
-        title: `⏰ ${p.userName || 'Сотрудник'}: заказ ${p.orderId} не отправлен`,
+        title: `${isFinalWarning ? '🚨' : '⏰'} ${p.userName || 'Сотрудник'}: заказ ${p.orderId} не отправлен`,
         message:
           `Сотрудник ${p.userName || 'Неизвестно'} завершил заказ ${p.orderId} ${p.daysPassed} дн. назад, но заказ всё ещё в статусе «ожидает отправки».` +
           `\n🔔 Напоминаний отправлено: ${(p.reminderCount || 0) + 1}.` +
           earningsLine +
-          productsLine,
+          productsLine +
+          staffWarningLine,
       },
     };
   },
@@ -250,7 +261,80 @@ const TEMPLATES = {
     user: null,
     staff: {
       title: `📋 Проверка «ожидает отправки» завершена`,
-      message: `Найдено проблемных заказов: ${p.found ?? 0}.\nНапоминаний отправлено сотрудникам: ${p.sent ?? 0}.`,
+      message:
+        `Найдено проблемных заказов: ${p.found ?? 0}.\n` +
+        `Напоминаний отправлено сотрудникам: ${p.sent ?? 0}.\n` +
+        `Заработок обнулён по заказам: ${p.revoked ?? 0}.`,
+    },
+  }),
+
+  // ==========================================================================
+  // Отмена заработка за заказ, который был завершён, но не отправлен.
+  //   order_cancelled_earnings_revoked — Ozon перевёл заказ в статус «Отменён»
+  //     (планировщик cancelledOrders);
+  //   deliver_earnings_revoked        — заказ слишком долго «ожидает отправки»
+  //     (планировщик awaitingDeliver, 3-е напоминание).
+  // Деньги снимаются сторнирующей корректировкой (см.
+  // EarningsService.revokeOrderEarnings — идемпотентно, без двойных списаний).
+  // ==========================================================================
+  order_cancelled_earnings_revoked: (p) => {
+    const products = Array.isArray(p.details?.products) ? p.details.products : [];
+    const shown = products.slice(0, 3);
+    const more = products.length - shown.length;
+    const productsLine = products.length
+      ? `\nТовары: ${shown
+          .map((pr) => `${pr.name || '—'}${pr.offer_id ? ` (${pr.offer_id})` : ''} — ${pr.quantity || 1} шт.`)
+          .join('; ')}${more > 0 ? ` … и ещё ${more}` : ''}.`
+      : '';
+    const amountLine = p.amount != null ? `${p.amount} руб.` : '—';
+    return {
+      user: {
+        title: `💸 Заказ ${p.orderId} отменён: заработок списан`,
+        message:
+          `Заказ ${p.orderId} был завершён вами, но так и не был отправлен.\n` +
+          `Ozon перевёл заказ в статус «Отменён», поэтому заработок за заказ ${amountLine} был отменён ` +
+          `(сторнирующая корректировка учтётся при следующем расчёте).` +
+          productsLine,
+      },
+      staff: {
+        title: `💸 ${p.userName || 'Сотрудник'}: заказ ${p.orderId} отменён, заработок списан`,
+        message:
+          `Заказ ${p.orderId} сотрудника ${p.userName || '—'} был завершён, но не отправлен. ` +
+          `Ozon перевёл заказ в статус «Отменён» — заработок ${amountLine} отменён сторнирующей корректировкой.` +
+          productsLine,
+      },
+    };
+  },
+
+  deliver_earnings_revoked: (p) => {
+    const daysLine = p.daysPassed != null ? ` ${p.daysPassed} дн.` : '';
+    const amountLine = p.amount != null ? `${p.amount} руб.` : '—';
+    return {
+      user: {
+        title: `💸 Заработок за заказ ${p.orderId} обнулён`,
+        message:
+          `Заказ ${p.orderId} был завершён${daysLine} назад, но так и не был отправлен.\n` +
+          `Поэтому заработок за заказ ${amountLine} был обнулён сторнирующей корректировкой ` +
+          `(учтётся при следующем расчёте).`,
+      },
+      staff: {
+        title: `💸 ${p.userName || 'Сотрудник'}: заработок за ${p.orderId} обнулён`,
+        message:
+          `Сотрудник ${p.userName || 'Неизвестно'} не отправил заказ ${p.orderId}${daysLine} — ` +
+          `заработок ${amountLine} обнулён сторнирующей корректировкой автоматически.`,
+      },
+    };
+  },
+
+  // Итог ежедневной сверки отменённых Ozon заказов — только персоналу.
+  cancelled_orders_summary: (p) => ({
+    user: null,
+    staff: {
+      title: `📋 Проверка отменённых заказов завершена`,
+      message:
+        `Проверка отменённых Ozon заказов за ${p.windowHours ?? '—'} ч завершена.\n` +
+        `Найдено завершённых заказов с отменой: ${p.found ?? 0}.\n` +
+        `Сторнировано заработка: ${p.revoked ?? 0}.`,
     },
   }),
 
